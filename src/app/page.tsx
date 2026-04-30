@@ -108,12 +108,6 @@ export default function SplashPage() {
 
       <div className={styles.stack}>
         <div className={styles.eyebrow}>— EST. CALIFORNIA · 2014 —</div>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/dt-logo.jpg"
-          alt="Driven Talent"
-          className={styles.logoMark}
-        />
         <div className={styles.wordmark} data-text="DRIVEN TALENT">
           DRIVEN TALENT
         </div>

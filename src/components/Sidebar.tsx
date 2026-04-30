@@ -68,8 +68,6 @@ export function Sidebar() {
       />
       <aside className={"dt-sidebar" + (open ? " open" : "")}>
         <div className="dt-brand">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/dt-logo.jpg" alt="Driven Talent" className="logo-img" />
           <div className="name">Driven Talent</div>
           <div className="sub">Workforce · Solutions</div>
         </div>
