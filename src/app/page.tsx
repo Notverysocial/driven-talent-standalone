@@ -1,65 +1,138 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import styles from "./splash.module.css";
+
+const MOTE_COUNT = 18;
+
+type Mote = {
+  left: string;
+  top: string;
+  size: string;
+  duration: string;
+  delay: string;
+  opacity: number;
+};
+
+function generateMotes(): Mote[] {
+  return Array.from({ length: MOTE_COUNT }, () => {
+    const s = 1 + Math.random() * 2;
+    return {
+      left: Math.random() * 100 + "%",
+      top: 70 + Math.random() * 30 + "%",
+      size: s + "px",
+      duration: 7 + Math.random() * 5 + "s",
+      delay: Math.random() * 5 + "s",
+      opacity: 0.3 + Math.random() * 0.4,
+    };
+  });
+}
+
+export default function SplashPage() {
+  const router = useRouter();
+  const [motes, setMotes] = useState<Mote[]>([]);
+  const [dismissed, setDismissed] = useState(false);
+  const navigatedRef = useRef(false);
+
+  useEffect(() => {
+    setMotes(generateMotes());
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!navigatedRef.current) {
+        navigatedRef.current = true;
+        router.push("/dashboard");
+      }
+    }, 3500);
+    return () => clearTimeout(t);
+  }, [router]);
+
+  const handleDismiss = () => {
+    if (navigatedRef.current) return;
+    navigatedRef.current = true;
+    setDismissed(true);
+    setTimeout(() => router.push("/dashboard"), 300);
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div
+      className={styles.splash + (dismissed ? " " + styles.dismissed : "")}
+      role="img"
+      aria-label="Driven Talent — Workforce Solutions"
+      onClick={handleDismiss}
+    >
+      <div className={styles.motes}>
+        {motes.map((m, i) => (
+          <span
+            key={i}
+            className={styles.mote}
+            style={
+              {
+                left: m.left,
+                top: m.top,
+                width: m.size,
+                height: m.size,
+                animationDuration: m.duration,
+                animationDelay: m.delay,
+                "--m-op": m.opacity,
+              } as React.CSSProperties
+            }
+          />
+        ))}
+      </div>
+
+      <div className={styles.label}>A Roxanna &amp; Co. Operation</div>
+
+      <div className={styles.cornerTL}>
+        <svg viewBox="0 0 28 28" fill="none" stroke="#1a1a1a" strokeWidth="0.6">
+          <path d="M0 8V0H8" />
+        </svg>
+      </div>
+      <div className={styles.cornerTR}>
+        <svg viewBox="0 0 28 28" fill="none" stroke="#1a1a1a" strokeWidth="0.6">
+          <path d="M28 8V0H20" />
+        </svg>
+      </div>
+      <div className={styles.cornerBL}>
+        <svg viewBox="0 0 28 28" fill="none" stroke="#1a1a1a" strokeWidth="0.6">
+          <path d="M0 20V28H8" />
+        </svg>
+      </div>
+      <div className={styles.cornerBR}>
+        <svg viewBox="0 0 28 28" fill="none" stroke="#1a1a1a" strokeWidth="0.6">
+          <path d="M28 20V28H20" />
+        </svg>
+      </div>
+
+      <div className={styles.stack}>
+        <div className={styles.eyebrow}>— EST. CALIFORNIA · 2014 —</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/dt-logo.jpg"
+          alt="Driven Talent"
+          className={styles.logoMark}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+        <div className={styles.wordmark} data-text="DRIVEN TALENT">
+          DRIVEN TALENT
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className={styles.tagline}>
+          <span>Workforce</span>
+          <span className={styles.bullet} />
+          <span>Solutions</span>
         </div>
-      </main>
+      </div>
+
+      <div className={styles.hint}>tap anywhere to continue</div>
+      <div className={styles.horizon} />
+      <div className={styles.footer}>
+        <span>San Francisco</span>
+        <span className={styles.sep}>/</span>
+        <span>Sonoma</span>
+        <span className={styles.sep}>/</span>
+        <span>Sacramento</span>
+      </div>
     </div>
   );
 }
