@@ -14,11 +14,13 @@ import {
   flattenRoster,
   bandColor,
   weightedAttendancePct,
+  lastNDays,
   type ClientId,
   type Position,
   type Department,
   type Shift,
   type ScoreBand,
+  type AttendanceEntry,
 } from "@/lib/data";
 
 type FilterState = {
@@ -136,6 +138,70 @@ function attRateColor(pct: number): string {
   if (pct >= 85) return "var(--dt-gold-deep)";
   if (pct >= 70) return "#C28B1E";
   return "var(--dt-danger)";
+}
+
+const DOT_COLOR: Record<AttendanceEntry["status"], string> = {
+  present: "var(--dt-success)",
+  late: "var(--dt-warning)",
+  missed: "var(--dt-danger)",
+  "no-show": "var(--dt-danger)",
+  excused: "var(--dt-warm-300)",
+};
+
+const DOT_LABEL: Record<AttendanceEntry["status"], string> = {
+  present: "Present",
+  late: "Late",
+  missed: "Missed",
+  "no-show": "No-Show",
+  excused: "Excused",
+};
+
+function LastFourteenDays({ records }: { records: AttendanceEntry[] }) {
+  // Most-recent 14 entries for this (employee, client) pairing,
+  // rendered oldest → newest so the rightmost dot is "today".
+  const recent = lastNDays(records, 14)
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  if (recent.length === 0) {
+    return (
+      <span
+        style={{
+          fontSize: 9.5,
+          letterSpacing: "0.16em",
+          textTransform: "uppercase",
+          color: "var(--dt-warm-400)",
+        }}
+      >
+        —
+      </span>
+    );
+  }
+
+  return (
+    <div
+      style={{ display: "flex", gap: 3, alignItems: "center" }}
+      aria-label={`Last ${recent.length} shifts`}
+    >
+      {recent.map((r) => (
+        <span
+          key={`${r.date}-${r.client}`}
+          title={`${r.date} · ${DOT_LABEL[r.status]}${r.notes ? ` — ${r.notes}` : ""}`}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: DOT_COLOR[r.status],
+            display: "inline-block",
+            border:
+              r.status === "excused"
+                ? "1px solid var(--dt-warm-300)"
+                : "none",
+          }}
+        />
+      ))}
+    </div>
+  );
 }
 
 export default function RosterPage() {
@@ -382,6 +448,7 @@ export default function RosterPage() {
                 <th>Shift</th>
                 <th>Score</th>
                 <th>Attendance · 30d</th>
+                <th>Last 14d</th>
                 <th style={{ textAlign: "right", paddingRight: 22 }}>Rate</th>
               </tr>
             </thead>
@@ -504,6 +571,13 @@ export default function RosterPage() {
                         </div>
                       )}
                     </td>
+                    <td>
+                      <LastFourteenDays
+                        records={r.attendance.filter(
+                          (x) => x.client === r.assignment.client,
+                        )}
+                      />
+                    </td>
                     <td
                       className="tab-num"
                       style={{
@@ -520,7 +594,7 @@ export default function RosterPage() {
               {sorted.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     style={{
                       textAlign: "center",
                       padding: "48px 22px",
