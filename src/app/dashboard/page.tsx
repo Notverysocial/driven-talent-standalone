@@ -3,21 +3,11 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { CLIENTS, EMPLOYEES, flattenRoster, getClient } from "@/lib/data";
 
-const KPIS = [
-  { label: "Active Placements", value: "186", sub: "of 248 total", accent: "var(--dt-black)" },
-  { label: "Hours This Week", value: "4,128", sub: "across 39 clients", accent: "var(--dt-black)" },
-  { label: "Avg Score", value: "84.6", sub: "↑ 2.3 this qtr", accent: "var(--dt-gold-deep)" },
-  { label: "Net New Talent", value: "+9", sub: "onboarding", accent: "#C28B1E" },
-];
-
-const ACTIVITY = [
-  { who: "Maria Hernandez", action: "submitted timecard", detail: "Week 17 · 88.0 hrs", when: "12 min ago", tone: "gold" as const },
-  { who: "Daniel Ortega", action: "advanced to placement", detail: "Sonoma Senior Living · day shift", when: "1 hr ago", tone: "green" as const },
-  { who: "Pacific Vines Hotel", action: "approved invoice", detail: "DT-2026-0411 · $9,840.00", when: "3 hrs ago", tone: "green" as const },
-  { who: "Marcus Webb", action: "variance flagged", detail: "Sat shift · 1.5 hr discrepancy", when: "yesterday", tone: "amber" as const },
-  { who: "Hannah Kim", action: "completed onboarding", detail: "Manufacturing · QA II", when: "yesterday", tone: "green" as const },
-];
+function fmt$(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 const BILLING = {
   open: 38420.5,
@@ -29,22 +19,63 @@ const BILLING = {
 const PIPELINE = [
   { stage: "New Applications", count: 14, tone: "warm" as const },
   { stage: "Screened", count: 9, tone: "gold" as const },
-  { stage: "Client Interview", count: 5, tone: "amber" as const },
-  { stage: "Offer Out", count: 2, tone: "green" as const },
+  { stage: "Drug Screen / BG", count: 5, tone: "amber" as const },
+  { stage: "Cleared to Place", count: 2, tone: "green" as const },
 ];
-
-const CLIENTS = [
-  { name: "Pacific Vines Hotel", placements: 12, ytd: "$182,440", trend: "+8%" },
-  { name: "Coastal Logistics", placements: 9, ytd: "$143,210", trend: "+12%" },
-  { name: "Sonoma Senior Living", placements: 11, ytd: "$129,860", trend: "+4%" },
-  { name: "Verdant Foods Co.", placements: 7, ytd: "$98,520", trend: "−3%" },
-];
-
-function fmt$(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default function DashboardPage() {
+  const rows = flattenRoster();
+  const totalEmployees = new Set(rows.map((r) => r.id)).size;
+  const totalPlacements = rows.length;
+  const onboardingCount = EMPLOYEES.filter((e) => e.status === "onboarding").length;
+  const greenCount = EMPLOYEES.filter((e) => e.band === "green").length;
+  const redCount = EMPLOYEES.filter((e) => e.band === "red").length;
+  const totalMissed = rows.reduce((s, r) => s + r.missedDays, 0);
+  const avgScore =
+    EMPLOYEES.filter((e) => e.score > 0).reduce((s, e) => s + e.score, 0) /
+    EMPLOYEES.filter((e) => e.score > 0).length;
+
+  // recent attendance incidents — pull last 5 missed/no-show events across all employees
+  const incidents = EMPLOYEES.flatMap((e) =>
+    e.attendance
+      .filter((a) => a.status === "missed" || a.status === "no-show" || a.status === "late")
+      .map((a) => ({ ...a, who: e.name, employeeId: e.id }))
+  )
+    .sort((a, b) => (a.date < b.date ? 1 : -1))
+    .slice(0, 5);
+
+  // Client breakdown
+  const clientStats = CLIENTS.map((c) => {
+    const placements = rows.filter((r) => r.assignment.client === c.id);
+    const headcount = new Set(placements.map((p) => p.id)).size;
+    const missed = placements.reduce((s, r) => {
+      const m = EMPLOYEES.find((e) => e.id === r.id)!.attendance.filter(
+        (x) => x.client === c.id && (x.status === "missed" || x.status === "no-show")
+      ).length;
+      return s + m;
+    }, 0);
+    const dailyHours = placements.length * 8;
+    const weeklyHours = dailyHours * 5;
+    const avgRate =
+      placements.reduce((s, r) => s + r.assignment.rate, 0) / (placements.length || 1);
+    const weeklyBilling = weeklyHours * avgRate;
+    return {
+      client: c,
+      headcount,
+      placements: placements.length,
+      missed,
+      weeklyHours,
+      weeklyBilling,
+    };
+  });
+
+  const KPIS = [
+    { label: "Active Employees", value: String(totalEmployees), sub: `${totalPlacements} placements`, accent: "var(--dt-black)" },
+    { label: "Avg Score", value: avgScore.toFixed(1), sub: `${greenCount} green · ${redCount} red`, accent: "var(--dt-gold-deep)" },
+    { label: "Missed Days · Wk", value: String(totalMissed), sub: "across all clients", accent: totalMissed > 10 ? "var(--dt-danger)" : "var(--dt-warning)" },
+    { label: "Onboarding", value: String(onboardingCount), sub: "this month", accent: "#C28B1E" },
+  ];
+
   return (
     <Shell>
       <Topbar
@@ -53,9 +84,9 @@ export default function DashboardPage() {
         title="Morning"
         actions={
           <>
-            <Link href="/timecards" className="dt-btn">Timecards</Link>
-            <Link href="/invoices" className="dt-btn">New Invoice</Link>
-            <Link href="/candidates" className="dt-btn dt-btn-gold"><span>+ Score Candidate</span></Link>
+            <Link href="/attendance" className="dt-btn">Attendance</Link>
+            <Link href="/onboarding" className="dt-btn">Onboarding</Link>
+            <Link href="/roster" className="dt-btn dt-btn-gold"><span>+ View Roster</span></Link>
           </>
         }
       />
@@ -76,26 +107,59 @@ export default function DashboardPage() {
         <div className="dt-card gold-edge">
           <div className="dt-card-head">
             <div>
-              <h3>Activity</h3>
-              <div className="sub">The last 24 hours across the operation</div>
+              <h3>Attendance Incidents · Last 5</h3>
+              <div className="sub">Missed days, no-shows, lates across all clients</div>
             </div>
-            <Badge tone="dark">Live</Badge>
+            <Link href="/attendance" className="dt-btn dt-btn-ghost tiny">Full report →</Link>
           </div>
           <div style={{ padding: "8px 0 0" }}>
-            {ACTIVITY.map((a, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 16, alignItems: "center", padding: "16px 26px", borderBottom: i < ACTIVITY.length - 1 ? "1px solid var(--dt-warm-100)" : "none" }}>
-                <Avatar name={a.who} />
-                <div>
-                  <div style={{ fontSize: 13.5, fontWeight: 400 }}>
-                    {a.who} <span style={{ color: "var(--dt-warm-500)", fontWeight: 300 }}>{a.action}</span>
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--dt-warm-500)", marginTop: 4 }}>{a.detail}</div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                  <Badge tone={a.tone}>{a.when}</Badge>
-                </div>
+            {incidents.length === 0 ? (
+              <div style={{ padding: "32px 26px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
+                No incidents in the window. Everybody showed up.
               </div>
-            ))}
+            ) : (
+              incidents.map((a, i) => {
+                const client = getClient(a.client);
+                const tone =
+                  a.status === "no-show"
+                    ? ("red" as const)
+                    : a.status === "missed"
+                    ? ("amber" as const)
+                    : ("warm" as const);
+                return (
+                  <Link
+                    key={i}
+                    href={`/employees/${a.employeeId}`}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr auto",
+                      gap: 16,
+                      alignItems: "center",
+                      padding: "16px 26px",
+                      borderBottom: i < incidents.length - 1 ? "1px solid var(--dt-warm-100)" : "none",
+                      textDecoration: "none",
+                      color: "inherit",
+                    }}
+                  >
+                    <Avatar name={a.who} />
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 400 }}>
+                        {a.who}{" "}
+                        <span style={{ color: "var(--dt-warm-500)", fontWeight: 300 }}>
+                          · {a.status === "no-show" ? "no call no show" : a.status} at {client.name}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "var(--dt-warm-500)", marginTop: 4 }}>
+                        {a.notes ?? "—"}
+                      </div>
+                    </div>
+                    <Badge tone={tone}>
+                      {new Date(a.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </Badge>
+                  </Link>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -111,7 +175,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="dt-card" style={{ padding: "18px 22px" }}>
-            <div className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}>Candidate Pipeline</div>
+            <div className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}>Hiring Pipeline</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
               {PIPELINE.map((p) => (
                 <div key={p.stage} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -128,8 +192,8 @@ export default function DashboardPage() {
       <div className="dt-card">
         <div className="dt-card-head">
           <div>
-            <h3>Top Clients · YTD</h3>
-            <div className="sub">By billed revenue · 2026</div>
+            <h3>Active Clients</h3>
+            <div className="sub">Headcount, hours, and weekly billing</div>
           </div>
           <Link href="/roster" className="dt-btn dt-btn-ghost tiny">View roster →</Link>
         </div>
@@ -138,18 +202,42 @@ export default function DashboardPage() {
             <thead>
               <tr>
                 <th style={{ paddingLeft: 22 }}>Client</th>
-                <th>Active Placements</th>
-                <th style={{ textAlign: "right" }}>YTD Billed</th>
-                <th style={{ textAlign: "right", paddingRight: 22 }}>Trend</th>
+                <th>Headcount</th>
+                <th>Placements</th>
+                <th>Missed (Wk)</th>
+                <th>Hours / Wk</th>
+                <th style={{ textAlign: "right", paddingRight: 22 }}>Est. Weekly Billing</th>
               </tr>
             </thead>
             <tbody>
-              {CLIENTS.map((c) => (
-                <tr key={c.name}>
-                  <td style={{ paddingLeft: 22, fontWeight: 400 }}>{c.name}</td>
-                  <td className="tab-num">{c.placements}</td>
-                  <td className="tab-num" style={{ textAlign: "right", fontWeight: 400 }}>{c.ytd}</td>
-                  <td className="tab-num" style={{ textAlign: "right", paddingRight: 22, color: c.trend.startsWith("−") ? "var(--dt-danger)" : "var(--dt-success)" }}>{c.trend}</td>
+              {clientStats.map((s) => (
+                <tr key={s.client.id}>
+                  <td style={{ paddingLeft: 22 }}>
+                    <div style={{ fontWeight: 400 }}>{s.client.name}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3, letterSpacing: "0.06em" }}>
+                      {s.client.city} · {s.client.industry}
+                    </div>
+                  </td>
+                  <td className="tab-num">{s.headcount}</td>
+                  <td className="tab-num">{s.placements}</td>
+                  <td
+                    className="tab-num"
+                    style={{
+                      color:
+                        s.missed >= 4
+                          ? "var(--dt-danger)"
+                          : s.missed >= 1
+                          ? "var(--dt-warning)"
+                          : "var(--dt-success)",
+                      fontWeight: 400,
+                    }}
+                  >
+                    {s.missed}
+                  </td>
+                  <td className="tab-num">{s.weeklyHours}</td>
+                  <td className="tab-num" style={{ textAlign: "right", paddingRight: 22, fontWeight: 400 }}>
+                    ${fmt$(s.weeklyBilling)}
+                  </td>
                 </tr>
               ))}
             </tbody>

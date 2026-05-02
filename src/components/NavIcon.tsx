@@ -6,7 +6,9 @@ export type IconName =
   | "file"
   | "check"
   | "chart"
-  | "building";
+  | "building"
+  | "calendar"
+  | "clipboard";
 
 export function NavIcon({ name }: { name: IconName }) {
   const props = {
@@ -78,6 +80,24 @@ export function NavIcon({ name }: { name: IconName }) {
         <svg {...props}>
           <rect x="4" y="3" width="16" height="18" rx="1" />
           <path d="M9 8h2M13 8h2M9 12h2M13 12h2M9 16h2M13 16h2" />
+        </svg>
+      );
+    case "calendar":
+      return (
+        <svg {...props}>
+          <rect x="3" y="5" width="18" height="16" rx="1.5" />
+          <path d="M3 9h18M8 3v4M16 3v4" />
+          <circle cx="8" cy="14" r="0.6" fill="currentColor" />
+          <circle cx="12" cy="14" r="0.6" fill="currentColor" />
+          <circle cx="16" cy="14" r="0.6" fill="currentColor" />
+        </svg>
+      );
+    case "clipboard":
+      return (
+        <svg {...props}>
+          <rect x="5" y="4" width="14" height="17" rx="1.5" />
+          <rect x="9" y="2.5" width="6" height="3.5" rx="1" />
+          <path d="M9 11h6M9 14h6M9 17h4" />
         </svg>
       );
     default:
