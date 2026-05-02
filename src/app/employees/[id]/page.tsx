@@ -8,8 +8,11 @@ import {
   EMPLOYEES,
   getClient,
   bandColor,
+  countAttendance,
+  weightedAttendancePct,
   type AttendanceEntry,
 } from "@/lib/data";
+import { PerformanceBadge } from "@/components/PerformanceBadge";
 
 export function generateStaticParams() {
   return EMPLOYEES.map((e) => ({ id: e.id }));
@@ -41,15 +44,11 @@ export default async function EmployeeDetailPage({
   if (!employee) notFound();
 
   const c = bandColor(employee.band);
-  const presentCount = employee.attendance.filter(
-    (a) => a.status === "present"
-  ).length;
-  const missedCount = employee.attendance.filter(
-    (a) => a.status === "missed" || a.status === "no-show"
-  ).length;
-  const noShowCount = employee.attendance.filter(
-    (a) => a.status === "no-show"
-  ).length;
+  const totals = countAttendance(employee.attendance);
+  const presentCount = totals.present;
+  const missedCount = totals.missed + totals.noShow;
+  const noShowCount = totals.noShow;
+  const overallAttendancePct = weightedAttendancePct(employee.attendance);
 
   const checklistDone = employee.onboarding.checklist.filter((t) => t.done).length;
   const docsDone = employee.onboarding.documents.filter((d) => d.received).length;
@@ -365,14 +364,23 @@ export default async function EmployeeDetailPage({
             </div>
           </div>
 
-          {/* Recent attendance */}
+          {/* 30-day attendance */}
           <div className="dt-card">
             <div className="dt-card-head">
               <div>
-                <h3>Recent Attendance · 5 Days</h3>
-                <div className="sub">Apr 27 — May 1, 2026 · grouped by client</div>
+                <h3>Attendance · Last 30 Days</h3>
+                <div className="sub">
+                  Weighted rate{" "}
+                  {employee.attendance.length === 0 ? "—" : `${overallAttendancePct}%`}
+                  {" · "}
+                  present + 0.5×late · grouped by client site
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <PerformanceBadge
+                  score={employee.score}
+                  missedDays={missedCount}
+                />
                 <Badge tone="green">{presentCount} present</Badge>
                 {missedCount > 0 && (
                   <Badge tone="red">
@@ -401,8 +409,15 @@ export default async function EmployeeDetailPage({
               ) : (
                 Array.from(byClient.entries()).map(([clientId, entries]) => {
                   const client = getClient(clientId as ReturnType<typeof getClient>["id"]);
+                  const clientPct = weightedAttendancePct(entries);
+                  const clientRate =
+                    clientPct >= 95
+                      ? "var(--dt-success)"
+                      : clientPct >= 85
+                      ? "var(--dt-gold-deep)"
+                      : "var(--dt-danger)";
                   return (
-                    <div key={clientId} style={{ marginBottom: 16 }}>
+                    <div key={clientId} style={{ marginBottom: 22 }}>
                       <div
                         style={{
                           display: "flex",
@@ -424,13 +439,31 @@ export default async function EmployeeDetailPage({
                         </div>
                         <div
                           style={{
-                            fontSize: 10.5,
-                            color: "var(--dt-warm-500)",
-                            letterSpacing: "0.14em",
-                            textTransform: "uppercase",
+                            display: "flex",
+                            gap: 10,
+                            alignItems: "baseline",
                           }}
                         >
-                          {entries.length} shifts logged
+                          <span
+                            className="tab-num"
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 400,
+                              color: clientRate,
+                            }}
+                          >
+                            {clientPct}%
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              color: "var(--dt-warm-500)",
+                              letterSpacing: "0.14em",
+                              textTransform: "uppercase",
+                            }}
+                          >
+                            {entries.length} shifts
+                          </span>
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

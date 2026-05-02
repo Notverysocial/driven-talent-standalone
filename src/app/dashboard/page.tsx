@@ -72,7 +72,7 @@ export default function DashboardPage() {
   const KPIS = [
     { label: "Active Employees", value: String(totalEmployees), sub: `${totalPlacements} placements`, accent: "var(--dt-black)" },
     { label: "Avg Score", value: avgScore.toFixed(1), sub: `${greenCount} green · ${redCount} red`, accent: "var(--dt-gold-deep)" },
-    { label: "Missed Days · Wk", value: String(totalMissed), sub: "across all clients", accent: totalMissed > 10 ? "var(--dt-danger)" : "var(--dt-warning)" },
+    { label: "Missed Days · 30d", value: String(totalMissed), sub: "across all clients", accent: totalMissed > 30 ? "var(--dt-danger)" : "var(--dt-warning)" },
     { label: "Onboarding", value: String(onboardingCount), sub: "this month", accent: "#C28B1E" },
   ];
 

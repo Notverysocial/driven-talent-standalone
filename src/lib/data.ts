@@ -576,6 +576,217 @@ export const EMPLOYEES: Employee[] = [
   },
 ];
 
+// ---------- 30-day attendance backfill ----------
+// The hand-crafted `attendance` arrays above hold the most recent 5 days
+// (Apr 27 – May 1, 2026). For accurate 30-day rollups we extend each active
+// employee's history backward 25 more days using a deterministic FNV-1a
+// hash of (id, dayIndex). This stays stable across builds with no RNG.
+
+const REFERENCE_DATE = new Date("2026-05-02T00:00:00Z");
+
+function fnv1a(str: string, salt: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= salt;
+  h = Math.imul(h, 16777619);
+  return Math.abs(h);
+}
+
+function isoDay(offsetFromReference: number): string {
+  const d = new Date(REFERENCE_DATE);
+  d.setUTCDate(d.getUTCDate() - offsetFromReference);
+  return d.toISOString().slice(0, 10);
+}
+
+function generateStatus(
+  emp: Employee,
+  dayIndex: number,
+): AttendanceEntry["status"] {
+  const r = fnv1a(emp.id, dayIndex) % 100;
+  // Higher score = smaller miss budget. Score 100 → 0; score 60 → ~7.
+  const missBudget = Math.max(0, Math.round((100 - emp.score) / 6));
+  const slot = (dayIndex + fnv1a(emp.id, 99)) % 30;
+  if (slot < missBudget) {
+    const flavor = fnv1a(emp.id, dayIndex + 7) % 10;
+    if (flavor < 2) return "excused";
+    if (flavor < 5) return "late";
+    return "missed";
+  }
+  if (r < 4) return "late";
+  return "present";
+}
+
+function pickClientForGenerated(emp: Employee, dayIndex: number): ClientId {
+  if (emp.assignments.length === 1) return emp.assignments[0].client;
+  const idx = fnv1a(emp.id, dayIndex + 31) % emp.assignments.length;
+  return emp.assignments[idx].client;
+}
+
+function extendAttendance(emp: Employee): AttendanceEntry[] {
+  // Onboarding employees have no floor history.
+  if (emp.status === "onboarding") return emp.attendance;
+
+  const handByDate = new Map(emp.attendance.map((a) => [a.date, a]));
+  const out: AttendanceEntry[] = [];
+  // i=1 is yesterday (Apr 30); i=30 is 30 days back.
+  for (let i = 1; i <= 30; i++) {
+    const date = isoDay(i);
+    const hand = handByDate.get(date);
+    if (hand) {
+      out.push(hand);
+    } else {
+      out.push({
+        date,
+        client: pickClientForGenerated(emp, i),
+        status: generateStatus(emp, i),
+      });
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Mutate in place so all consumers see the full 30-day window without
+// changing import paths or breaking the hand-crafted recent days.
+for (const emp of EMPLOYEES) {
+  emp.attendance = extendAttendance(emp);
+}
+
+// ---------- 15-step onboarding template (from operator playbook) ----------
+
+export type OnboardingCategory =
+  | "Documentation"
+  | "Compliance"
+  | "Training"
+  | "Equipment"
+  | "Review";
+
+export type StandardChecklistItem = {
+  id: string;
+  label: string;
+  detail: string;
+  category: OnboardingCategory;
+};
+
+export const STANDARD_CHECKLIST: StandardChecklistItem[] = [
+  { id: "i9", label: "Form I-9 — Employment Eligibility", detail: "Verify identity & work authorization within 3 days of hire", category: "Compliance" },
+  { id: "w4", label: "Form W-4 — Tax Withholding", detail: "Federal & California state tax election", category: "Documentation" },
+  { id: "directdeposit", label: "Direct Deposit Authorization", detail: "Bank routing & account on file", category: "Documentation" },
+  { id: "background", label: "Background Check Cleared", detail: "7-year criminal + employment verification", category: "Compliance" },
+  { id: "drug", label: "Drug Screen — 5-Panel", detail: "Required for warehouse + driving positions", category: "Compliance" },
+  { id: "handbook", label: "Employee Handbook Acknowledged", detail: "Signed receipt of policies & code of conduct", category: "Documentation" },
+  { id: "safety", label: "OSHA-10 Safety Training", detail: "10-hour general industry certification", category: "Training" },
+  { id: "forklift", label: "Forklift Certification (if applicable)", detail: "Powered industrial truck operator license", category: "Training" },
+  { id: "siteorientation", label: "Client Site Orientation", detail: "Walkthrough at assigned client facility", category: "Training" },
+  { id: "ppe", label: "PPE Issued", detail: "Hi-vis vest, steel-toe boots, hard hat, gloves", category: "Equipment" },
+  { id: "badge", label: "Site Badge & Access Credentials", detail: "Photo ID, badge, parking permit", category: "Equipment" },
+  { id: "uniform", label: "Uniform Sizing & Issuance", detail: "2 sets minimum, branded with Driven Talent", category: "Equipment" },
+  { id: "day1", label: "Day-1 Check-In Call", detail: "Driven Talent rep confirms first-day arrival", category: "Review" },
+  { id: "day7", label: "7-Day Review", detail: "Coordinator + supervisor sync on early performance", category: "Review" },
+  { id: "day30", label: "30-Day Review", detail: "Formal performance check + scoring entry", category: "Review" },
+];
+
+export const STANDARD_CHECKLIST_BY_CATEGORY: Record<
+  OnboardingCategory,
+  StandardChecklistItem[]
+> = {
+  Documentation: STANDARD_CHECKLIST.filter((i) => i.category === "Documentation"),
+  Compliance: STANDARD_CHECKLIST.filter((i) => i.category === "Compliance"),
+  Training: STANDARD_CHECKLIST.filter((i) => i.category === "Training"),
+  Equipment: STANDARD_CHECKLIST.filter((i) => i.category === "Equipment"),
+  Review: STANDARD_CHECKLIST.filter((i) => i.category === "Review"),
+};
+
+// Maps each onboarding employee to which 15-step items are already cleared.
+// The existing 7-step `onboarding.checklist` field stays as the "legacy" view.
+export const STANDARD_PROGRESS: Record<string, string[]> = {
+  "e-013": ["i9", "w4", "directdeposit", "background", "drug", "handbook", "forklift"],
+  "e-018": ["i9", "w4", "directdeposit"],
+};
+
+// ---------- attendance helpers (weighted scoring) ----------
+
+export type AttendanceCounts = {
+  present: number;
+  late: number;
+  missed: number;
+  noShow: number;
+  excused: number;
+  total: number;
+};
+
+export function countAttendance(records: AttendanceEntry[]): AttendanceCounts {
+  let present = 0,
+    late = 0,
+    missed = 0,
+    noShow = 0,
+    excused = 0;
+  for (const r of records) {
+    if (r.status === "present") present++;
+    else if (r.status === "late") late++;
+    else if (r.status === "missed") missed++;
+    else if (r.status === "no-show") noShow++;
+    else if (r.status === "excused") excused++;
+  }
+  return {
+    present,
+    late,
+    missed,
+    noShow,
+    excused,
+    total: present + late + missed + noShow + excused,
+  };
+}
+
+// Weighted attendance % per Branch 3 formula:
+//   (present + 0.5 × late) / scoreable * 100
+// Excused days are excluded from the denominator (protected leave doesn't count).
+export function weightedAttendancePct(records: AttendanceEntry[]): number {
+  const c = countAttendance(records);
+  const scoreable = c.present + c.late + c.missed + c.noShow;
+  if (scoreable === 0) return 0;
+  return Math.round(((c.present + c.late * 0.5) / scoreable) * 1000) / 10;
+}
+
+export function lastNDays(
+  records: AttendanceEntry[],
+  n: number,
+): AttendanceEntry[] {
+  return [...records]
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, n);
+}
+
+// ---------- performance tier (combines score + recent attendance) ----------
+
+export type PerformanceTier = "green" | "yellow" | "red";
+
+export const TIER_LABEL: Record<PerformanceTier, string> = {
+  green: "On Track",
+  yellow: "Watch",
+  red: "At Risk",
+};
+
+export function performanceTier(
+  score: number,
+  missedDays: number,
+): PerformanceTier {
+  if (score === 0) return "yellow"; // onboarding
+  if (score >= 85 && missedDays <= 1) return "green";
+  if (score < 65 || missedDays >= 4) return "red";
+  return "yellow";
+}
+
+export function statusLabel(s: AttendanceEntry["status"]): string {
+  if (s === "present") return "Present";
+  if (s === "late") return "Late";
+  if (s === "missed") return "Missed";
+  if (s === "no-show") return "No-Show";
+  return "Excused";
+}
+
 // ---------- selectors ----------
 
 export function getClient(id: ClientId): Client {

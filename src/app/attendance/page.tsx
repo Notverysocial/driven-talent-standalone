@@ -6,6 +6,7 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { PerformanceBadge } from "@/components/PerformanceBadge";
 import {
   CLIENTS,
   POSITIONS,
@@ -13,10 +14,15 @@ import {
   SHIFTS,
   EMPLOYEES,
   getClient,
+  weightedAttendancePct,
+  countAttendance,
+  lastNDays,
+  statusLabel,
   type ClientId,
   type Position,
   type Department,
   type Shift,
+  type AttendanceEntry,
 } from "@/lib/data";
 
 type Filter = {
@@ -39,27 +45,28 @@ type AttendanceRow = {
   late: number;
   present: number;
   total: number;
-  attendanceRate: number; // 0-100
-  lastIncident?: { date: string; status: string; notes?: string };
+  attendanceRate: number;
+  lastIncident?: AttendanceEntry;
 };
 
-function buildRows(): AttendanceRow[] {
+function buildRows(
+  log: Record<string, AttendanceEntry[]>,
+): AttendanceRow[] {
   const rows: AttendanceRow[] = [];
   for (const e of EMPLOYEES) {
+    const extras = log[e.id] ?? [];
+    // Build by-date map so manually-logged entries override historical ones
+    // for the same (employee, date) pair.
+    const byDate = new Map<string, AttendanceEntry>();
+    for (const a of e.attendance) byDate.set(a.date, a);
+    for (const a of extras) byDate.set(a.date, a);
+    const merged = Array.from(byDate.values());
     for (const a of e.assignments) {
-      const recs = e.attendance.filter((x) => x.client === a.client);
-      const present = recs.filter((x) => x.status === "present").length;
-      const late = recs.filter((x) => x.status === "late").length;
-      const missed = recs.filter(
-        (x) => x.status === "missed" || x.status === "no-show"
-      ).length;
-      const noShows = recs.filter((x) => x.status === "no-show").length;
-      const total = recs.length;
-      const attendanceRate =
-        total === 0 ? 0 : Math.round(((present + late) / total) * 100);
+      const recs = merged.filter((x) => x.client === a.client);
+      const c = countAttendance(recs);
       const incidents = recs
         .filter((x) => x.status !== "present")
-        .sort((a, b) => (a.date < b.date ? 1 : -1));
+        .sort((x, y) => (x.date < y.date ? 1 : -1));
       rows.push({
         employeeId: e.id,
         name: e.name,
@@ -68,12 +75,12 @@ function buildRows(): AttendanceRow[] {
         department: a.department,
         shift: a.shift,
         rate: a.rate,
-        missed,
-        noShows,
-        late,
-        present,
-        total,
-        attendanceRate,
+        missed: c.missed + c.noShow,
+        noShows: c.noShow,
+        late: c.late,
+        present: c.present,
+        total: c.total,
+        attendanceRate: weightedAttendancePct(recs),
         lastIncident: incidents[0],
       });
     }
@@ -117,10 +124,35 @@ const INITIAL: Filter = {
   shift: "all",
 };
 
+const STATUS_TONE: Record<
+  AttendanceEntry["status"],
+  { color: string; bg: string; border: string }
+> = {
+  present: { color: "var(--dt-success)", bg: "var(--dt-success-bg)", border: "#BFD3A6" },
+  late: { color: "var(--dt-warning)", bg: "var(--dt-warning-bg)", border: "#E6C887" },
+  excused: { color: "rgba(26,26,26,0.65)", bg: "var(--dt-warm-100)", border: "var(--dt-warm-200)" },
+  missed: { color: "var(--dt-danger)", bg: "var(--dt-danger-bg)", border: "#D9A6A6" },
+  "no-show": { color: "var(--dt-danger)", bg: "var(--dt-danger-bg)", border: "#D9A6A6" },
+};
+
 export default function AttendancePage() {
   const [f, setF] = useState<Filter>(INITIAL);
+  const [logged, setLogged] = useState<Record<string, AttendanceEntry[]>>({});
+  const [selectedId, setSelectedId] = useState<string>(EMPLOYEES[0].id);
+  const [logDate, setLogDate] = useState<string>("2026-05-02");
+  const [logStatus, setLogStatus] =
+    useState<AttendanceEntry["status"]>("missed");
+  const [logClient, setLogClient] = useState<ClientId>(
+    EMPLOYEES[0].assignments[0].client,
+  );
+  const [logNotes, setLogNotes] = useState<string>("");
 
-  const allRows = useMemo(() => buildRows(), []);
+  const selected = useMemo(
+    () => EMPLOYEES.find((e) => e.id === selectedId) ?? EMPLOYEES[0],
+    [selectedId],
+  );
+
+  const allRows = useMemo(() => buildRows(logged), [logged]);
 
   const rows = useMemo(() => {
     return allRows.filter((r) => {
@@ -132,26 +164,27 @@ export default function AttendancePage() {
     });
   }, [allRows, f]);
 
-  // Sort: most missed first
   const sorted = useMemo(
     () =>
       [...rows].sort(
         (a, b) =>
-          b.noShows - a.noShows || b.missed - a.missed || a.name.localeCompare(b.name)
+          b.noShows - a.noShows ||
+          b.missed - a.missed ||
+          a.name.localeCompare(b.name),
       ),
-    [rows]
+    [rows],
   );
 
   const totalMissed = sorted.reduce((s, r) => s + r.missed, 0);
   const totalNoShows = sorted.reduce((s, r) => s + r.noShows, 0);
-  const avgRate = sorted.length
+  const scoreableForAvg = sorted.filter((r) => r.total > 0);
+  const avgRate = scoreableForAvg.length
     ? Math.round(
-        sorted.reduce((s, r) => s + r.attendanceRate, 0) / sorted.length
+        scoreableForAvg.reduce((s, r) => s + r.attendanceRate, 0) /
+          scoreableForAvg.length,
       )
     : 0;
 
-  // Build a human-readable narrative of the active filter, like:
-  //   "Inventory Control at Fafixon · 1st (6a–2p)"
   const headline = useMemo(() => {
     const bits: string[] = [];
     if (f.position !== "all") bits.push(f.position);
@@ -165,6 +198,60 @@ export default function AttendancePage() {
     return bits.join(" ");
   }, [f]);
 
+  // Selected employee's merged history (real + logged)
+  const selectedAll = useMemo(() => {
+    const extras = logged[selected.id] ?? [];
+    const byDate = new Map<string, AttendanceEntry>();
+    for (const a of selected.attendance) byDate.set(a.date, a);
+    for (const a of extras) byDate.set(a.date, a);
+    return Array.from(byDate.values());
+  }, [selected, logged]);
+
+  const selectedCounts = useMemo(
+    () => countAttendance(selectedAll),
+    [selectedAll],
+  );
+  const selectedPct = useMemo(
+    () => weightedAttendancePct(selectedAll),
+    [selectedAll],
+  );
+  const selectedHistory = useMemo(
+    () => lastNDays(selectedAll, 14).reverse(),
+    [selectedAll],
+  );
+
+  const filtersActive =
+    f.client !== "all" ||
+    f.position !== "all" ||
+    f.department !== "all" ||
+    f.shift !== "all";
+
+  const logEntry = () => {
+    if (!logDate) return;
+    setLogged((prev) => {
+      const list = (prev[selected.id] ?? []).filter(
+        (r) => !(r.date === logDate && r.client === logClient),
+      );
+      list.push({
+        date: logDate,
+        client: logClient,
+        status: logStatus,
+        notes: logNotes.trim() || undefined,
+      });
+      return { ...prev, [selected.id]: list };
+    });
+    setLogNotes("");
+  };
+
+  // Keep client choice valid when switching employees
+  const ensureValidClient = (empId: string) => {
+    setSelectedId(empId);
+    const next = EMPLOYEES.find((e) => e.id === empId);
+    if (next && !next.assignments.some((a) => a.client === logClient)) {
+      setLogClient(next.assignments[0].client);
+    }
+  };
+
   return (
     <Shell>
       <Topbar
@@ -173,14 +260,323 @@ export default function AttendancePage() {
         title="Reports"
         actions={
           <>
-            <button className="dt-btn">Export Report</button>
-            <button className="dt-btn">Log Incident</button>
+            <Link href="/roster" className="dt-btn">
+              Back to Roster
+            </Link>
             <button className="dt-btn dt-btn-gold">
-              <span>Mark Today</span>
+              <span>Export Report</span>
             </button>
           </>
         }
       />
+
+      {/* Log entry + selected snapshot */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr)",
+          gap: 22,
+          marginBottom: 22,
+        }}
+        className="dt-overview-grid"
+      >
+        <div className="dt-card gold-edge">
+          <div className="dt-card-head">
+            <div>
+              <h3>Log a Missed Day</h3>
+              <div className="sub">
+                Records an attendance event for one employee at one client site
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: "20px 26px 22px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
+                gap: 14,
+                marginBottom: 14,
+              }}
+            >
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.32em",
+                    textTransform: "uppercase",
+                    color: "rgba(26,26,26,0.5)",
+                    fontWeight: 400,
+                    paddingLeft: "0.32em",
+                  }}
+                >
+                  Employee
+                </span>
+                <select
+                  value={selectedId}
+                  onChange={(e) => ensureValidClient(e.target.value)}
+                  className="dt-filter-input"
+                >
+                  {EMPLOYEES.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} — {e.assignments.map((a) => getClient(a.client).name).join(" + ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.32em",
+                    textTransform: "uppercase",
+                    color: "rgba(26,26,26,0.5)",
+                    fontWeight: 400,
+                    paddingLeft: "0.32em",
+                  }}
+                >
+                  Client Site
+                </span>
+                <select
+                  value={logClient}
+                  onChange={(e) => setLogClient(e.target.value as ClientId)}
+                  className="dt-filter-input"
+                >
+                  {selected.assignments.map((a) => (
+                    <option key={a.client} value={a.client}>
+                      {getClient(a.client).name} · {a.shift}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                gap: 14,
+                marginBottom: 14,
+              }}
+            >
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.32em",
+                    textTransform: "uppercase",
+                    color: "rgba(26,26,26,0.5)",
+                    fontWeight: 400,
+                    paddingLeft: "0.32em",
+                  }}
+                >
+                  Date
+                </span>
+                <input
+                  type="date"
+                  value={logDate}
+                  onChange={(e) => setLogDate(e.target.value)}
+                  className="dt-filter-input"
+                />
+              </label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <span
+                  style={{
+                    fontSize: 9,
+                    letterSpacing: "0.32em",
+                    textTransform: "uppercase",
+                    color: "rgba(26,26,26,0.5)",
+                    fontWeight: 400,
+                    paddingLeft: "0.32em",
+                  }}
+                >
+                  Status
+                </span>
+                <select
+                  value={logStatus}
+                  onChange={(e) =>
+                    setLogStatus(e.target.value as AttendanceEntry["status"])
+                  }
+                  className="dt-filter-input"
+                >
+                  <option value="missed">Missed</option>
+                  <option value="no-show">No-Show (NCNS)</option>
+                  <option value="late">Late</option>
+                  <option value="excused">Excused</option>
+                  <option value="present">Present</option>
+                </select>
+              </label>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <span
+                style={{
+                  fontSize: 9,
+                  letterSpacing: "0.32em",
+                  textTransform: "uppercase",
+                  color: "rgba(26,26,26,0.5)",
+                  fontWeight: 400,
+                  paddingLeft: "0.32em",
+                }}
+              >
+                Notes (optional)
+              </span>
+              <input
+                type="text"
+                value={logNotes}
+                onChange={(e) => setLogNotes(e.target.value)}
+                placeholder="e.g. called out sick, doctor's note received"
+                className="dt-filter-input"
+              />
+            </label>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                marginTop: 16,
+                justifyContent: "flex-end",
+              }}
+            >
+              <button onClick={logEntry} className="dt-btn dt-btn-gold">
+                <span>Save Entry</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="dt-card">
+          <div className="dt-card-head">
+            <div>
+              <h3>{selected.name}</h3>
+              <div className="sub">
+                {selected.assignments
+                  .map(
+                    (a) =>
+                      `${getClient(a.client).name} · ${a.position} · ${a.shift}`,
+                  )
+                  .join(" + ")}
+              </div>
+            </div>
+            <PerformanceBadge
+              score={selected.score}
+              missedDays={selectedCounts.missed + selectedCounts.noShow}
+            />
+          </div>
+          <div style={{ padding: "18px 26px 22px" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 22,
+                flexWrap: "wrap",
+                marginBottom: 16,
+              }}
+            >
+              <SnapshotStat
+                label="30d Rate"
+                value={selectedAll.length === 0 ? "—" : `${selectedPct}%`}
+                accent="var(--dt-success)"
+              />
+              <SnapshotStat
+                label="Missed"
+                value={String(
+                  selectedCounts.missed + selectedCounts.noShow,
+                )}
+                accent="var(--dt-danger)"
+              />
+              <SnapshotStat
+                label="Late"
+                value={String(selectedCounts.late)}
+                accent="var(--dt-warning)"
+              />
+              <SnapshotStat
+                label="Excused"
+                value={String(selectedCounts.excused)}
+              />
+            </div>
+            <div
+              style={{
+                fontSize: 9.5,
+                letterSpacing: "0.28em",
+                textTransform: "uppercase",
+                color: "var(--dt-warm-500)",
+                fontWeight: 400,
+                paddingLeft: "0.28em",
+                marginBottom: 8,
+              }}
+            >
+              Last 14 Days
+            </div>
+            {selectedHistory.length === 0 ? (
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "var(--dt-warm-500)",
+                  fontStyle: "italic",
+                  padding: "8px 0",
+                }}
+              >
+                No history yet — employee is{" "}
+                {selected.status === "onboarding"
+                  ? "still onboarding."
+                  : "newly placed."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {selectedHistory.map((r) => {
+                  const t = STATUS_TONE[r.status];
+                  return (
+                    <div
+                      key={`${r.date}-${r.client}`}
+                      title={`${r.date} · ${getClient(r.client).name} · ${statusLabel(r.status)}${r.notes ? " · " + r.notes : ""}`}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 3,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: 8.5,
+                          color: "var(--dt-warm-500)",
+                          letterSpacing: "0.12em",
+                        }}
+                      >
+                        {new Date(r.date)
+                          .toLocaleDateString("en-US", {
+                            month: "numeric",
+                            day: "numeric",
+                          })
+                          .replace("/", "·")}
+                      </div>
+                      <div
+                        style={{
+                          width: 22,
+                          height: 22,
+                          background: t.bg,
+                          color: t.color,
+                          border: `1px solid ${t.border}`,
+                          display: "grid",
+                          placeItems: "center",
+                          fontSize: 10,
+                          fontWeight: 400,
+                        }}
+                      >
+                        {r.status === "present"
+                          ? "✓"
+                          : r.status === "late"
+                          ? "L"
+                          : r.status === "excused"
+                          ? "E"
+                          : r.status === "no-show"
+                          ? "✗"
+                          : "M"}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* Filters */}
       <div
@@ -228,7 +624,11 @@ export default function AttendancePage() {
             type="button"
             className="dt-btn dt-btn-ghost tiny"
             onClick={() => setF(INITIAL)}
-            style={{ alignSelf: "end" }}
+            style={{
+              alignSelf: "end",
+              opacity: filtersActive ? 1 : 0.4,
+              pointerEvents: filtersActive ? "auto" : "none",
+            }}
           >
             Reset
           </button>
@@ -278,30 +678,30 @@ export default function AttendancePage() {
               marginTop: 6,
             }}
           >
-            5-day window · {sorted.length} placements · Apr 27 — May 1, 2026
+            30-day window · {sorted.length} placements
           </div>
         </div>
-        <Stat
+        <ReportStat
           label="Total Missed"
           value={String(totalMissed)}
           accent={
-            totalMissed > 5
+            totalMissed > 15
               ? "var(--dt-danger)"
-              : totalMissed > 0
+              : totalMissed > 5
               ? "var(--dt-warning)"
               : "var(--dt-success)"
           }
-          sub="days"
+          sub="days across filter"
         />
-        <Stat
+        <ReportStat
           label="No Call / No Show"
           value={String(totalNoShows)}
           accent={totalNoShows > 0 ? "var(--dt-danger)" : "var(--dt-success)"}
           sub={totalNoShows === 1 ? "incident" : "incidents"}
         />
-        <Stat
+        <ReportStat
           label="Show Rate"
-          value={`${avgRate}%`}
+          value={scoreableForAvg.length ? `${avgRate}%` : "—"}
           accent={
             avgRate >= 90
               ? "var(--dt-success)"
@@ -309,7 +709,7 @@ export default function AttendancePage() {
               ? "var(--dt-warning)"
               : "var(--dt-danger)"
           }
-          sub="across filter"
+          sub="weighted, last 30d"
         />
       </div>
 
@@ -384,9 +784,9 @@ export default function AttendancePage() {
                         textAlign: "center",
                         fontWeight: 400,
                         color:
-                          r.missed >= 3
+                          r.missed >= 5
                             ? "var(--dt-danger)"
-                            : r.missed >= 1
+                            : r.missed >= 2
                             ? "var(--dt-warning)"
                             : "var(--dt-warm-500)",
                         fontFamily: "var(--dt-mono)",
@@ -450,7 +850,7 @@ export default function AttendancePage() {
                           >
                             {new Date(r.lastIncident.date).toLocaleDateString(
                               "en-US",
-                              { month: "short", day: "numeric" }
+                              { month: "short", day: "numeric" },
                             )}
                           </span>
                           {" · "}
@@ -485,10 +885,24 @@ export default function AttendancePage() {
                       textAlign: "center",
                       padding: "48px 22px",
                       color: "var(--dt-warm-500)",
-                      fontStyle: "italic",
                     }}
                   >
-                    No rows match these filters.
+                    No rows match these filters.{" "}
+                    <button
+                      type="button"
+                      onClick={() => setF(INITIAL)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--dt-gold-deep)",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: "inherit",
+                        padding: 0,
+                      }}
+                    >
+                      Reset →
+                    </button>
                   </td>
                 </tr>
               )}
@@ -500,7 +914,46 @@ export default function AttendancePage() {
   );
 }
 
-function Stat({
+function SnapshotStat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent?: string;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 9.5,
+          letterSpacing: "0.28em",
+          textTransform: "uppercase",
+          color: "var(--dt-warm-500)",
+          fontWeight: 400,
+          paddingLeft: "0.28em",
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className="tab-num"
+        style={{
+          fontFamily: "var(--dt-display)",
+          fontSize: 26,
+          fontWeight: 300,
+          marginTop: 6,
+          color: accent || "var(--dt-black)",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function ReportStat({
   label,
   value,
   accent,

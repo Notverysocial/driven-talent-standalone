@@ -13,6 +13,7 @@ import {
   SHIFTS,
   flattenRoster,
   bandColor,
+  weightedAttendancePct,
   type ClientId,
   type Position,
   type Department,
@@ -130,10 +131,26 @@ function Stat({
   );
 }
 
+function attRateColor(pct: number): string {
+  if (pct >= 95) return "var(--dt-success)";
+  if (pct >= 85) return "var(--dt-gold-deep)";
+  if (pct >= 70) return "#C28B1E";
+  return "var(--dt-danger)";
+}
+
 export default function RosterPage() {
   const [f, setF] = useState<FilterState>(INITIAL);
 
-  const allRows = useMemo(() => flattenRoster(), []);
+  const allRows = useMemo(() => {
+    return flattenRoster().map((r) => {
+      const recs = r.attendance.filter((x) => x.client === r.assignment.client);
+      return {
+        ...r,
+        attendancePct: weightedAttendancePct(recs),
+        attendanceTotal: recs.length,
+      };
+    });
+  }, []);
 
   const rows = useMemo(() => {
     const q = f.search.trim().toLowerCase();
@@ -158,10 +175,31 @@ export default function RosterPage() {
   );
 
   const totalEmployees = new Set(allRows.map((r) => r.id)).size;
-  const greenCount = allRows.filter((r) => r.band === "green").length;
-  const yellowCount = allRows.filter((r) => r.band === "yellow").length;
-  const redCount = allRows.filter((r) => r.band === "red").length;
-  const onboardingCount = allRows.filter((r) => r.status === "onboarding").length;
+  const filtersActive =
+    f.search.trim() !== "" ||
+    f.client !== "all" ||
+    f.position !== "all" ||
+    f.department !== "all" ||
+    f.shift !== "all" ||
+    f.band !== "all";
+  const reset = () => setF(INITIAL);
+
+  // Branch 3 KPI strip — recomputes from filtered set.
+  const showingCount = sorted.length;
+  const placedCount = sorted.filter(
+    (r) => r.status === "active" || r.status === "onboarding"
+  ).length;
+  const scoreableForAvg = sorted.filter((r) => r.attendanceTotal > 0);
+  const avgAttendance = scoreableForAvg.length
+    ? Math.round(
+        (scoreableForAvg.reduce((s, r) => s + r.attendancePct, 0) /
+          scoreableForAvg.length) *
+          10
+      ) / 10
+    : 0;
+  const flagged = sorted.filter(
+    (r) => r.attendanceTotal > 0 && r.attendancePct < 85
+  ).length;
 
   return (
     <Shell>
@@ -179,6 +217,7 @@ export default function RosterPage() {
         }
       />
 
+      {/* Filtered KPI strip — recomputes live */}
       <div
         style={{
           display: "flex",
@@ -188,33 +227,26 @@ export default function RosterPage() {
         }}
       >
         <Stat
-          label="Active Employees"
-          value={String(totalEmployees)}
-          sub={`${allRows.length} placements`}
+          label="Showing"
+          value={String(showingCount)}
+          sub={`of ${allRows.length} placements`}
         />
         <Stat
-          label="Green"
-          value={String(greenCount)}
-          accent="var(--dt-success)"
-          sub="front of queue"
+          label="On Assignment"
+          value={String(placedCount)}
+          sub="active or onboarding"
         />
         <Stat
-          label="Yellow"
-          value={String(yellowCount)}
-          accent="var(--dt-warning)"
-          sub="watch list"
-        />
-        <Stat
-          label="Red"
-          value={String(redCount)}
-          accent="var(--dt-danger)"
-          sub="back of queue"
-        />
-        <Stat
-          label="Onboarding"
-          value={String(onboardingCount)}
+          label="Avg Attendance"
+          value={scoreableForAvg.length ? `${avgAttendance}%` : "—"}
           accent="var(--dt-gold-deep)"
-          sub="this month"
+          sub="trailing 30 days"
+        />
+        <Stat
+          label="Attendance Flags"
+          value={String(flagged)}
+          accent={flagged > 0 ? "var(--dt-warning)" : "var(--dt-black)"}
+          sub="below 85%"
         />
       </div>
 
@@ -314,8 +346,12 @@ export default function RosterPage() {
           <button
             type="button"
             className="dt-btn dt-btn-ghost tiny"
-            onClick={() => setF(INITIAL)}
-            style={{ alignSelf: "end" }}
+            onClick={reset}
+            style={{
+              alignSelf: "end",
+              opacity: filtersActive ? 1 : 0.4,
+              pointerEvents: filtersActive ? "auto" : "none",
+            }}
           >
             Reset filters
           </button>
@@ -343,10 +379,9 @@ export default function RosterPage() {
                 <th style={{ paddingLeft: 22 }}>Employee</th>
                 <th>Client</th>
                 <th>Position</th>
-                <th>Department</th>
                 <th>Shift</th>
                 <th>Score</th>
-                <th>Missed</th>
+                <th>Attendance · 30d</th>
                 <th style={{ textAlign: "right", paddingRight: 22 }}>Rate</th>
               </tr>
             </thead>
@@ -392,11 +427,15 @@ export default function RosterPage() {
                       <span style={{ fontWeight: 300 }}>
                         {r.assignment.position}
                       </span>
-                    </td>
-                    <td>
-                      <span style={{ color: "var(--dt-warm-700)" }}>
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          color: "var(--dt-warm-500)",
+                          marginTop: 3,
+                        }}
+                      >
                         {r.assignment.department}
-                      </span>
+                      </div>
                     </td>
                     <td>
                       <span
@@ -414,33 +453,55 @@ export default function RosterPage() {
                       <BandPill band={r.band} />
                     </td>
                     <td>
-                      <span
-                        className="tab-num"
-                        style={{
-                          fontWeight: 400,
-                          color:
-                            r.missedDays >= 3
-                              ? "var(--dt-danger)"
-                              : r.missedDays >= 1
-                              ? "var(--dt-warning)"
-                              : "var(--dt-warm-500)",
-                        }}
-                      >
-                        {r.missedDays}d
-                      </span>
-                      {r.noShows > 0 && (
+                      {r.attendanceTotal === 0 ? (
                         <span
                           style={{
-                            fontSize: 9.5,
+                            fontSize: 10.5,
                             letterSpacing: "0.16em",
                             textTransform: "uppercase",
-                            color: "var(--dt-danger)",
-                            marginLeft: 8,
-                            fontWeight: 400,
+                            color: "var(--dt-warm-500)",
                           }}
                         >
-                          {r.noShows} NO-SHOW
+                          No history
                         </span>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 130 }}>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                            <span
+                              className="tab-num"
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 400,
+                                color: attRateColor(r.attendancePct),
+                              }}
+                            >
+                              {r.attendancePct}%
+                            </span>
+                            {r.noShows > 0 && (
+                              <span
+                                style={{
+                                  fontSize: 9.5,
+                                  letterSpacing: "0.16em",
+                                  textTransform: "uppercase",
+                                  color: "var(--dt-danger)",
+                                  fontWeight: 400,
+                                }}
+                              >
+                                {r.noShows} NCNS
+                              </span>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 10.5,
+                              color: "var(--dt-warm-500)",
+                              letterSpacing: "0.04em",
+                            }}
+                          >
+                            <span className="tab-num">{r.missedDays}</span> missed ·{" "}
+                            <span className="tab-num">{r.attendanceTotal}</span>d
+                          </div>
+                        </div>
                       )}
                     </td>
                     <td
@@ -459,16 +520,31 @@ export default function RosterPage() {
               {sorted.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={7}
                     style={{
                       textAlign: "center",
                       padding: "48px 22px",
                       color: "var(--dt-warm-500)",
                       fontSize: 13,
-                      fontStyle: "italic",
                     }}
                   >
-                    No placements match these filters.
+                    No placements match these filters.{" "}
+                    <button
+                      type="button"
+                      onClick={reset}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--dt-gold-deep)",
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        fontSize: "inherit",
+                        padding: 0,
+                        marginLeft: 4,
+                      }}
+                    >
+                      Reset →
+                    </button>
                   </td>
                 </tr>
               )}
