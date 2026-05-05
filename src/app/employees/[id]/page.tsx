@@ -4,34 +4,25 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { getEmployeeProfile } from "@/lib/employees.server";
 import {
-  EMPLOYEES,
-  getClient,
+  attendanceColor,
   bandColor,
+  bandFromScore,
   countAttendance,
   weightedAttendancePct,
-  type AttendanceEntry,
-} from "@/lib/data";
-import { PerformanceBadge } from "@/components/PerformanceBadge";
+  ATTENDANCE_LABEL,
+  ATTENDANCE_DOT_COLOR,
+} from "@/lib/staffing";
+import type { OnboardingCategory } from "@/lib/supabase/types";
 
-export function generateStaticParams() {
-  return EMPLOYEES.map((e) => ({ id: e.id }));
+function fmtDate(d: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function pctDone(n: number, total: number) {
+function pct(n: number, total: number) {
   return total === 0 ? 0 : Math.round((n / total) * 100);
-}
-
-function attCellClass(s: AttendanceEntry["status"]) {
-  return `dt-att-cell ${s}`;
-}
-
-function attLabel(s: AttendanceEntry["status"]) {
-  if (s === "present") return "✓";
-  if (s === "late") return "L";
-  if (s === "missed") return "M";
-  if (s === "no-show") return "✗";
-  return "·";
 }
 
 export default async function EmployeeDetailPage({
@@ -40,26 +31,34 @@ export default async function EmployeeDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const employee = EMPLOYEES.find((e) => e.id === id);
-  if (!employee) notFound();
+  const profile = await getEmployeeProfile(id);
+  if (!profile) notFound();
 
-  const c = bandColor(employee.band);
-  const totals = countAttendance(employee.attendance);
-  const presentCount = totals.present;
-  const missedCount = totals.missed + totals.noShow;
-  const noShowCount = totals.noShow;
-  const overallAttendancePct = weightedAttendancePct(employee.attendance);
+  const { employee, assignments, attendance, checklist, documents } = profile;
+  const band = employee.band ?? bandFromScore(employee.score);
+  const tone = bandColor(band);
+  const totals = countAttendance(attendance);
+  const overallPct = weightedAttendancePct(attendance);
 
-  const checklistDone = employee.onboarding.checklist.filter((t) => t.done).length;
-  const docsDone = employee.onboarding.documents.filter((d) => d.received).length;
-
-  // Group attendance by client
-  const byClient = new Map<string, AttendanceEntry[]>();
-  for (const a of employee.attendance) {
-    const arr = byClient.get(a.client) ?? [];
+  // Group attendance by client for the per-client breakdown
+  const attByClient = new Map<string, typeof attendance>();
+  for (const a of attendance) {
+    const arr = attByClient.get(a.client_id) ?? [];
     arr.push(a);
-    byClient.set(a.client, arr);
+    attByClient.set(a.client_id, arr);
   }
+
+  // Group checklist by category
+  const checklistByCategory = new Map<OnboardingCategory, typeof checklist>();
+  for (const i of checklist) {
+    const arr = checklistByCategory.get(i.category) ?? [];
+    arr.push(i);
+    checklistByCategory.set(i.category, arr);
+  }
+  const checklistDone = checklist.filter((i) => i.done).length;
+  const docsDone = documents.filter((d) => d.received).length;
+
+  const activeAssignments = assignments.filter((a) => a.active);
 
   return (
     <Shell>
@@ -72,20 +71,17 @@ export default async function EmployeeDetailPage({
             <Link href="/roster" className="dt-btn">
               ← Back to Roster
             </Link>
-            <Link
-              href={`/attendance?employee=${employee.id}`}
-              className="dt-btn"
-            >
-              Attendance Report
+            <Link href={`/timecards?employee=${employee.id}`} className="dt-btn">
+              Timecards
             </Link>
-            <button className="dt-btn dt-btn-gold">
-              <span>Add Assignment</span>
-            </button>
+            <Link href={`/onboarding?employee=${employee.id}`} className="dt-btn dt-btn-gold">
+              <span>Open Onboarding</span>
+            </Link>
           </>
         }
       />
 
-      {/* Header card */}
+      {/* Header */}
       <div
         className="dt-card gold-edge"
         style={{
@@ -99,567 +95,305 @@ export default async function EmployeeDetailPage({
         }}
       >
         <div className="dt-person">
-          <Avatar name={employee.name} size="lg" />
+          <Avatar name={employee.full_name} size="lg" />
           <div>
-            <div
-              style={{
-                fontFamily: "var(--dt-display)",
-                fontSize: 24,
-                fontWeight: 300,
-              }}
-            >
-              {employee.name}
+            <div style={{ fontFamily: "var(--dt-display)", fontSize: 24, fontWeight: 300 }}>
+              {employee.full_name}
             </div>
-            <div
-              style={{
-                fontSize: 12.5,
-                color: "var(--dt-warm-500)",
-                marginTop: 4,
-              }}
-            >
-              {employee.city} · Hired{" "}
-              {new Date(employee.hireDate).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}{" "}
-              · ID {employee.id.toUpperCase()}
+            <div style={{ fontSize: 12.5, color: "var(--dt-warm-500)", marginTop: 4 }}>
+              {employee.city ?? "—"} · Hired {fmtDate(employee.hire_date)} ·{" "}
+              {employee.status === "onboarding"
+                ? "ONBOARDING"
+                : `Rank ${employee.rank ?? "—"}`}
             </div>
-            <div
-              style={{
-                display: "flex",
-                gap: 18,
-                marginTop: 10,
-                flexWrap: "wrap",
-                fontSize: 12,
-                color: "var(--dt-warm-700)",
-              }}
-            >
-              <span>{employee.phone}</span>
-              <span>{employee.email}</span>
-            </div>
-          </div>
-        </div>
-        <div style={{ display: "flex", gap: 24, alignItems: "center" }}>
-          <div style={{ textAlign: "center" }}>
-            <div
-              className="tiny muted"
-              style={{
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                fontWeight: 400,
-              }}
-            >
-              Score
-            </div>
-            <div
-              className="tab-num"
-              style={{
-                fontFamily: "var(--dt-display)",
-                fontSize: 44,
-                fontWeight: 300,
-                color: c.fg,
-                lineHeight: 1.05,
-                marginTop: 4,
-              }}
-            >
-              {employee.score || "—"}
-            </div>
-            <div style={{ marginTop: 6 }}>
-              <Badge tone={c.tone}>
-                {employee.band === "green"
-                  ? "Front of Queue"
-                  : employee.band === "yellow"
-                  ? "Watch List"
-                  : "Back of Queue"}
-              </Badge>
-            </div>
-          </div>
-          <div
-            style={{ width: 1, height: 80, background: "var(--dt-warm-150)" }}
-          />
-          <div style={{ textAlign: "center" }}>
-            <div
-              className="tiny muted"
-              style={{
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                fontWeight: 400,
-              }}
-            >
-              Queue Rank
-            </div>
-            <div
-              className="tab-num"
-              style={{
-                fontFamily: "var(--dt-display)",
-                fontSize: 44,
-                fontWeight: 300,
-                marginTop: 4,
-                color:
-                  employee.status === "onboarding"
-                    ? "var(--dt-warm-300)"
-                    : "var(--dt-black)",
-              }}
-            >
-              {employee.status === "onboarding" ? "—" : `#${employee.rank}`}
-            </div>
-            <div
-              style={{
-                fontSize: 10,
-                color: "var(--dt-warm-500)",
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                marginTop: 6,
-              }}
-            >
-              of dispatch list
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {employee.notes && (
-        <div
-          className="dt-card"
-          style={{
-            padding: "16px 22px",
-            marginBottom: 22,
-            background: "var(--dt-warm-50)",
-            borderLeft: "2px solid var(--dt-gold)",
-          }}
-        >
-          <div
-            className="tiny muted"
-            style={{
-              letterSpacing: "0.22em",
-              textTransform: "uppercase",
-              fontWeight: 400,
-            }}
-          >
-            Roxanna&apos;s Note
-          </div>
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 13.5,
-              fontFamily: "var(--dt-display)",
-              fontStyle: "italic",
-              color: "var(--dt-warm-700)",
-              lineHeight: 1.6,
-            }}
-          >
-            “{employee.notes}”
-          </div>
-        </div>
-      )}
-
-      <div className="dt-detail-grid">
-        <div className="col gap-md">
-          {/* Assignments */}
-          <div className="dt-card">
-            <div className="dt-card-head">
-              <div>
-                <h3>Active Assignments</h3>
-                <div className="sub">
-                  {employee.assignments.length === 1
-                    ? "Single client placement"
-                    : `Placed at ${employee.assignments.length} client sites`}
-                </div>
-              </div>
-              <Badge tone="gold">{employee.assignments.length} active</Badge>
-            </div>
-            <div style={{ padding: "8px 26px 18px" }}>
-              {employee.assignments.map((a, i) => {
-                const client = getClient(a.client);
-                const clientMissed = (byClient.get(a.client) ?? []).filter(
-                  (x) => x.status === "missed" || x.status === "no-show"
-                ).length;
-                return (
-                  <div
-                    key={`${a.client}-${a.shift}`}
-                    style={{
-                      padding: "16px 0",
-                      borderBottom:
-                        i < employee.assignments.length - 1
-                          ? "1px solid var(--dt-warm-100)"
-                          : "none",
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto",
-                      gap: 16,
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <div
-                        style={{
-                          fontFamily: "var(--dt-display)",
-                          fontSize: 16,
-                          fontWeight: 400,
-                          letterSpacing: "0.04em",
-                        }}
-                      >
-                        {client.name}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "var(--dt-warm-500)",
-                          marginTop: 4,
-                        }}
-                      >
-                        {a.position} · {a.department} · {a.shift}
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 18,
-                          marginTop: 8,
-                          fontSize: 11,
-                          color: "var(--dt-warm-700)",
-                          letterSpacing: "0.06em",
-                        }}
-                      >
-                        <span>
-                          Started{" "}
-                          {new Date(a.startDate).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </span>
-                        <span>{client.city}</span>
-                        {clientMissed > 0 && (
-                          <span style={{ color: "var(--dt-danger)" }}>
-                            {clientMissed} missed at this site
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="tab-num" style={{ textAlign: "right" }}>
-                      <div
-                        style={{
-                          fontFamily: "var(--dt-display)",
-                          fontSize: 22,
-                          fontWeight: 300,
-                          color: "var(--dt-gold-deep)",
-                        }}
-                      >
-                        ${a.rate.toFixed(2)}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: "var(--dt-warm-500)",
-                          letterSpacing: "0.18em",
-                          textTransform: "uppercase",
-                        }}
-                      >
-                        per hr
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* 30-day attendance */}
-          <div className="dt-card">
-            <div className="dt-card-head">
-              <div>
-                <h3>Attendance · Last 30 Days</h3>
-                <div className="sub">
-                  Weighted rate{" "}
-                  {employee.attendance.length === 0 ? "—" : `${overallAttendancePct}%`}
-                  {" · "}
-                  present + 0.5×late · grouped by client site
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <PerformanceBadge
-                  score={employee.score}
-                  missedDays={missedCount}
-                />
-                <Badge tone="green">{presentCount} present</Badge>
-                {missedCount > 0 && (
-                  <Badge tone="red">
-                    {missedCount} missed
-                    {noShowCount > 0 && ` · ${noShowCount} NCNS`}
-                  </Badge>
-                )}
-              </div>
-            </div>
-            <div style={{ padding: "16px 26px 22px" }}>
-              {byClient.size === 0 ? (
-                <div
-                  style={{
-                    padding: "16px 0",
-                    color: "var(--dt-warm-500)",
-                    fontSize: 13,
-                    fontStyle: "italic",
-                  }}
-                >
-                  No attendance records yet — employee is{" "}
-                  {employee.status === "onboarding"
-                    ? "still onboarding"
-                    : "newly placed"}
-                  .
-                </div>
-              ) : (
-                Array.from(byClient.entries()).map(([clientId, entries]) => {
-                  const client = getClient(clientId as ReturnType<typeof getClient>["id"]);
-                  const clientPct = weightedAttendancePct(entries);
-                  const clientRate =
-                    clientPct >= 95
-                      ? "var(--dt-success)"
-                      : clientPct >= 85
-                      ? "var(--dt-gold-deep)"
-                      : "var(--dt-danger)";
-                  return (
-                    <div key={clientId} style={{ marginBottom: 22 }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          marginBottom: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontSize: 11.5,
-                            fontWeight: 400,
-                            letterSpacing: "0.18em",
-                            textTransform: "uppercase",
-                            color: "var(--dt-warm-700)",
-                          }}
-                        >
-                          {client.name}
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: 10,
-                            alignItems: "baseline",
-                          }}
-                        >
-                          <span
-                            className="tab-num"
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 400,
-                              color: clientRate,
-                            }}
-                          >
-                            {clientPct}%
-                          </span>
-                          <span
-                            style={{
-                              fontSize: 10.5,
-                              color: "var(--dt-warm-500)",
-                              letterSpacing: "0.14em",
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {entries.length} shifts
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {entries.map((entry) => (
-                          <div
-                            key={entry.date}
-                            style={{
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "center",
-                              gap: 6,
-                            }}
-                          >
-                            <div
-                              style={{
-                                fontSize: 9.5,
-                                color: "var(--dt-warm-500)",
-                                letterSpacing: "0.14em",
-                              }}
-                            >
-                              {new Date(entry.date)
-                                .toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                                .toUpperCase()}
-                            </div>
-                            <div
-                              className={attCellClass(entry.status)}
-                              title={
-                                entry.status.toUpperCase() +
-                                (entry.notes ? ` — ${entry.notes}` : "")
-                              }
-                            >
-                              {attLabel(entry.status)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      {/* Notes */}
-                      {entries.some((e) => e.notes) && (
-                        <ul
-                          style={{
-                            margin: "12px 0 0",
-                            padding: 0,
-                            listStyle: "none",
-                            fontSize: 11.5,
-                            color: "var(--dt-warm-500)",
-                            lineHeight: 1.6,
-                          }}
-                        >
-                          {entries
-                            .filter((e) => e.notes)
-                            .map((e) => (
-                              <li key={e.date}>
-                                <span
-                                  style={{
-                                    display: "inline-block",
-                                    minWidth: 70,
-                                    color: "var(--dt-warm-700)",
-                                  }}
-                                >
-                                  {new Date(e.date).toLocaleDateString("en-US", {
-                                    month: "short",
-                                    day: "numeric",
-                                  })}
-                                </span>
-                                <span
-                                  style={{
-                                    color:
-                                      e.status === "no-show"
-                                        ? "var(--dt-danger)"
-                                        : "var(--dt-warm-700)",
-                                    fontWeight: 400,
-                                    marginRight: 8,
-                                    textTransform: "uppercase",
-                                    fontSize: 9.5,
-                                    letterSpacing: "0.16em",
-                                  }}
-                                >
-                                  {e.status}
-                                </span>
-                                — {e.notes}
-                              </li>
-                            ))}
-                        </ul>
-                      )}
-                    </div>
-                  );
-                })
+            <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+              <Badge tone={tone.tone}>{tone.label}</Badge>
+              {activeAssignments.length > 1 && (
+                <Badge tone="gold">{activeAssignments.length} clients</Badge>
               )}
             </div>
           </div>
         </div>
-
-        {/* Sidebar — onboarding + scoring rationale */}
-        <div className="col gap-md">
-          <div className="dt-card">
-            <div className="dt-card-head" style={{ padding: "18px 22px 14px" }}>
-              <div>
-                <h3>Onboarding</h3>
-                <div className="sub">
-                  {checklistDone}/{employee.onboarding.checklist.length} steps ·{" "}
-                  {docsDone}/{employee.onboarding.documents.length} docs
-                </div>
-              </div>
-            </div>
-            <div style={{ padding: "8px 22px 22px" }}>
-              <div className="dt-progress" style={{ marginBottom: 18 }}>
-                <div
-                  className={
-                    "fill" +
-                    (checklistDone === employee.onboarding.checklist.length
-                      ? " done"
-                      : "")
-                  }
-                  style={{
-                    width:
-                      pctDone(
-                        checklistDone,
-                        employee.onboarding.checklist.length
-                      ) + "%",
-                  }}
-                />
-              </div>
-              {employee.onboarding.checklist.map((t) => (
-                <div key={t.id} className="dt-check-item">
-                  <div className={"dt-check-box" + (t.done ? " done" : "")} />
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 12.5,
-                        fontWeight: 400,
-                        color: t.done
-                          ? "var(--dt-warm-500)"
-                          : "var(--dt-black)",
-                        textDecoration: t.done ? "line-through" : "none",
-                      }}
-                    >
-                      {t.label}
-                    </div>
-                    {t.doneOn && (
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: "var(--dt-warm-500)",
-                          marginTop: 2,
-                          letterSpacing: "0.14em",
-                        }}
-                      >
-                        {new Date(t.doneOn).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div />
-                </div>
-              ))}
-            </div>
+        <div style={{ textAlign: "right", minWidth: 240 }}>
+          <div className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}>
+            Performance Score
           </div>
-
-          <div className="dt-card">
-            <div className="dt-card-head" style={{ padding: "18px 22px 14px" }}>
-              <div>
-                <h3>Documents</h3>
-                <div className="sub">Required for placement</div>
-              </div>
-            </div>
-            <div style={{ padding: "8px 22px 22px" }}>
-              {employee.onboarding.documents.map((d) => (
-                <div
-                  key={d.name}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "10px 0",
-                    borderBottom: "1px solid var(--dt-warm-100)",
-                  }}
-                >
-                  <span style={{ fontSize: 12.5, fontWeight: 300 }}>
-                    {d.name}
-                  </span>
-                  {d.received ? (
-                    <Badge tone="green">On File</Badge>
-                  ) : (
-                    <Badge tone="amber">Pending</Badge>
-                  )}
-                </div>
-              ))}
-            </div>
+          <div
+            className="tab-num"
+            style={{
+              fontFamily: "var(--dt-display)",
+              fontSize: 48,
+              fontWeight: 200,
+              marginTop: 4,
+              color: tone.fg,
+              letterSpacing: "-0.02em",
+              lineHeight: 1,
+            }}
+          >
+            {employee.score || "—"}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--dt-warm-500)", marginTop: 6 }}>
+            {employee.email ?? "—"}
+            <br />
+            <span className="tab-num">{employee.phone ?? "—"}</span>
           </div>
         </div>
       </div>
+
+      {/* KPI strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 22 }}>
+        <KPI label="30-Day Attendance" value={attendance.length ? `${overallPct}%` : "—"} accent={attendanceColor(overallPct)} sub={`${attendance.length} shifts logged`} />
+        <KPI label="Present" value={String(totals.present)} accent="var(--dt-success)" sub="last 60 days" />
+        <KPI label="Missed / No-Show" value={String(totals.missed + totals.noShow)} accent={(totals.missed + totals.noShow) > 0 ? "var(--dt-danger)" : "var(--dt-black)"} sub={`${totals.noShow} NCNS`} />
+        <KPI
+          label="Onboarding"
+          value={`${pct(checklistDone, checklist.length)}%`}
+          accent="var(--dt-gold-deep)"
+          sub={`${checklistDone}/${checklist.length} steps · ${docsDone}/${documents.length} docs`}
+        />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", gap: 22, marginBottom: 22 }}>
+        {/* Assignments */}
+        <div className="dt-card">
+          <div className="dt-card-head">
+            <div>
+              <h3>Assignments</h3>
+              <div className="sub">
+                {activeAssignments.length} active · {assignments.length - activeAssignments.length} archived
+              </div>
+            </div>
+          </div>
+          <div className="dt-table-wrap">
+            <table className="dt-table">
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 22 }}>Client</th>
+                  <th>Position</th>
+                  <th>Shift</th>
+                  <th>Started</th>
+                  <th style={{ textAlign: "right", paddingRight: 22 }}>Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignments.map((a) => (
+                  <tr key={a.id} style={{ opacity: a.active ? 1 : 0.55 }}>
+                    <td style={{ paddingLeft: 22 }}>
+                      <div style={{ fontWeight: 400 }}>{a.client.name}</div>
+                      <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3 }}>
+                        {a.client.city ?? "—"}
+                      </div>
+                    </td>
+                    <td>
+                      {a.position}
+                      <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3 }}>
+                        {a.department}
+                      </div>
+                    </td>
+                    <td className="tab-num" style={{ fontSize: 12, fontFamily: "var(--dt-mono)" }}>
+                      {a.shift}
+                    </td>
+                    <td className="tab-num" style={{ fontSize: 12 }}>
+                      {fmtDate(a.start_date)}
+                    </td>
+                    <td className="tab-num" style={{ textAlign: "right", paddingRight: 22, fontWeight: 400 }}>
+                      ${Number(a.hourly_rate).toFixed(2)}/hr
+                      {!a.active && (
+                        <div style={{ fontSize: 9.5, letterSpacing: "0.16em", color: "var(--dt-warm-500)", marginTop: 3 }}>
+                          ENDED
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {assignments.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center", padding: "32px 22px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
+                      No assignments yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Onboarding side panel */}
+        <div className="dt-card">
+          <div className="dt-card-head">
+            <div>
+              <h3>Onboarding</h3>
+              <div className="sub">
+                {checklistDone} of {checklist.length} complete
+              </div>
+            </div>
+            <Badge tone={checklistDone === checklist.length ? "green" : "amber"}>
+              {pct(checklistDone, checklist.length)}%
+            </Badge>
+          </div>
+          <div style={{ padding: "8px 22px 18px", maxHeight: 420, overflowY: "auto" }}>
+            {Array.from(checklistByCategory.entries()).map(([cat, items]) => (
+              <div key={cat} style={{ marginBottom: 16 }}>
+                <div
+                  style={{
+                    fontSize: 9.5,
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                    color: "var(--dt-warm-500)",
+                    fontWeight: 400,
+                    marginBottom: 8,
+                  }}
+                >
+                  {cat}
+                </div>
+                {items.map((i) => (
+                  <div
+                    key={i.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 8,
+                      padding: "6px 0",
+                      borderBottom: "1px solid var(--dt-warm-100)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 14,
+                        height: 14,
+                        borderRadius: 3,
+                        marginTop: 2,
+                        background: i.done ? "var(--dt-success)" : "var(--dt-warm-100)",
+                        border: i.done ? "none" : "1px solid var(--dt-warm-200)",
+                        color: "white",
+                        fontSize: 10,
+                        textAlign: "center",
+                        lineHeight: "14px",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {i.done ? "✓" : ""}
+                    </span>
+                    <div style={{ flex: 1, fontSize: 12, lineHeight: 1.45 }}>
+                      <div style={{ fontWeight: i.done ? 300 : 400, color: i.done ? "var(--dt-warm-500)" : "var(--dt-black)" }}>
+                        {i.label}
+                      </div>
+                      {i.detail && (
+                        <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 2 }}>
+                          {i.detail}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Recent attendance */}
+      <div className="dt-card">
+        <div className="dt-card-head">
+          <div>
+            <h3>Attendance · Last 60 Days</h3>
+            <div className="sub">Most recent first</div>
+          </div>
+        </div>
+        <div className="dt-table-wrap">
+          <table className="dt-table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 22 }}>Date</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th>In · Out</th>
+                <th style={{ paddingRight: 22 }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {attendance.slice(0, 50).map((a) => {
+                const c = profile.clientById.get(a.client_id);
+                return (
+                  <tr key={a.id}>
+                    <td style={{ paddingLeft: 22 }} className="tab-num">
+                      {fmtDate(a.date)}
+                    </td>
+                    <td>{c?.name ?? "—"}</td>
+                    <td>
+                      <span
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 12,
+                          fontWeight: 400,
+                          color: ATTENDANCE_DOT_COLOR[a.status],
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: ATTENDANCE_DOT_COLOR[a.status],
+                          }}
+                        />
+                        {ATTENDANCE_LABEL[a.status]}
+                      </span>
+                    </td>
+                    <td className="tab-num" style={{ fontSize: 11, fontFamily: "var(--dt-mono)" }}>
+                      {a.check_in ? `${a.check_in.slice(0, 5)}` : "—"}
+                      {" · "}
+                      {a.check_out ? `${a.check_out.slice(0, 5)}` : "—"}
+                    </td>
+                    <td style={{ paddingRight: 22, fontSize: 11.5, color: "var(--dt-warm-500)" }}>
+                      {a.notes ?? "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+              {attendance.length === 0 && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: "center", padding: "32px 22px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
+                    No attendance recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {employee.notes && (
+        <div className="dt-card" style={{ marginTop: 22, padding: "18px 24px" }}>
+          <div
+            className="tiny muted"
+            style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400, marginBottom: 8 }}
+          >
+            Notes
+          </div>
+          <div style={{ fontSize: 13.5, lineHeight: 1.7, fontFamily: "var(--dt-display)", fontStyle: "italic", color: "var(--dt-warm-700)" }}>
+            {employee.notes}
+          </div>
+        </div>
+      )}
     </Shell>
+  );
+}
+
+function KPI({ label, value, accent, sub }: { label: string; value: string; accent?: string; sub?: string }) {
+  return (
+    <div className="dt-card" style={{ padding: "18px 20px" }}>
+      <div style={{ fontSize: 10.5, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dt-warm-500)", fontWeight: 400 }}>
+        {label}
+      </div>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
+        <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 28, fontWeight: 300, color: accent || "var(--dt-black)", letterSpacing: "-0.01em" }}>
+          {value}
+        </div>
+        {sub && <div style={{ fontSize: 11.5, color: "var(--dt-warm-500)" }}>{sub}</div>}
+      </div>
+    </div>
   );
 }
