@@ -1,15 +1,12 @@
 import "server-only";
 import { createClient } from "./supabase/server";
+import { isoDaysAgo } from "./staffing";
 import type {
   AttendanceEntry,
   Client,
   Employee,
   EmployeeAssignment,
 } from "./supabase/types";
-
-function isoDaysAgo(n: number): string {
-  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
-}
 
 export type AttendanceGridRow = {
   employee: Pick<Employee, "id" | "full_name">;

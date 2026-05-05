@@ -8,7 +8,7 @@ import type {
   OnboardingChecklistItem,
   OnboardingDocument,
 } from "./supabase/types";
-import { weightedAttendancePct, countAttendance } from "./staffing";
+import { weightedAttendancePct, countAttendance, isoDaysAgo } from "./staffing";
 
 export type EmployeeWithJoins = Employee & {
   employee_assignments: (EmployeeAssignment & { clients: Client })[];
@@ -25,11 +25,6 @@ export type RosterRow = {
   missedDays: number;
   noShows: number;
 };
-
-function isoDaysAgo(n: number) {
-  const d = new Date(Date.now() - n * 24 * 60 * 60 * 1000);
-  return d.toISOString().slice(0, 10);
-}
 
 export async function listRoster(): Promise<{
   rows: RosterRow[];

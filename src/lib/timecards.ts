@@ -44,18 +44,17 @@ export function rollupTotals(days: TimecardDays) {
 
 // Federal-style auto-OT: if regular total > 40, push the excess into OT before
 // submission. Operator's manual day-level OT entries are preserved; we only add
-// to OT, never subtract.
+// to OT, never subtract. Locked days are skipped — operator marked them frozen.
 export function autoOvertimeAdjustment(days: TimecardDays): TimecardDays {
-  const { reg_hours, ot_hours } = rollupTotals(days);
+  const { reg_hours } = rollupTotals(days);
   if (reg_hours <= 40) return days;
-  // Excess regular > 40 → move into OT, day by day from latest weekday backwards.
   let excess = reg_hours - 40;
   const next: TimecardDays = JSON.parse(JSON.stringify(days));
   const order: DayKey[] = ["sun", "sat", "fri", "thu", "wed", "tue", "mon"];
   for (const k of order) {
     if (excess <= 0) break;
     const d = next[k];
-    if (!d) continue;
+    if (!d || d.locked) continue;
     const r = Number(d.regular) || 0;
     if (r <= 0) continue;
     const move = Math.min(r, excess);
@@ -63,7 +62,6 @@ export function autoOvertimeAdjustment(days: TimecardDays): TimecardDays {
     d.overtime = (Number(d.overtime) || 0) + move;
     excess -= move;
   }
-  void ot_hours;
   return next;
 }
 

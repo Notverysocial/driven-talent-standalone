@@ -96,9 +96,13 @@ async function maybePromoteToActive(employeeId: string) {
   if (emp.error) return;
   if (emp.data.status !== "onboarding") return;
 
+  const checksLen = checks.data?.length ?? 0;
+  const docsLen = docs.data?.length ?? 0;
   const allChecksDone = (checks.data ?? []).every((c) => c.done);
   const allDocsReceived = (docs.data ?? []).every((d) => d.received);
-  if (allChecksDone && allDocsReceived && (checks.data?.length ?? 0) > 0) {
+  // Both lists must be non-empty AND fully done. [].every(...) is vacuously true,
+  // which would otherwise let an employee promote with zero documents on file.
+  if (allChecksDone && allDocsReceived && checksLen > 0 && docsLen > 0) {
     await supabase.from("employees").update({ status: "active" }).eq("id", employeeId);
     revalidatePath("/roster");
     revalidatePath("/dashboard");

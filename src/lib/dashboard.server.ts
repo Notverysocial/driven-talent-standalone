@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "./supabase/server";
-import { weightedAttendancePct, countAttendance } from "./staffing";
+import { weightedAttendancePct, countAttendance, isoDaysAgo } from "./staffing";
 import type {
   AttendanceEntry,
   CandidateStatus,
@@ -8,10 +8,6 @@ import type {
   Employee,
   EmployeeAssignment,
 } from "./supabase/types";
-
-function isoDaysAgo(n: number): string {
-  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
-}
 
 export type DashboardData = {
   totals: {

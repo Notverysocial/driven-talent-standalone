@@ -54,18 +54,20 @@ export async function generateInvoiceFromTimecards(formData: FormData) {
   }
 
   // Pull approved timecards for this client whose week_start falls in the period.
+  // We don't try to embed-filter the assignment in this query because PostgREST
+  // doesn't reliably apply chained .eq() filters to embedded resources — it
+  // would silently match the wrong assignment for multi-client employees.
+  // Instead, fetch assignments separately scoped to this client.
   const { data: timecards, error: tcErr } = await supabase
     .from("timecards")
     .select(`
       id, employee_id, week_start, reg_hours, ot_hours, holiday_hours, hourly_rate,
-      employees ( full_name ),
-      employee_assignments!inner ( position, department )
+      employees ( full_name )
     `)
     .eq("client_id", clientId)
     .eq("status", "approved")
     .gte("week_start", periodStart)
-    .lte("week_start", periodEnd)
-    .eq("employee_assignments.client_id", clientId);
+    .lte("week_start", periodEnd);
   if (tcErr) throw new Error(tcErr.message);
 
   type TcRow = {
@@ -77,16 +79,38 @@ export async function generateInvoiceFromTimecards(formData: FormData) {
     holiday_hours: number;
     hourly_rate: number;
     employees: { full_name: string };
-    employee_assignments: { position: string; department: string }[];
   };
+  const tcRows = (timecards as unknown as TcRow[]) ?? [];
+
+  // Look up the active assignment for each (employee, this client) pair so the
+  // line items get the correct position/department for THIS client (not the
+  // employee's other client's role).
+  const employeeIds = Array.from(new Set(tcRows.map((t) => t.employee_id)));
+  const assignmentByEmployee = new Map<string, { position: string; department: string }>();
+  if (employeeIds.length > 0) {
+    const { data: assignments, error: aErr } = await supabase
+      .from("employee_assignments")
+      .select("employee_id, position, department")
+      .eq("client_id", clientId)
+      .eq("active", true)
+      .in("employee_id", employeeIds);
+    if (aErr) throw new Error(aErr.message);
+    for (const a of (assignments ?? []) as {
+      employee_id: string;
+      position: string;
+      department: string;
+    }[]) {
+      assignmentByEmployee.set(a.employee_id, { position: a.position, department: a.department });
+    }
+  }
 
   // Build line items, one per timecard
-  const lines: LineSeed[] = ((timecards as unknown as TcRow[]) ?? []).map((t, i) => {
+  const lines: LineSeed[] = tcRows.map((t, i) => {
     const reg = Number(t.reg_hours) + Number(t.holiday_hours);
     const ot = Number(t.ot_hours);
     const rate = Number(t.hourly_rate);
     const amount = Math.round((reg * rate + ot * rate * 1.5) * 100) / 100;
-    const assignment = t.employee_assignments?.[0];
+    const assignment = assignmentByEmployee.get(t.employee_id);
     return {
       department: assignment?.department ?? null,
       employee_name: t.employees.full_name,

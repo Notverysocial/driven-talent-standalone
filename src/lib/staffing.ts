@@ -110,3 +110,7 @@ export function attendanceColor(pct: number): string {
   if (pct >= 70) return "#C28B1E";
   return "var(--dt-danger)";
 }
+
+export function isoDaysAgo(n: number): string {
+  return new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+}
