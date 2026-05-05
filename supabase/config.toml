@@ -1,0 +1,18 @@
+project_id = "driven-talent-standalone"
+
+[db]
+major_version = 15
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[storage.buckets.resumes]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+
+[storage.buckets.invoice_pdfs]
+public = false
+file_size_limit = "10MiB"
+allowed_mime_types = ["application/pdf"]
