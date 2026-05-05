@@ -1,0 +1,96 @@
+import Link from "next/link";
+import { Shell } from "@/components/Shell";
+import { Topbar } from "@/components/Topbar";
+import { listAssignmentsForTimecards } from "@/lib/timecards.server";
+import { isoWeekStart } from "@/lib/timecards";
+import { createOrOpenTimecard } from "../actions";
+
+export default async function NewTimecardPage() {
+  const assignments = await listAssignmentsForTimecards();
+  const thisWeek = isoWeekStart();
+
+  return (
+    <Shell>
+      <Topbar
+        crumb="OPERATIONS / TIMECARDS / NEW"
+        scriptWord="New "
+        title="Timecard"
+        actions={
+          <Link href="/timecards" className="dt-btn">
+            ← Cancel
+          </Link>
+        }
+      />
+
+      <form action={createOrOpenTimecard} className="dt-card" style={{ padding: "28px 32px", maxWidth: 720 }}>
+        <p style={{ fontSize: 13, color: "var(--dt-warm-500)", marginBottom: 20, lineHeight: 1.6 }}>
+          Pick an active employee assignment and a week. If a timecard already
+          exists for that pairing, you&apos;ll be taken to it; otherwise a blank one
+          is created.
+        </p>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: "1 / -1" }}>
+            <span style={{ fontSize: 10.5, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dt-warm-500)", fontWeight: 400 }}>
+              Assignment
+            </span>
+            <select name="assignment_serialized" id="assignment_serialized" className="dt-filter-input" required>
+              <option value="">— Select an assignment —</option>
+              {assignments.map((a) => (
+                <option
+                  key={a.id}
+                  value={`${a.employee_id}|${a.client_id}|${a.hourly_rate}`}
+                >
+                  {a.employee_name} → {a.client_name} ({a.position}) · ${a.hourly_rate}/hr
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <input type="hidden" name="employee_id" id="employee_id" />
+          <input type="hidden" name="client_id"   id="client_id" />
+          <input type="hidden" name="hourly_rate" id="hourly_rate" />
+
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={{ fontSize: 10.5, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dt-warm-500)", fontWeight: 400 }}>
+              Week (any day)
+            </span>
+            <input
+              type="date"
+              name="week"
+              defaultValue={thisWeek}
+              required
+              className="dt-filter-input"
+            />
+          </label>
+        </div>
+
+        <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Link href="/timecards" className="dt-btn">
+            Cancel
+          </Link>
+          <button type="submit" className="dt-btn dt-btn-gold">
+            <span>Open Timecard</span>
+          </button>
+        </div>
+
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              const sel = document.getElementById('assignment_serialized');
+              const empF = document.getElementById('employee_id');
+              const cliF = document.getElementById('client_id');
+              const rateF = document.getElementById('hourly_rate');
+              sel?.addEventListener('change', () => {
+                const [emp, cli, rate] = (sel.value || '').split('|');
+                if (empF) empF.value = emp || '';
+                if (cliF) cliF.value = cli || '';
+                if (rateF) rateF.value = rate || '';
+              });
+            `,
+          }}
+        />
+      </form>
+    </Shell>
+  );
+}
