@@ -140,8 +140,12 @@ alter table clients
   add column if not exists report_format text check (report_format in ('hours_spent', 'timecard', 'standard')) default 'standard';
 
 -- ---------- Refresh invoices_with_overdue view to pick up new columns -
+-- `create or replace view` won't work here: invoices now has new columns,
+-- so i.* changes shape and Postgres refuses to rebind the existing column
+-- names. Drop and recreate.
 
-create or replace view invoices_with_overdue as
+drop view if exists invoices_with_overdue cascade;
+create view invoices_with_overdue as
   select
     i.*,
     case
