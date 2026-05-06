@@ -48,11 +48,12 @@ export type DashboardData = {
 };
 
 const PIPELINE_LABELS: Record<CandidateStatus, string> = {
-  new: "New Applications",
+  applied: "Applied",
   screening: "Screened",
   interview: "Interview",
-  placed: "Placed (this period)",
-  inactive: "Inactive",
+  offer: "Offer Out",
+  hired: "Hired (this period)",
+  rejected: "Rejected",
 };
 
 export async function getDashboard(): Promise<DashboardData> {
@@ -158,11 +159,11 @@ export async function getDashboard(): Promise<DashboardData> {
 
   // ----- pipeline -----
   const pipelineCount: Record<CandidateStatus, number> = {
-    new: 0, screening: 0, interview: 0, placed: 0, inactive: 0,
+    applied: 0, screening: 0, interview: 0, offer: 0, hired: 0, rejected: 0,
   };
   for (const c of candidates) pipelineCount[c.status]++;
   const pipeline = (Object.keys(pipelineCount) as CandidateStatus[])
-    .filter((s) => s !== "inactive")
+    .filter((s) => s !== "rejected")
     .map((s) => ({ status: s, label: PIPELINE_LABELS[s], count: pipelineCount[s] }));
 
   // ----- per-client stats -----

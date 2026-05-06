@@ -4,21 +4,18 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
-import { getOnboardingDetail } from "@/lib/onboarding.server";
-import type { OnboardingCategory } from "@/lib/supabase/types";
-import { CheckRow } from "./CheckRow";
-import { addChecklistItem, addDocument } from "../actions";
+import {
+  generateWelcomeLetterBody,
+  getOnboardingDetail,
+} from "@/lib/onboarding.server";
+import { ONBOARDING_TEMPLATE, calcProgress } from "@/lib/onboarding";
+import { ItemRow } from "./ItemRow";
+import { WelcomeLetter } from "./WelcomeLetter";
+import { addChecklistItem, addDocument, toggleDocument } from "../actions";
 
-const CATEGORY_ORDER: OnboardingCategory[] = [
-  "Documentation",
-  "Compliance",
-  "Training",
-  "Equipment",
-  "Review",
-];
-
-function pct(n: number, total: number) {
-  return total === 0 ? 0 : Math.round((n / total) * 100);
+function fmtDate(d: string | null) {
+  if (!d) return "—";
+  return new Date(d).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
 export default async function OnboardingDetailPage({
@@ -29,29 +26,18 @@ export default async function OnboardingDetailPage({
   const { employeeId } = await params;
   const detail = await getOnboardingDetail(employeeId);
   if (!detail) notFound();
-  const { employee, checklist, documents } = detail;
 
-  const byCategory = new Map<OnboardingCategory, typeof checklist>();
-  for (const i of checklist) {
-    const arr = byCategory.get(i.category) ?? [];
-    arr.push(i);
-    byCategory.set(i.category, arr);
-  }
-
-  const stepsDone = checklist.filter((i) => i.done).length;
-  const docsDone = documents.filter((d) => d.received).length;
-  const allReady =
-    checklist.length > 0 &&
-    stepsDone === checklist.length &&
-    documents.length > 0 &&
-    docsDone === documents.length;
+  const { employee, checklist, documents, primaryAssignment, welcomeLetter } = detail;
+  const progress = calcProgress(checklist);
+  const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
+  const generated = generateWelcomeLetterBody(employee, primaryAssignment);
 
   return (
     <Shell>
       <Topbar
-        crumb={`PEOPLE OPS / ONBOARDING / ${employee.full_name.toUpperCase()}`}
+        crumb={`HR / ONBOARDING / ${employee.full_name.toUpperCase()}`}
         scriptWord="Onboarding "
-        title="Checklist"
+        title="Tracker"
         actions={
           <>
             <Link href="/onboarding" className="dt-btn">
@@ -64,210 +50,321 @@ export default async function OnboardingDetailPage({
         }
       />
 
-      {/* Header */}
+      {/* General info card */}
       <div
         className="dt-card gold-edge"
         style={{
           padding: "22px 26px",
           marginBottom: 22,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: 18,
+          display: "grid",
+          gridTemplateColumns: "auto 1fr",
+          gap: 24,
+          alignItems: "flex-start",
         }}
       >
-        <div className="dt-person">
-          <Avatar name={employee.full_name} size="lg" />
-          <div>
-            <div style={{ fontFamily: "var(--dt-display)", fontSize: 22, fontWeight: 300 }}>
-              {employee.full_name}
-            </div>
-            <div style={{ fontSize: 12.5, color: "var(--dt-warm-500)", marginTop: 3 }}>
-              {employee.city ?? "—"}
-              {employee.hire_date &&
-                ` · Hired ${new Date(employee.hire_date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
-            </div>
+        <Avatar name={employee.full_name} size="lg" />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: "var(--dt-display)", fontSize: 24, fontWeight: 300 }}>
+            {employee.full_name}
           </div>
-        </div>
-        <div style={{ textAlign: "right", display: "flex", gap: 28, alignItems: "center", flexWrap: "wrap" }}>
-          <div>
-            <div className="tiny muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase" }}>
-              Steps
-            </div>
-            <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 24, fontWeight: 300, marginTop: 4 }}>
-              {stepsDone}<span style={{ color: "var(--dt-warm-400)" }}>/{checklist.length}</span>{" "}
-              <span style={{ fontSize: 12, color: "var(--dt-warm-500)" }}>{pct(stepsDone, checklist.length)}%</span>
-            </div>
-          </div>
-          <div>
-            <div className="tiny muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase" }}>
-              Documents
-            </div>
-            <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 24, fontWeight: 300, marginTop: 4 }}>
-              {docsDone}<span style={{ color: "var(--dt-warm-400)" }}>/{documents.length}</span>{" "}
-              <span style={{ fontSize: 12, color: "var(--dt-warm-500)" }}>{pct(docsDone, documents.length)}%</span>
-            </div>
-          </div>
-          <Badge tone={allReady ? "green" : "amber"}>
-            {allReady ? "Ready to activate" : "In progress"}
-          </Badge>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", gap: 22 }}>
-        {/* Checklist */}
-        <div className="dt-card">
-          <div className="dt-card-head">
-            <div>
-              <h3>Checklist</h3>
-              <div className="sub">15-step onboarding · click to toggle</div>
-            </div>
-          </div>
-          <div style={{ padding: "8px 12px 18px" }}>
-            {CATEGORY_ORDER.map((cat) => {
-              const items = byCategory.get(cat) ?? [];
-              if (items.length === 0) return null;
-              return (
-                <div key={cat} style={{ marginBottom: 14 }}>
-                  <div
-                    style={{
-                      fontSize: 9.5,
-                      letterSpacing: "0.18em",
-                      textTransform: "uppercase",
-                      color: "var(--dt-warm-500)",
-                      fontWeight: 400,
-                      padding: "10px 12px",
-                    }}
-                  >
-                    {cat}
-                  </div>
-                  {items.map((i) => (
-                    <CheckRow
-                      key={i.id}
-                      itemId={i.id}
-                      employeeId={employee.id}
-                      label={i.label}
-                      detail={i.detail}
-                      done={i.done}
-                      doneOn={i.done_on}
-                      kind="checklist"
-                    />
-                  ))}
-                </div>
-              );
-            })}
-
-            <form
-              action={addChecklistItem.bind(null, employee.id)}
-              style={{
-                marginTop: 18,
-                padding: "14px 16px",
-                background: "var(--dt-warm-50)",
-                border: "1px dashed var(--dt-warm-200)",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 10,
-                  letterSpacing: "0.22em",
-                  textTransform: "uppercase",
-                  color: "var(--dt-warm-500)",
-                  fontWeight: 400,
-                  marginBottom: 10,
-                }}
-              >
-                Add a checklist item
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8 }}>
-                <input name="label" placeholder="Step label" className="dt-filter-input" required />
-                <select name="category" className="dt-filter-input" defaultValue="Documentation">
-                  {CATEGORY_ORDER.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <button type="submit" className="dt-btn">
-                  Add
-                </button>
-              </div>
-              <input
-                name="detail"
-                placeholder="Optional detail / instructions"
-                className="dt-filter-input"
-                style={{ width: "100%", marginTop: 8 }}
-              />
-            </form>
-          </div>
-        </div>
-
-        {/* Documents */}
-        <div className="dt-card">
-          <div className="dt-card-head">
-            <div>
-              <h3>Documents</h3>
-              <div className="sub">Click to mark received</div>
-            </div>
-          </div>
-          <div style={{ padding: "8px 0 12px" }}>
-            {documents.map((d) => (
-              <CheckRow
-                key={d.id}
-                itemId={d.id}
-                employeeId={employee.id}
-                label={d.name}
-                detail={null}
-                done={d.received}
-                doneOn={d.received_on}
-                kind="document"
-              />
-            ))}
-            {documents.length === 0 && (
-              <div
-                style={{
-                  padding: "20px 12px",
-                  fontSize: 12,
-                  color: "var(--dt-warm-500)",
-                  fontStyle: "italic",
-                  textAlign: "center",
-                }}
-              >
-                No documents required.
-              </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+            <Badge tone={progress.pct === 100 ? "green" : "amber"}>
+              {progress.done}/{progress.relevant} done · {progress.pct}%
+            </Badge>
+            {employee.recruiter && <Badge tone="warm">Recruiter: {employee.recruiter}</Badge>}
+            {employee.onboarding_in_charge && (
+              <Badge tone="warm">In charge: {employee.onboarding_in_charge}</Badge>
             )}
           </div>
 
-          <form
-            action={addDocument.bind(null, employee.id)}
+          <div
             style={{
-              margin: "0 14px 14px",
-              padding: "12px 14px",
-              background: "var(--dt-warm-50)",
-              border: "1px dashed var(--dt-warm-200)",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              gap: 16,
+              marginTop: 18,
+              fontSize: 12.5,
             }}
           >
+            <Field label="Phone" value={employee.phone ?? "—"} mono />
+            <Field label="Email" value={employee.email ?? "—"} />
+            <Field label="Company" value={primaryAssignment?.client.name ?? "—"} />
+            <Field label="Position" value={primaryAssignment?.position ?? "—"} />
+            <Field
+              label="Rate"
+              value={
+                primaryAssignment
+                  ? `$${Number(primaryAssignment.hourly_rate).toFixed(2)}/hr`
+                  : "—"
+              }
+              mono
+            />
+            <Field label="Start Date" value={fmtDate(primaryAssignment?.start_date ?? employee.hire_date)} />
+            <Field label="Recruiter" value={employee.recruiter ?? "—"} />
+            <Field label="Onboarding In Charge" value={employee.onboarding_in_charge ?? "—"} />
+          </div>
+
+          {/* Progress bar */}
+          <div style={{ marginTop: 18 }}>
             <div
               style={{
-                fontSize: 10,
-                letterSpacing: "0.22em",
-                textTransform: "uppercase",
-                color: "var(--dt-warm-500)",
-                fontWeight: 400,
-                marginBottom: 8,
+                height: 6,
+                background: "var(--dt-warm-100)",
+                borderRadius: 3,
+                overflow: "hidden",
               }}
             >
-              Add document
+              <div
+                style={{
+                  width: `${progress.pct}%`,
+                  height: "100%",
+                  background:
+                    progress.pct === 100 ? "var(--dt-success)" : "var(--dt-gold)",
+                  transition: "width 200ms",
+                }}
+              />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
-              <input name="name" placeholder="Document name" className="dt-filter-input" required />
-              <button type="submit" className="dt-btn">
-                Add
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       </div>
+
+      <WelcomeLetter
+        employeeId={employee.id}
+        initialBody={welcomeLetter?.body ?? null}
+        generatedBody={generated}
+        sentAt={welcomeLetter?.sent_at ?? null}
+      />
+
+      {/* 13-item checklist */}
+      <div className="dt-card" style={{ marginTop: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Onboarding Checklist</h3>
+            <div className="sub">
+              13 standard items · status flips Not Started → In Progress → Done; mark N/A to exclude from progress
+            </div>
+          </div>
+        </div>
+        <div>
+          {checklist.map((i) => (
+            <ItemRow
+              key={i.id}
+              itemId={i.id}
+              employeeId={employee.id}
+              ord={orderByKey.get(i.key) ?? 0}
+              label={i.label}
+              detail={i.detail}
+              status={i.status}
+              doneOn={i.done_on}
+              notes={i.notes}
+            />
+          ))}
+        </div>
+
+        <form
+          action={addChecklistItem.bind(null, employee.id)}
+          style={{
+            margin: "8px 18px 18px",
+            padding: "14px 16px",
+            background: "var(--dt-warm-50)",
+            border: "1px dashed var(--dt-warm-200)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: "var(--dt-warm-500)",
+              fontWeight: 400,
+              marginBottom: 10,
+            }}
+          >
+            Add a custom checklist item
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 8 }}>
+            <input name="label" placeholder="Step label" className="dt-filter-input" required />
+            <select name="category" className="dt-filter-input" defaultValue="Documentation">
+              <option value="Documentation">Documentation</option>
+              <option value="Compliance">Compliance</option>
+              <option value="Training">Training</option>
+              <option value="Equipment">Equipment</option>
+              <option value="Review">Review</option>
+            </select>
+            <button type="submit" className="dt-btn">
+              Add
+            </button>
+          </div>
+          <input
+            name="detail"
+            placeholder="Optional detail / instructions"
+            className="dt-filter-input"
+            style={{ width: "100%", marginTop: 8 }}
+          />
+        </form>
+      </div>
+
+      {/* Documents */}
+      <div className="dt-card" style={{ marginTop: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Document Folder</h3>
+            <div className="sub">Click to flip received status</div>
+          </div>
+        </div>
+        <div>
+          {documents.map((d, i) => (
+            <DocRow
+              key={d.id}
+              docId={d.id}
+              employeeId={employee.id}
+              name={d.name}
+              received={d.received}
+              receivedOn={d.received_on}
+              isLast={i === documents.length - 1}
+            />
+          ))}
+          {documents.length === 0 && (
+            <div
+              style={{
+                padding: "20px 22px",
+                fontSize: 12,
+                color: "var(--dt-warm-500)",
+                fontStyle: "italic",
+                textAlign: "center",
+              }}
+            >
+              No documents required.
+            </div>
+          )}
+        </div>
+
+        <form
+          action={addDocument.bind(null, employee.id)}
+          style={{
+            margin: "8px 18px 18px",
+            padding: "12px 14px",
+            background: "var(--dt-warm-50)",
+            border: "1px dashed var(--dt-warm-200)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: "var(--dt-warm-500)",
+              fontWeight: 400,
+              marginBottom: 8,
+            }}
+          >
+            Add document
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8 }}>
+            <input name="name" placeholder="Document name" className="dt-filter-input" required />
+            <button type="submit" className="dt-btn">
+              Add
+            </button>
+          </div>
+        </form>
+      </div>
     </Shell>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: 9.5,
+          letterSpacing: "0.22em",
+          textTransform: "uppercase",
+          color: "var(--dt-warm-500)",
+          fontWeight: 400,
+        }}
+      >
+        {label}
+      </div>
+      <div
+        className={mono ? "tab-num" : undefined}
+        style={{
+          fontSize: 13,
+          color: "var(--dt-black)",
+          marginTop: 4,
+          fontFamily: mono ? "var(--dt-mono)" : "inherit",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function DocRow({
+  docId,
+  employeeId,
+  name,
+  received,
+  receivedOn,
+  isLast,
+}: {
+  docId: string;
+  employeeId: string;
+  name: string;
+  received: boolean;
+  receivedOn: string | null;
+  isLast: boolean;
+}) {
+  return (
+    <form
+      action={toggleDocument.bind(null, docId, employeeId)}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        padding: "12px 22px",
+        borderBottom: isLast ? "none" : "1px solid var(--dt-warm-100)",
+      }}
+    >
+      <button
+        type="submit"
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: 4,
+          background: received ? "var(--dt-success)" : "var(--dt-warm-50)",
+          border: received ? "none" : "1.5px solid var(--dt-warm-300)",
+          color: "white",
+          fontSize: 12,
+          textAlign: "center",
+          lineHeight: "16px",
+          flexShrink: 0,
+          cursor: "pointer",
+          padding: 0,
+          fontFamily: "inherit",
+        }}
+      >
+        {received ? "✓" : ""}
+      </button>
+      <div style={{ flex: 1, fontSize: 13 }}>
+        <div style={{ fontWeight: received ? 300 : 400, color: received ? "var(--dt-warm-500)" : "var(--dt-black)" }}>
+          {name}
+        </div>
+        {received && receivedOn && (
+          <div style={{ fontSize: 10.5, color: "var(--dt-success)", marginTop: 2 }}>
+            ✓ {new Date(receivedOn).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+          </div>
+        )}
+      </div>
+    </form>
   );
 }

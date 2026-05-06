@@ -7,6 +7,7 @@ import {
   DEFAULT_CRITERIA,
   weightedScore,
 } from "@/lib/candidates";
+import { seedTemplateForEmployee } from "@/lib/onboarding.server";
 import type {
   CandidateCriterion,
   CandidateStatus,
@@ -33,7 +34,8 @@ export async function createCandidate(formData: FormData) {
       certifications:   certs,
       notes:            (formData.get("notes") as string)?.trim() || null,
       client_id:        (formData.get("client_id") as string) || null,
-      status:           "new" satisfies CandidateStatus,
+      status:           "applied" satisfies CandidateStatus,
+      recruiter:        (formData.get("recruiter") as string)?.trim() || null,
       criteria:         DEFAULT_CRITERIA,
       score:            weightedScore(DEFAULT_CRITERIA),
     })
@@ -125,8 +127,8 @@ export async function getResumeSignedUrl(path: string): Promise<string | null> {
 }
 
 export async function advanceToPlacement(candidateId: string) {
-  // Promote candidate → employee. Creates a minimal employee record;
-  // operator fills in assignment details on the roster page.
+  // Hire flow: candidate → employee + seed the 13-step onboarding template.
+  // Operator fills in assignment + onboarding-in-charge on the roster/onboarding pages.
   const supabase = await createClient();
 
   const { data: cand, error: getErr } = await supabase
@@ -146,19 +148,23 @@ export async function advanceToPlacement(candidateId: string) {
       hire_date: new Date().toISOString().slice(0, 10),
       status:    "onboarding",
       score:     0,
+      recruiter: cand.recruiter,
     })
     .select("id")
     .single();
   if (empErr) throw new Error(empErr.message);
 
+  await seedTemplateForEmployee(emp.id);
+
   const { error: updErr } = await supabase
     .from("candidates")
-    .update({ status: "placed", promoted_employee_id: emp.id })
+    .update({ status: "hired", promoted_employee_id: emp.id })
     .eq("id", candidateId);
   if (updErr) throw new Error(updErr.message);
 
   revalidatePath(`/candidates/${candidateId}`);
   revalidatePath("/candidates");
   revalidatePath("/roster");
-  redirect(`/employees/${emp.id}`);
+  revalidatePath("/onboarding");
+  redirect(`/onboarding/${emp.id}`);
 }

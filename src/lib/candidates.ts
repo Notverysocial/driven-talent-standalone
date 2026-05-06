@@ -3,12 +3,13 @@ import type {
   CandidateStatus,
 } from "./supabase/types";
 
-export const CANDIDATE_STATUSES: { id: CandidateStatus; label: string; tone: "warm" | "gold" | "amber" | "green" | "dark" }[] = [
-  { id: "new",        label: "New",        tone: "warm" },
+export const CANDIDATE_STATUSES: { id: CandidateStatus; label: string; tone: "warm" | "gold" | "amber" | "green" | "red" | "dark" }[] = [
+  { id: "applied",    label: "Applied",    tone: "warm" },
   { id: "screening",  label: "Screening",  tone: "gold" },
   { id: "interview",  label: "Interview",  tone: "amber" },
-  { id: "placed",     label: "Placed",     tone: "green" },
-  { id: "inactive",   label: "Inactive",   tone: "dark" },
+  { id: "offer",      label: "Offer",      tone: "gold" },
+  { id: "hired",      label: "Hired",      tone: "green" },
+  { id: "rejected",   label: "Rejected",   tone: "red" },
 ];
 
 // 6 evaluation criteria seeded on every new candidate so the scoring UI has

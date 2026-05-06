@@ -32,6 +32,7 @@ export default async function NewCandidatePage() {
           <Field label="Phone" name="phone" />
           <Field label="City" name="city" placeholder="e.g. Stockton, CA" />
           <Field label="Source" name="source" placeholder="Referral · LinkedIn · Indeed" />
+          <Field label="Recruiter" name="recruiter" placeholder="Rocio · Leangel · Estefany" />
           <Field label="Years Experience" name="experience_years" type="number" step="0.5" />
           <SelectField
             label="Target Client"

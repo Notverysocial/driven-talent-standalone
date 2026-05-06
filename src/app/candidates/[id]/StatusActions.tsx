@@ -40,15 +40,15 @@ export function StatusActions({
       </select>
       <button
         className="dt-btn dt-btn-gold"
-        disabled={isPending || currentStatus === "placed"}
+        disabled={isPending || currentStatus === "hired"}
         onClick={() => {
-          if (!confirm("Promote this candidate to an employee?")) return;
+          if (!confirm("Hire this candidate? An employee record + 13-step onboarding will be created.")) return;
           startTransition(async () => {
             await advanceToPlacement(candidateId);
           });
         }}
       >
-        <span>{currentStatus === "placed" ? "Placed" : "Advance to Placement"}</span>
+        <span>{currentStatus === "hired" ? "Hired" : "Hire Candidate"}</span>
       </button>
     </>
   );

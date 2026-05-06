@@ -137,6 +137,11 @@ export default async function CandidateDetailPage({
                     })
                   : "—"}
               </div>
+              {cand.recruiter && (
+                <div className="tiny muted" style={{ marginTop: 4 }}>
+                  Recruiter: <span style={{ color: "var(--dt-warm-700)" }}>{cand.recruiter}</span>
+                </div>
+              )}
               <div style={{ marginTop: 8 }}>
                 <Badge tone={status.tone}>{status.label}</Badge>
               </div>

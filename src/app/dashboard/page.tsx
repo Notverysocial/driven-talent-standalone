@@ -11,11 +11,12 @@ function fmt$(n: number) {
 }
 
 const PIPELINE_TONE: Record<string, BadgeTone> = {
-  new: "warm",
+  applied: "warm",
   screening: "gold",
   interview: "amber",
-  placed: "green",
-  inactive: "dark",
+  offer: "gold",
+  hired: "green",
+  rejected: "red",
 };
 
 export default async function DashboardPage() {

@@ -1,10 +1,10 @@
-// Hand-written types matching supabase/migrations/0000_init.sql.
-// When the schema stabilizes, regenerate via `supabase gen types typescript`.
+// Hand-written types matching supabase/migrations/0000_init.sql + 0001_ops_workflow.sql.
 
 export type EmployeeStatus = "active" | "onboarding" | "inactive";
 export type ScoreBand = "green" | "yellow" | "red";
 export type AttendanceStatus = "present" | "late" | "missed" | "no_show" | "excused";
-export type CandidateStatus = "new" | "screening" | "interview" | "placed" | "inactive";
+// Updated by 0001 — old values were new/screening/interview/placed/inactive.
+export type CandidateStatus = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";
 export type TimecardStatus = "draft" | "submitted" | "approved" | "rejected";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "void";
 export type OnboardingCategory =
@@ -13,6 +13,9 @@ export type OnboardingCategory =
   | "Training"
   | "Equipment"
   | "Review";
+export type OnboardingStatus = "not_started" | "in_progress" | "done" | "na";
+export type PayrollPeriodStatus = "open" | "audited" | "submitted" | "approved" | "closed";
+export type ClientReportFormat = "standard" | "hours_spent" | "timecard";
 
 export type Client = {
   id: string;
@@ -25,6 +28,7 @@ export type Client = {
   contact_email: string | null;
   terms: string | null;
   service_fee_pct: number;
+  report_format: ClientReportFormat;
   created_at: string;
   updated_at: string;
 };
@@ -42,6 +46,9 @@ export type Employee = {
   band: ScoreBand | null;
   rank: number | null;
   notes: string | null;
+  recruiter: string | null;
+  onboarding_in_charge: string | null;
+  sick_hours_balance: number;
   created_at: string;
   updated_at: string;
 };
@@ -100,6 +107,7 @@ export type Candidate = {
   score: number | null;
   promoted_employee_id: string | null;
   client_id: string | null;
+  recruiter: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -111,8 +119,9 @@ export type OnboardingChecklistItem = {
   label: string;
   detail: string | null;
   category: OnboardingCategory;
-  done: boolean;
+  status: OnboardingStatus;
   done_on: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -124,6 +133,15 @@ export type OnboardingDocument = {
   received: boolean;
   received_on: string | null;
   file_path: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WelcomeLetterDraft = {
+  id: string;
+  employee_id: string;
+  body: string;
+  sent_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -141,6 +159,13 @@ export type TimecardDays = Partial<
   Record<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun", TimecardDay>
 >;
 
+export type TimecardFlags = {
+  missed_punch?: boolean;
+  punch_day?: string;
+  hours_mismatch?: boolean;
+  reason?: string;
+};
+
 export type Timecard = {
   id: string;
   employee_id: string;
@@ -150,6 +175,7 @@ export type Timecard = {
   reg_hours: number;
   ot_hours: number;
   holiday_hours: number;
+  sick_hours: number;
   total_hours: number;
   hourly_rate: number;
   status: TimecardStatus;
@@ -157,6 +183,8 @@ export type Timecard = {
   approved_by: string | null;
   approved_at: string | null;
   notes: string | null;
+  flags: TimecardFlags;
+  payroll_period_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -180,6 +208,8 @@ export type Invoice = {
   paid_at: string | null;
   pdf_path: string | null;
   notes: string | null;
+  bill_to_client_name: string | null;
+  payroll_period_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -194,7 +224,20 @@ export type InvoiceLineItem = {
   ot_hours: number;
   rate: number;
   amount: number;
+  employee_cost: number | null;
   sort_order: number;
   timecard_id: string | null;
   created_at: string;
+};
+
+export type PayrollPeriod = {
+  id: string;
+  start_date: string;
+  end_date: string;
+  status: PayrollPeriodStatus;
+  approved_by: string | null;
+  approved_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 };

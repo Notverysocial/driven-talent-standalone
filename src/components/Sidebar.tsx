@@ -34,6 +34,7 @@ const NAV: NavEntry[] = [
   },
   { section: "Operations" },
   { id: "timecards", label: "Timecards", icon: "clock", href: "/timecards" },
+  { id: "payroll",  label: "Payroll",  icon: "chart", href: "/payroll" },
   { id: "invoices", label: "Invoices", icon: "file", href: "/invoices" },
   {
     id: "reconcile",

@@ -55,7 +55,7 @@ export default async function EmployeeDetailPage({
     arr.push(i);
     checklistByCategory.set(i.category, arr);
   }
-  const checklistDone = checklist.filter((i) => i.done).length;
+  const checklistDone = checklist.filter((i) => i.status === "done").length;
   const docsDone = documents.filter((d) => d.received).length;
 
   const activeAssignments = assignments.filter((a) => a.active);
@@ -263,8 +263,8 @@ export default async function EmployeeDetailPage({
                         height: 14,
                         borderRadius: 3,
                         marginTop: 2,
-                        background: i.done ? "var(--dt-success)" : "var(--dt-warm-100)",
-                        border: i.done ? "none" : "1px solid var(--dt-warm-200)",
+                        background: (i.status === "done") ? "var(--dt-success)" : "var(--dt-warm-100)",
+                        border: (i.status === "done") ? "none" : "1px solid var(--dt-warm-200)",
                         color: "white",
                         fontSize: 10,
                         textAlign: "center",
@@ -272,10 +272,10 @@ export default async function EmployeeDetailPage({
                         flexShrink: 0,
                       }}
                     >
-                      {i.done ? "✓" : ""}
+                      {(i.status === "done") ? "✓" : ""}
                     </span>
                     <div style={{ flex: 1, fontSize: 12, lineHeight: 1.45 }}>
-                      <div style={{ fontWeight: i.done ? 300 : 400, color: i.done ? "var(--dt-warm-500)" : "var(--dt-black)" }}>
+                      <div style={{ fontWeight: (i.status === "done") ? 300 : 400, color: (i.status === "done") ? "var(--dt-warm-500)" : "var(--dt-black)" }}>
                         {i.label}
                       </div>
                       {i.detail && (

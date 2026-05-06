@@ -10,17 +10,34 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function pct(n: number, total: number) {
-  return total === 0 ? 0 : Math.round((n / total) * 100);
+function pct(done: number, relevant: number) {
+  return relevant === 0 ? 0 : Math.round((done / relevant) * 100);
 }
 
 export default async function OnboardingListPage() {
   const summaries = await listOnboardingSummaries();
 
+  const ready = summaries.filter(
+    (s) => s.totalSteps > 0 && s.doneSteps === s.totalSteps - s.naSteps,
+  ).length;
+  const stalled = summaries.filter((s) => {
+    const relevant = s.totalSteps - s.naSteps;
+    return relevant > 0 && s.doneSteps / relevant < 0.5;
+  }).length;
+  const avgProgress =
+    summaries.length === 0
+      ? 0
+      : Math.round(
+          summaries.reduce((s, x) => {
+            const relevant = x.totalSteps - x.naSteps;
+            return s + (relevant === 0 ? 0 : (x.doneSteps / relevant) * 100);
+          }, 0) / summaries.length,
+        );
+
   return (
     <Shell>
       <Topbar
-        crumb="PEOPLE OPS / ONBOARDING"
+        crumb="HR / ONBOARDING"
         scriptWord="Active "
         title="Onboarding"
         actions={
@@ -39,46 +56,17 @@ export default async function OnboardingListPage() {
         }}
       >
         <KPI label="In Progress" value={String(summaries.length)} sub="onboarding" accent="var(--dt-gold-deep)" />
-        <KPI
-          label="Avg Progress"
-          value={
-            summaries.length === 0
-              ? "—"
-              : `${Math.round(
-                  summaries.reduce(
-                    (s, x) =>
-                      s +
-                      (pct(x.doneSteps, x.totalSteps) +
-                        pct(x.doneDocs, x.totalDocs)) /
-                        2,
-                    0,
-                  ) / summaries.length,
-                )}%`
-          }
-          sub="across cohort"
-        />
+        <KPI label="Avg Progress" value={summaries.length === 0 ? "—" : `${avgProgress}%`} sub="across cohort" />
         <KPI
           label="Stalled"
-          value={String(
-            summaries.filter(
-              (x) => pct(x.doneSteps, x.totalSteps) < 50 && pct(x.doneDocs, x.totalDocs) < 50,
-            ).length,
-          )}
-          sub="< 50% on both tracks"
-          accent="var(--dt-warning)"
+          value={String(stalled)}
+          sub="under 50% of steps"
+          accent={stalled > 0 ? "var(--dt-warning)" : "var(--dt-black)"}
         />
         <KPI
           label="Ready to Activate"
-          value={String(
-            summaries.filter(
-              (x) =>
-                x.totalSteps > 0 &&
-                x.doneSteps === x.totalSteps &&
-                x.totalDocs > 0 &&
-                x.doneDocs === x.totalDocs,
-            ).length,
-          )}
-          sub="all checks complete"
+          value={String(ready)}
+          sub="all relevant steps done"
           accent="var(--dt-success)"
         />
       </div>
@@ -87,7 +75,7 @@ export default async function OnboardingListPage() {
         <div className="dt-card-head">
           <div>
             <h3>{summaries.length} {summaries.length === 1 ? "person" : "people"} onboarding</h3>
-            <div className="sub">Click in to update steps and documents</div>
+            <div className="sub">Click in to update statuses + notes</div>
           </div>
         </div>
         <div className="dt-table-wrap">
@@ -95,18 +83,18 @@ export default async function OnboardingListPage() {
             <thead>
               <tr>
                 <th style={{ paddingLeft: 22 }}>Employee</th>
+                <th>Recruiter</th>
+                <th>In Charge</th>
                 <th>Hire Date</th>
-                <th>Steps</th>
-                <th>Documents</th>
+                <th>Progress</th>
                 <th style={{ paddingRight: 22 }}>Status</th>
               </tr>
             </thead>
             <tbody>
               {summaries.map((s) => {
-                const stepsPct = pct(s.doneSteps, s.totalSteps);
-                const docsPct = pct(s.doneDocs, s.totalDocs);
-                const ready =
-                  s.totalSteps > 0 && s.doneSteps === s.totalSteps && s.totalDocs > 0 && s.doneDocs === s.totalDocs;
+                const relevant = s.totalSteps - s.naSteps;
+                const p = pct(s.doneSteps, relevant);
+                const isReady = relevant > 0 && s.doneSteps === relevant;
                 return (
                   <tr key={s.employee.id}>
                     <td style={{ paddingLeft: 22 }}>
@@ -121,25 +109,44 @@ export default async function OnboardingListPage() {
                         </div>
                       </Link>
                     </td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      {s.employee.recruiter ?? "—"}
+                    </td>
+                    <td className="muted" style={{ fontSize: 12 }}>
+                      {s.employee.onboarding_in_charge ?? "—"}
+                    </td>
                     <td className="tab-num" style={{ fontSize: 12 }}>
                       {fmtDate(s.employee.hire_date)}
                     </td>
                     <td>
-                      <ProgressBar
-                        done={s.doneSteps}
-                        total={s.totalSteps}
-                        accent={stepsPct === 100 ? "var(--dt-success)" : "var(--dt-gold)"}
-                      />
-                    </td>
-                    <td>
-                      <ProgressBar
-                        done={s.doneDocs}
-                        total={s.totalDocs}
-                        accent={docsPct === 100 ? "var(--dt-success)" : "var(--dt-gold)"}
-                      />
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 140 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5 }}>
+                          <span className="tab-num" style={{ fontWeight: 400 }}>
+                            {s.doneSteps}/{relevant}
+                            {s.naSteps > 0 && (
+                              <span style={{ color: "var(--dt-warm-400)", marginLeft: 6 }}>
+                                · {s.naSteps} N/A
+                              </span>
+                            )}
+                          </span>
+                          <span className="tab-num" style={{ color: "var(--dt-warm-500)" }}>
+                            {p}%
+                          </span>
+                        </div>
+                        <div style={{ height: 4, background: "var(--dt-warm-100)", borderRadius: 2, overflow: "hidden" }}>
+                          <div
+                            style={{
+                              width: `${p}%`,
+                              height: "100%",
+                              background: p === 100 ? "var(--dt-success)" : "var(--dt-gold)",
+                              transition: "width 200ms",
+                            }}
+                          />
+                        </div>
+                      </div>
                     </td>
                     <td style={{ paddingRight: 22 }}>
-                      {ready ? (
+                      {isReady ? (
                         <Badge tone="green">Ready</Badge>
                       ) : (
                         <Badge tone="amber">In progress</Badge>
@@ -151,7 +158,7 @@ export default async function OnboardingListPage() {
               {summaries.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     style={{
                       textAlign: "center",
                       padding: "48px 22px",
@@ -185,25 +192,6 @@ function KPI({ label, value, accent, sub }: { label: string; value: string; acce
           {value}
         </div>
         {sub && <div style={{ fontSize: 11.5, color: "var(--dt-warm-500)" }}>{sub}</div>}
-      </div>
-    </div>
-  );
-}
-
-function ProgressBar({ done, total, accent }: { done: number; total: number; accent: string }) {
-  const p = pct(done, total);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 120 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5 }}>
-        <span className="tab-num" style={{ fontWeight: 400 }}>
-          {done}/{total}
-        </span>
-        <span className="tab-num" style={{ color: "var(--dt-warm-500)" }}>
-          {p}%
-        </span>
-      </div>
-      <div style={{ height: 4, background: "var(--dt-warm-100)", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ width: `${p}%`, height: "100%", background: accent, transition: "width 200ms" }} />
       </div>
     </div>
   );
