@@ -8,7 +8,8 @@ export type IconName =
   | "chart"
   | "building"
   | "calendar"
-  | "clipboard";
+  | "clipboard"
+  | "message";
 
 export function NavIcon({ name }: { name: IconName }) {
   const props = {
@@ -98,6 +99,12 @@ export function NavIcon({ name }: { name: IconName }) {
           <rect x="5" y="4" width="14" height="17" rx="1.5" />
           <rect x="9" y="2.5" width="6" height="3.5" rx="1" />
           <path d="M9 11h6M9 14h6M9 17h4" />
+        </svg>
+      );
+    case "message":
+      return (
+        <svg {...props}>
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       );
     default:

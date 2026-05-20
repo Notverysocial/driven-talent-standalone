@@ -4,6 +4,7 @@ import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge, type BadgeTone } from "@/components/Badge";
 import { getDashboard } from "@/lib/dashboard.server";
+import { getInboxCounts } from "@/app/inbox/actions";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
 
 function fmt$(n: number) {
@@ -21,6 +22,7 @@ const PIPELINE_TONE: Record<string, BadgeTone> = {
 
 export default async function DashboardPage() {
   const d = await getDashboard();
+  const inbox = await getInboxCounts();
 
   const KPIS = [
     {
@@ -43,6 +45,18 @@ export default async function DashboardPage() {
         d.totals.pendingTimecards > 5
           ? "var(--dt-warning)"
           : "var(--dt-black)",
+    },
+    {
+      label: "Unread Messages",
+      value: String(inbox.unreadMessages),
+      sub: "from web chat",
+      accent: inbox.unreadMessages > 0 ? "var(--dt-gold-deep)" : "var(--dt-black)",
+    },
+    {
+      label: "Open Conversations",
+      value: String(inbox.openConversations),
+      sub: "awaiting response",
+      accent: inbox.openConversations > 0 ? "var(--dt-warning)" : "var(--dt-black)",
     },
     {
       label: "Missed Days · 30d",
