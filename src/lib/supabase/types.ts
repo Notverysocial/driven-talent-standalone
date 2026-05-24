@@ -49,6 +49,7 @@ export type Employee = {
   recruiter: string | null;
   onboarding_in_charge: string | null;
   sick_hours_balance: number;
+  birthday: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -238,6 +239,30 @@ export type PayrollPeriod = {
   approved_by: string | null;
   approved_at: string | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---- Calendar (migration 0003) -----------------------------------------
+
+export type CalendarEventKind = "birthday" | "holiday" | "social_post" | "custom";
+
+export type CalendarEvent = {
+  id: string;
+  kind: CalendarEventKind;
+  title: string;
+  description: string | null;
+  event_date: string;              // YYYY-MM-DD
+  start_time: string | null;       // HH:MM:SS
+  end_time: string | null;         // HH:MM:SS
+  all_day: boolean;
+  location: string | null;
+  link_url: string | null;
+  assignee_name: string | null;
+  employee_id: string | null;
+  client_id: string | null;
+  color_hex: string | null;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 };

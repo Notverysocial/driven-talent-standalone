@@ -18,6 +18,7 @@ const NAV: NavEntry[] = [
   { section: "Operations" },
   { id: "dashboard",  label: "Dashboard",  icon: "home",  href: "/dashboard" },
   { id: "inbox",      label: "Inbox",      icon: "message", href: "/inbox" },
+  { id: "calendar",   label: "Calendar",   icon: "calendar", href: "/calendar" },
   { id: "candidates", label: "Candidates", icon: "star",  href: "/candidates" },
   { id: "employees",  label: "Employees",  icon: "users", href: "/roster" },
 
