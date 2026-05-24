@@ -14,28 +14,34 @@ type NavLink = {
 type NavSection = { section: string };
 type NavEntry = NavLink | NavSection;
 
+// Order mirrors the Driven Talent Operations Dashboard v3 demo:
+// Overview / Recruiting / HR & Safety / Payroll & Finance / Internal.
 const NAV: NavEntry[] = [
-  { section: "Operations" },
-  { id: "dashboard",  label: "Dashboard",  icon: "home",  href: "/dashboard" },
-  { id: "inbox",      label: "Inbox",      icon: "message", href: "/inbox" },
-  { id: "calendar",   label: "Calendar",   icon: "calendar", href: "/calendar" },
-  { id: "applications", label: "Applications", icon: "file", href: "/applications" },
-  { id: "candidates", label: "Candidates", icon: "star",  href: "/candidates" },
-  { id: "calls",      label: "Inbound Calls", icon: "message", href: "/calls" },
-  { id: "positions",  label: "Open Positions", icon: "clipboard", href: "/positions" },
-  { id: "employees",  label: "Employees",  icon: "users", href: "/roster" },
+  { section: "Overview" },
+  { id: "dashboard",  label: "Dashboard",      icon: "home",     href: "/dashboard" },
+  { id: "inbox",      label: "Inbox",          icon: "message",  href: "/inbox" },
 
-  { section: "HR" },
-  { id: "onboarding", label: "Onboarding", icon: "clipboard", href: "/onboarding" },
-  { id: "attendance", label: "Attendance", icon: "calendar",  href: "/attendance" },
-  { id: "sick-time",  label: "Sick Time",  icon: "check",     href: "/sick-time" },
-  { id: "loa",        label: "Leave",      icon: "file",      href: "/loa" },
-  { id: "safety",     label: "Safety",     icon: "building",  href: "/safety" },
+  { section: "Recruiting" },
+  { id: "applications", label: "Applicant Tracking", icon: "file",      href: "/applications" },
+  { id: "calls",        label: "Inbound Calls",      icon: "message",   href: "/calls" },
+  { id: "candidates",   label: "Candidates",         icon: "star",      href: "/candidates" },
+  { id: "positions",    label: "Open Positions",     icon: "clipboard", href: "/positions" },
+  { id: "onboarding",   label: "Onboarding",         icon: "clipboard", href: "/onboarding" },
+  { id: "employees",    label: "Active Employees",   icon: "users",     href: "/roster" },
 
-  { section: "Finance" },
-  { id: "timecards",  label: "Timecards",  icon: "clock", href: "/timecards" },
-  { id: "invoices",   label: "Invoices",   icon: "file",  href: "/invoices" },
-  { id: "payroll",    label: "Payroll",    icon: "chart", href: "/payroll" },
+  { section: "HR & Safety" },
+  { id: "attendance", label: "Attendance",       icon: "calendar", href: "/attendance" },
+  { id: "sick-time",  label: "Sick Time",        icon: "check",    href: "/sick-time" },
+  { id: "loa",        label: "Leave of Absence", icon: "file",     href: "/loa" },
+  { id: "safety",     label: "Safety / Warnings", icon: "building", href: "/safety" },
+
+  { section: "Payroll & Finance" },
+  { id: "timecards",  label: "Timecards",       icon: "clock", href: "/timecards" },
+  { id: "payroll",    label: "Payroll",         icon: "chart", href: "/payroll" },
+  { id: "invoices",   label: "Invoices",        icon: "file",  href: "/invoices" },
+
+  { section: "Driven Talent Internal" },
+  { id: "calendar",   label: "Calendar",        icon: "calendar", href: "/calendar" },
 ];
 
 export function Sidebar() {
@@ -74,7 +80,7 @@ export function Sidebar() {
       <aside className={"dt-sidebar" + (open ? " open" : "")}>
         <div className="dt-brand">
           <div className="name">Driven Talent</div>
-          <div className="sub">Workforce · Solutions</div>
+          <div className="sub">Operations · Dashboard</div>
         </div>
         {NAV.map((entry, i) =>
           "section" in entry ? (
