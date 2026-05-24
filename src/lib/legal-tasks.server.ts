@@ -143,7 +143,7 @@ export async function listTaskAssigneeNames(): Promise<string[]> {
     assignee: { full_name: string } | null;
   };
   const names = new Set<string>();
-  for (const r of (data ?? []) as Row[]) {
+  for (const r of (data ?? []) as unknown as Row[]) {
     if (r.assignee?.full_name) names.add(r.assignee.full_name);
     else if (r.assignee_name) names.add(r.assignee_name);
   }
