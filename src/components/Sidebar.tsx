@@ -19,7 +19,10 @@ const NAV: NavEntry[] = [
   { id: "dashboard",  label: "Dashboard",  icon: "home",  href: "/dashboard" },
   { id: "inbox",      label: "Inbox",      icon: "message", href: "/inbox" },
   { id: "calendar",   label: "Calendar",   icon: "calendar", href: "/calendar" },
+  { id: "applications", label: "Applications", icon: "file", href: "/applications" },
   { id: "candidates", label: "Candidates", icon: "star",  href: "/candidates" },
+  { id: "calls",      label: "Inbound Calls", icon: "message", href: "/calls" },
+  { id: "positions",  label: "Open Positions", icon: "clipboard", href: "/positions" },
   { id: "employees",  label: "Employees",  icon: "users", href: "/roster" },
 
   { section: "HR" },
