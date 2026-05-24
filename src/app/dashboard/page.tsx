@@ -6,19 +6,15 @@ import { Badge, type BadgeTone } from "@/components/Badge";
 import { getDashboard } from "@/lib/dashboard.server";
 import { getInboxCounts } from "@/app/inbox/actions";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
+import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
+import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
+import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
 
 function fmt$(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
-
-const PIPELINE_TONE: Record<string, BadgeTone> = {
-  applied: "warm",
-  screening: "gold",
-  interview: "amber",
-  offer: "gold",
-  hired: "green",
-  rejected: "red",
-};
 
 export default async function DashboardPage() {
   const d = await getDashboard();
@@ -135,6 +131,81 @@ export default async function DashboardPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div
+        className="dt-overview-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+          gap: 22,
+          marginBottom: 22,
+        }}
+      >
+        <ChartCard
+          title="Attendance · 30 Days"
+          sub="Daily counts across present, late, missed, no-show"
+          action={
+            <Link href="/attendance" className="dt-btn dt-btn-ghost tiny">
+              Open attendance →
+            </Link>
+          }
+        >
+          <AttendanceTrendChart data={d.attendanceTrend} />
+        </ChartCard>
+
+        <ChartCard
+          title="Hiring Pipeline"
+          sub="Active candidates by stage"
+          action={
+            <Link href="/candidates" className="dt-btn dt-btn-ghost tiny">
+              Open pipeline →
+            </Link>
+          }
+        >
+          <PipelineFunnelChart data={d.pipeline} />
+        </ChartCard>
+      </div>
+
+      <div
+        className="dt-overview-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: 22,
+          marginBottom: 22,
+        }}
+      >
+        <ChartCard
+          title="Revenue · Last 6 Months"
+          sub="Billed vs. paid by month"
+          action={
+            <Link href="/invoices" className="dt-btn dt-btn-ghost tiny">
+              Open billing →
+            </Link>
+          }
+        >
+          <RevenueTrendChart data={d.revenueTrend} />
+        </ChartCard>
+
+        <ChartCard
+          title="Weekly Billing by Client"
+          sub="Estimated revenue per active engagement"
+          action={
+            <Link href="/roster" className="dt-btn dt-btn-ghost tiny">
+              Open roster →
+            </Link>
+          }
+        >
+          <WeeklyBillingChart
+            data={d.clientStats.map((s) => ({
+              name: s.client.name,
+              weeklyBilling: s.weeklyBilling,
+              weeklyHours: s.weeklyHours,
+              headcount: s.headcount,
+            }))}
+          />
+        </ChartCard>
       </div>
 
       <div
@@ -286,47 +357,6 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-          <div className="dt-card" style={{ padding: "18px 22px" }}>
-            <div
-              className="tiny muted"
-              style={{
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                fontWeight: 400,
-              }}
-            >
-              Hiring Pipeline
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                marginTop: 12,
-              }}
-            >
-              {d.pipeline.map((p) => (
-                <div
-                  key={p.status}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <span style={{ fontSize: 12.5, fontWeight: 300 }}>{p.label}</span>
-                  <Badge tone={PIPELINE_TONE[p.status] ?? "warm"}>{p.count}</Badge>
-                </div>
-              ))}
-            </div>
-            <Link
-              href="/candidates"
-              className="dt-btn dt-btn-ghost tiny"
-              style={{ marginTop: 14, padding: 0 }}
-            >
-              View pipeline →
-            </Link>
-          </div>
         </div>
       </div>
 
