@@ -63,6 +63,10 @@ export type EmployeeAssignment = {
   shift: string;
   start_date: string | null;
   hourly_rate: number;
+  // Added in 0006 — what the client is billed per hour. Falls back to
+  // hourly_rate × (1 + client.service_fee_pct/100) at invoice time when null.
+  bill_rate: number | null;
+  branch: string | null;
   active: boolean;
   created_at: string;
   updated_at: string;
@@ -211,8 +215,26 @@ export type Invoice = {
   notes: string | null;
   bill_to_client_name: string | null;
   payroll_period_id: string | null;
+  // Added in 0006 — department + branch dimensions per SOP grouping rule
+  // (one invoice per client × department).
+  department: string | null;
+  branch: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// Added in 0006 — tracks each batch generation of invoices from a
+// payroll period. Lets the period detail page show "last generated"
+// state and prevent accidental duplicate runs.
+export type InvoiceRun = {
+  id: string;
+  payroll_period_id: string;
+  ran_at: string;
+  ran_by: string | null;
+  invoices_created: number;
+  line_items_created: number;
+  total_billed: number;
+  notes: string | null;
 };
 
 export type InvoiceLineItem = {
@@ -239,6 +261,8 @@ export type PayrollPeriod = {
   approved_by: string | null;
   approved_at: string | null;
   notes: string | null;
+  // Added in 0006 — date the invoices for this period were/will be cut.
+  invoice_date: string | null;
   created_at: string;
   updated_at: string;
 };
