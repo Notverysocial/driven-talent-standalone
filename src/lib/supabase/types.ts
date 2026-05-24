@@ -434,3 +434,90 @@ export type DisciplinaryWarning = {
   created_at: string;
   updated_at: string;
 };
+
+// ---------- Reimbursements + Expenses (migration 0009) ----------
+
+export type ReimbursementStatus =
+  | "submitted"
+  | "approved"
+  | "rejected"
+  | "paid";
+
+export type ReimbursementCategory =
+  | "mileage"
+  | "meals"
+  | "travel"
+  | "supplies"
+  | "equipment"
+  | "training"
+  | "phone"
+  | "uniform"
+  | "other";
+
+export type ExpenseCategory =
+  | "rent"
+  | "utilities"
+  | "software"
+  | "marketing"
+  | "insurance"
+  | "supplies"
+  | "travel"
+  | "meals"
+  | "professional_services"
+  | "payroll"
+  | "taxes"
+  | "equipment"
+  | "other";
+
+export type ExpensePaymentMethod =
+  | "check"
+  | "ach"
+  | "card"
+  | "cash"
+  | "payroll"
+  | "wire"
+  | "other";
+
+export type ReimbursementRequest = {
+  id: string;
+  employee_id: string;
+  amount: number;
+  category: ReimbursementCategory;
+  description: string;
+  expense_date: string;
+  submitted_at: string;
+  status: ReimbursementStatus;
+  receipt_path: string | null;
+  receipt_url: string | null;
+  payment_method: ExpensePaymentMethod | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_reason: string | null;
+  rejected_at: string | null;
+  paid_at: string | null;
+  paid_reference: string | null;
+  notes: string | null;
+  client_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Expense = {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  expense_date: string;
+  vendor: string | null;
+  description: string | null;
+  payment_method: ExpensePaymentMethod | null;
+  receipt_path: string | null;
+  receipt_url: string | null;
+  client_id: string | null;
+  reimbursement_id: string | null;
+  reimbursable: boolean;
+  reference: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
