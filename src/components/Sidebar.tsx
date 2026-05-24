@@ -40,6 +40,9 @@ const NAV: NavEntry[] = [
   { id: "payroll",    label: "Payroll",         icon: "chart", href: "/payroll" },
   { id: "invoices",   label: "Invoices",        icon: "file",  href: "/invoices" },
 
+  { section: "Sales" },
+  { id: "pipeline",   label: "Sales Pipeline",  icon: "chart",    href: "/pipeline" },
+
   { section: "Driven Talent Internal" },
   { id: "calendar",   label: "Calendar",        icon: "calendar", href: "/calendar" },
 ];
