@@ -8,6 +8,14 @@ import { createMiddlewareClient } from "@/lib/supabase/middleware";
 // request. Edge-side, cookie-only check — the authoritative role check
 // happens in `requireUser` / `requireRole` (src/lib/auth.server.ts) at
 // the page and action layer.
+//
+// AUTH_ENABLED feature flag (default OFF): when unset the proxy is a
+// pass-through — no /login redirect, no Supabase session refresh, no
+// auth cookies touched. Matches the v1 "open" UX. Flip to "true" to
+// activate the full Wave 3.1 gate. Kept inline (not imported from
+// auth.server.ts) because middleware runs on the Edge runtime and must
+// not pull in "server-only" modules.
+const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
 
 // Public paths that should NEVER be gated. Includes /login and the
 // auth callback routes, the bug-report writer API (used by the public
@@ -23,6 +31,8 @@ function isPublicPath(pathname: string): boolean {
 }
 
 export async function proxy(request: NextRequest) {
+  if (!AUTH_ENABLED) return NextResponse.next();
+
   const { supabase, response } = createMiddlewareClient(request);
 
   // Refresh the session cookie if needed. getUser() validates against

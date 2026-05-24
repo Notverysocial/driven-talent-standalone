@@ -82,7 +82,15 @@ function roleAtLeast(role: AppRole | undefined, minimum: AppRole | undefined): b
   return ROLE_RANK[role] >= ROLE_RANK[minimum];
 }
 
-export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
+export function Sidebar({
+  viewer,
+  authEnabled = true,
+}: {
+  viewer: SidebarViewer | null;
+  // When false, the global AUTH_ENABLED flag is off — hide the Sign out
+  // button so the user is never sent to /login.
+  authEnabled?: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const t = useT();
@@ -184,7 +192,7 @@ export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
             </div>
             <div className="role">{roleLabel}</div>
             <LanguageSwitcher />
-            {viewer ? (
+            {viewer && authEnabled ? (
               <form action={logout}>
                 <button type="submit" className="dt-logout">
                   {t("nav.signOut")}
