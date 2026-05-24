@@ -51,6 +51,7 @@ const NAV: NavEntry[] = [
   { id: "tasks",      label: "Tasks",           icon: "check",    href: "/tasks" },
   { id: "contacts",   label: "Contacts",        icon: "users",    href: "/contacts" },
   { id: "legal",      label: "Legal · Notices", icon: "file",     href: "/legal" },
+  { id: "workflows",  label: "Workflows",       icon: "check",    href: "/workflows" },
 
   { section: "Admin" },
   { id: "team",        label: "Team Members",         icon: "users", href: "/team" },
