@@ -477,7 +477,9 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(26,26,26,0.08);
+  color: var(--dt-black);
 }
+.dt-mobile-toggle:hover { border-color: var(--dt-black); }
 .dt-mobile-overlay {
   display: none;
   position: fixed;
@@ -491,11 +493,12 @@ button { font-family: inherit; }
   .dt-sidebar {
     position: fixed;
     top: 0; left: 0; bottom: 0;
-    width: 260px;
+    width: min(86vw, 280px);
     z-index: 45;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     overflow-y: auto;
+    padding: 24px 20px;
   }
   .dt-sidebar.open { transform: translateX(0); }
   .dt-mobile-overlay.open { display: block; }
@@ -511,8 +514,13 @@ button { font-family: inherit; }
 
 @media (max-width: 600px) {
   .dt-topbar h1 { font-size: 22px; }
+  .dt-topbar .crumb { font-size: 8.5px; letter-spacing: 0.3em; margin-bottom: 10px; }
+  .dt-topbar-right { width: 100%; }
+  .dt-topbar-right .dt-btn { flex: 1 1 auto; justify-content: center; }
   .dt-btn { padding: 8px 14px; font-size: 9.5px; letter-spacing: 0.14em; }
   .dt-main { padding: 60px 14px 28px; }
+  .dt-card-head { padding: 14px 16px 12px; }
+  .dt-card-head h3 { font-size: 13px; letter-spacing: 0.14em; }
 }
 
 /* Page-specific responsive collapses */
@@ -523,6 +531,110 @@ button { font-family: inherit; }
   .invoice-grid, .candidate-grid {
     grid-template-columns: 1fr !important;
   }
+}
+
+/* ====================================================================
+   MOBILE — universal inline-style grid collapse (Wave 3.3)
+   Most modules use inline `style={{ gridTemplateColumns: ... }}` for
+   KPI strips, detail+aside layouts, and form rows. These selectors
+   collapse the well-known patterns to a single column on small screens
+   without needing to touch every page file. Descendants of
+   `.dt-table-wrap` are excluded so horizontally-scrolling wide grids
+   (reconciliation, attendance grid, timecard grid) keep their layout
+   and remain reachable via swipe.
+   ==================================================================== */
+@media (max-width: 720px) {
+  .dt-main [style*="repeat(3, 1fr)"],
+  .dt-main [style*="repeat(4, 1fr)"],
+  .dt-main [style*="repeat(5, 1fr)"],
+  .dt-main [style*="repeat(6, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 900px) {
+  .dt-main [style*="minmax(0, 1fr) 280px"],
+  .dt-main [style*="minmax(0, 1fr) 300px"],
+  .dt-main [style*="minmax(0, 1fr) 320px"],
+  .dt-main [style*="minmax(0, 1fr) 360px"],
+  .dt-main [style*="minmax(0, 1fr) 380px"],
+  .dt-main [style*="minmax(0, 2fr) minmax(0, 1fr)"],
+  .dt-main [style*="minmax(0, 1fr) minmax(0, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 600px) {
+  .dt-main [style*="grid-template-columns:1fr 1fr"],
+  .dt-main [style*="grid-template-columns: 1fr 1fr"],
+  .dt-main [style*="grid-template-columns:2fr 1fr 1fr"],
+  .dt-main [style*="grid-template-columns: 2fr 1fr 1fr"],
+  .dt-main [style*="minmax(180px, 230px) 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* Restore for horizontally-scrolling wide tables (reconciliation header) */
+  .dt-table-wrap [style*="grid-template-columns:1fr 1fr"],
+  .dt-table-wrap [style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* Inbox 3-pane layout: stack to single column on tablet/phone.
+   The "Details" right pane and contact-list left pane are both hidden
+   when not actively in focus on small screens. */
+.dt-inbox-grid {
+  display: grid;
+  gap: 0;
+  height: calc(100vh - 120px);
+  border: 1px solid var(--dt-warm-100);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #FFFFFF;
+}
+@media (max-width: 900px) {
+  .dt-inbox-grid {
+    grid-template-columns: 1fr !important;
+    height: auto;
+    min-height: calc(100vh - 140px);
+  }
+  .dt-inbox-grid > [data-pane="detail"] {
+    display: none;
+  }
+  /* When a conversation is open, hide the list and show only the thread. */
+  .dt-inbox-grid[data-selected="true"] > [data-pane="list"] {
+    display: none;
+  }
+  .dt-inbox-grid > [data-pane="list"],
+  .dt-inbox-grid > [data-pane="thread"] {
+    min-width: 0 !important;
+    width: 100%;
+    border-right: none !important;
+  }
+}
+
+/* Generic horizontal-scroll affordance for wide kanban / pipeline strips. */
+.dt-hscroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Inbox: back chevron is desktop-hidden; surfaces only on mobile so the user
+   can return from an open conversation to the list (since the list is hidden
+   when a conversation is selected at <=900px). */
+.dt-inbox-back {
+  display: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--dt-warm-200);
+  background: #FFFFFF;
+  color: var(--dt-warm-700);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+.dt-inbox-back:hover { border-color: var(--dt-black); color: var(--dt-black); }
+@media (max-width: 900px) {
+  .dt-inbox-back { display: inline-flex; }
 }
 
 /* CHIPS — toggleable client filters */

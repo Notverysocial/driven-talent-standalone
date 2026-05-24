@@ -168,19 +168,15 @@ export function InboxClient({
 
   return (
     <div
+      className="dt-inbox-grid"
+      data-selected={selected ? "true" : "false"}
       style={{
-        display: "grid",
         gridTemplateColumns: showDetail && selected ? "320px 1fr 300px" : selected ? "320px 1fr" : "1fr",
-        gap: 0,
-        height: "calc(100vh - 120px)",
-        border: "1px solid var(--dt-warm-100, #e5e5e5)",
-        borderRadius: 8,
-        overflow: "hidden",
-        background: "var(--dt-bg, #fff)",
       }}
     >
       {/* Left panel: Conversation list */}
       <div
+        data-pane="list"
         style={{
           borderRight: "1px solid var(--dt-warm-100, #e5e5e5)",
           display: "flex",
@@ -326,7 +322,7 @@ export function InboxClient({
 
       {/* Middle panel: Message thread */}
       {selected ? (
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div data-pane="thread" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
           {/* Thread header */}
           <div
             style={{
@@ -337,12 +333,24 @@ export function InboxClient({
               alignItems: "center",
             }}
           >
-            <div>
-              <div style={{ fontWeight: 500, fontSize: 14 }}>
-                {activeConv?.contact?.full_name || activeConv?.contact?.company || "Unknown"}
-              </div>
-              <div style={{ fontSize: 11, color: "var(--dt-warm-500, #999)", marginTop: 2 }}>
-                {activeConv?.subject} &middot; {activeConv?.channel?.replace("_", " ")}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+              <button
+                type="button"
+                className="dt-inbox-back"
+                onClick={() => setSelected(null)}
+                aria-label="Back to inbox list"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontWeight: 500, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {activeConv?.contact?.full_name || activeConv?.contact?.company || "Unknown"}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--dt-warm-500, #999)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {activeConv?.subject} &middot; {activeConv?.channel?.replace("_", " ")}
+                </div>
               </div>
             </div>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -467,6 +475,7 @@ export function InboxClient({
       {/* Right panel: Contact details */}
       {selected && showDetail && activeConv && (
         <div
+          data-pane="detail"
           style={{
             borderLeft: "1px solid var(--dt-warm-100, #e5e5e5)",
             padding: "16px",
