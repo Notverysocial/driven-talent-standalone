@@ -403,6 +403,9 @@ export type SafetyIncident = {
   refusal_signed_at: string | null;
   reported_by: string | null;
   follow_up: string | null;
+  // Peoplease workers' comp claim hand-off (migration 0013)
+  peoplease_claim_drafted_at: string | null;
+  peoplease_claim_email: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -433,4 +436,29 @@ export type DisciplinaryWarning = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// ---------- Incident case events (migration 0013) ----------------------
+
+export type IncidentEventType =
+  | "created"
+  | "status_changed"
+  | "compliance_flag"
+  | "note"
+  | "peoplease_email_drafted"
+  | "peoplease_email_sent"
+  | "export_pdf"
+  | "export_excel"
+  | "notification_sent";
+
+export type IncidentCaseEvent = {
+  id: string;
+  incident_id: string;
+  event_type: IncidentEventType;
+  summary: string;
+  note: string | null;
+  actor: string | null;
+  meta: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
 };
