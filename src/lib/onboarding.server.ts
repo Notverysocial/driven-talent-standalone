@@ -183,7 +183,7 @@ Welcome to Driven Talent — we're excited to have you joining us.
 
 You'll be starting as ${role} at ${client} on ${fmtDate} at ${rate}. ${inCharge} is your point of contact for everything onboarding-related; please reach out with any questions before your start date.
 
-In the next day or two you'll receive a separate PandaDocs request for the Welcome Letter and the Agreement and Expectations document. Both require your signature before your first shift. We'll also confirm the orientation date/time once it's scheduled.
+In the next day or two you'll receive a separate e-signature request for the Welcome Letter and the Agreement and Expectations document — it will come from our signing platform with a one-click link. Both require your signature before your first shift. We'll also confirm the orientation date/time once it's scheduled.
 
 What we need from you in the meantime:
 - Your most recent ID and Social Security card (for I-9 verification)
