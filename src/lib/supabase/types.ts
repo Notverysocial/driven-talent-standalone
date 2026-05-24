@@ -241,3 +241,147 @@ export type PayrollPeriod = {
   created_at: string;
   updated_at: string;
 };
+
+// ---------- HR / Safety (migration 0003) ----------
+
+export type SickEntryType = "accrual" | "usage" | "adjustment" | "payout";
+
+export type SickTimeEntry = {
+  id: string;
+  employee_id: string;
+  entry_date: string;
+  entry_type: SickEntryType;
+  hours: number;
+  balance_delta: number;
+  notes: string | null;
+  client_id: string | null;
+  timecard_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type LoaType =
+  | "medical"
+  | "cfra"
+  | "pdl"
+  | "personal"
+  | "bereavement"
+  | "military"
+  | "jury_duty"
+  | "workers_comp"
+  | "other";
+
+export type LoaStatus =
+  | "requested"
+  | "approved"
+  | "denied"
+  | "active"
+  | "returned"
+  | "cancelled";
+
+export type LoaDocument = {
+  name: string;
+  file_path?: string | null;
+  received_on?: string | null;
+};
+
+export type LeaveOfAbsenceRequest = {
+  id: string;
+  employee_id: string;
+  type: LoaType;
+  status: LoaStatus;
+  requested_at: string;
+  start_date: string;
+  end_date: string | null;
+  return_date: string | null;
+  reason: string | null;
+  protected: boolean;
+  paid: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  notes: string | null;
+  documents: LoaDocument[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type IncidentType =
+  | "injury"
+  | "illness"
+  | "near_miss"
+  | "property_damage"
+  | "vehicle"
+  | "other";
+
+export type IncidentSeverity =
+  | "first_aid"
+  | "recordable"
+  | "lost_time"
+  | "fatality"
+  | "unknown";
+
+export type IncidentStatus =
+  | "reported"
+  | "investigating"
+  | "resolved"
+  | "closed";
+
+export type IncidentWitness = { name: string; contact?: string | null };
+
+export type SafetyIncident = {
+  id: string;
+  employee_id: string;
+  client_id: string | null;
+  incident_date: string;
+  incident_time: string | null;
+  reported_at: string;
+  type: IncidentType;
+  severity: IncidentSeverity;
+  status: IncidentStatus;
+  body_part: string | null;
+  location: string | null;
+  description: string;
+  what_happened: string | null;
+  equipment_used: string | null;
+  hazardous_conditions: string | null;
+  immediate_treatment: string | null;
+  witnesses: IncidentWitness[];
+  s1_triage_called_at: string | null;
+  safety_manager_notified_at: string | null;
+  client_notified_at: string | null;
+  dwc1_sent_at: string | null;
+  refusal_signed_at: string | null;
+  reported_by: string | null;
+  follow_up: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WarningLevel = "verbal" | "written" | "final" | "suspension";
+
+export type WarningCategory =
+  | "attendance"
+  | "performance"
+  | "conduct"
+  | "safety"
+  | "policy"
+  | "other";
+
+export type DisciplinaryWarning = {
+  id: string;
+  employee_id: string;
+  client_id: string | null;
+  issued_date: string;
+  level: WarningLevel;
+  category: WarningCategory;
+  description: string;
+  action_required: string | null;
+  employee_response: string | null;
+  issued_by: string | null;
+  witnessed_by: string | null;
+  acknowledged_at: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
