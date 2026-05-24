@@ -9,9 +9,12 @@ import {
   getOnboardingDetail,
 } from "@/lib/onboarding.server";
 import { ONBOARDING_TEMPLATE, calcProgress } from "@/lib/onboarding";
+import { listEsignatureRequestsForEmployee } from "@/lib/team.server";
 import { ItemRow } from "./ItemRow";
 import { WelcomeLetter } from "./WelcomeLetter";
+import { EsignaturePanel } from "./EsignaturePanel";
 import { addChecklistItem, addDocument, toggleDocument } from "../actions";
+import { getActiveEsignProviderInfo } from "../esign-actions";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -28,6 +31,10 @@ export default async function OnboardingDetailPage({
   if (!detail) notFound();
 
   const { employee, checklist, documents, primaryAssignment, welcomeLetter } = detail;
+  const [esignRequests, providerInfo] = await Promise.all([
+    listEsignatureRequestsForEmployee(employeeId),
+    getActiveEsignProviderInfo(),
+  ]);
   const progress = calcProgress(checklist);
   const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
   const generated = generateWelcomeLetterBody(employee, primaryAssignment);
@@ -133,6 +140,14 @@ export default async function OnboardingDetailPage({
         initialBody={welcomeLetter?.body ?? null}
         generatedBody={generated}
         sentAt={welcomeLetter?.sent_at ?? null}
+      />
+
+      <EsignaturePanel
+        employeeId={employee.id}
+        recipientName={employee.full_name}
+        recipientEmail={employee.email ?? ""}
+        requests={esignRequests}
+        provider={providerInfo}
       />
 
       {/* 13-item checklist */}

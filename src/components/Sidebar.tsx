@@ -48,6 +48,10 @@ const NAV: NavEntry[] = [
   { id: "tasks",      label: "Tasks",           icon: "check",    href: "/tasks" },
   { id: "contacts",   label: "Contacts",        icon: "users",    href: "/contacts" },
   { id: "legal",      label: "Legal · Notices", icon: "file",     href: "/legal" },
+
+  { section: "Admin" },
+  { id: "team",        label: "Team Members",         icon: "users", href: "/team" },
+  { id: "terminated",  label: "Terminated / DNR",     icon: "users", href: "/team/terminated" },
 ];
 
 export function Sidebar() {
