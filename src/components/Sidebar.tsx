@@ -26,6 +26,7 @@ const NAV: NavEntry[] = [
   { id: "calls",        label: "Inbound Calls",      icon: "message",   href: "/calls" },
   { id: "candidates",   label: "Candidates",         icon: "star",      href: "/candidates" },
   { id: "positions",    label: "Open Positions",     icon: "clipboard", href: "/positions" },
+  { id: "job-postings", label: "Job Postings",       icon: "file",      href: "/job-postings" },
   { id: "onboarding",   label: "Onboarding",         icon: "clipboard", href: "/onboarding" },
   { id: "employees",    label: "Active Employees",   icon: "users",     href: "/roster" },
 
