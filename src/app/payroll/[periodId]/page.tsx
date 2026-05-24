@@ -12,6 +12,8 @@ import {
   fmtPeriodRange,
 } from "@/lib/payroll";
 import { PeriodActions } from "./PeriodActions";
+import { InvoicePreviewCard } from "./InvoicePreviewCard";
+import { previewInvoicesForPeriod } from "@/lib/payroll-invoicing.server";
 import type { TimecardFlags } from "@/lib/supabase/types";
 
 function flagsSummary(f: TimecardFlags): string[] {
@@ -28,7 +30,10 @@ export default async function PayrollPeriodDetailPage({
   params: Promise<{ periodId: string }>;
 }) {
   const { periodId } = await params;
-  const detail = await getPayrollPeriodDetail(periodId);
+  const [detail, invoicePreview] = await Promise.all([
+    getPayrollPeriodDetail(periodId),
+    previewInvoicesForPeriod(periodId, { onlyApproved: true }),
+  ]);
   if (!detail) notFound();
 
   const status = PAYROLL_PERIOD_STATUSES.find((s) => s.id === detail.period.status)!;
@@ -123,6 +128,8 @@ export default async function PayrollPeriodDetailPage({
           />
         </div>
       </div>
+
+      {invoicePreview && <InvoicePreviewCard preview={invoicePreview} />}
 
       {/* Per-client */}
       <div className="dt-card" style={{ marginBottom: 22 }}>

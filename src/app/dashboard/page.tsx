@@ -3,71 +3,29 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge, type BadgeTone } from "@/components/Badge";
+import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import { getDashboard } from "@/lib/dashboard.server";
 import { getInboxCounts } from "@/app/inbox/actions";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
+import { ChartCard } from "@/components/charts/ChartCard";
+import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
+import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
+import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
+import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
 
 function fmt$(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-const PIPELINE_TONE: Record<string, BadgeTone> = {
-  applied: "warm",
-  screening: "gold",
-  interview: "amber",
-  offer: "gold",
-  hired: "green",
-  rejected: "red",
-};
-
 export default async function DashboardPage() {
   const d = await getDashboard();
   const inbox = await getInboxCounts();
 
-  const KPIS = [
-    {
-      label: "Active Employees",
-      value: String(d.totals.activeEmployees),
-      sub: `${d.totals.totalPlacements} active placements`,
-      accent: "var(--dt-black)",
-    },
-    {
-      label: "Avg Score",
-      value: d.totals.avgScore ? d.totals.avgScore.toFixed(1) : "—",
-      sub: `${d.totals.greenCount} green · ${d.totals.redCount} red`,
-      accent: "var(--dt-gold-deep)",
-    },
-    {
-      label: "Pending Timecards",
-      value: String(d.totals.pendingTimecards),
-      sub: "awaiting approval",
-      accent:
-        d.totals.pendingTimecards > 5
-          ? "var(--dt-warning)"
-          : "var(--dt-black)",
-    },
-    {
-      label: "Unread Messages",
-      value: String(inbox.unreadMessages),
-      sub: "from web chat",
-      accent: inbox.unreadMessages > 0 ? "var(--dt-gold-deep)" : "var(--dt-black)",
-    },
-    {
-      label: "Open Conversations",
-      value: String(inbox.openConversations),
-      sub: "awaiting response",
-      accent: inbox.openConversations > 0 ? "var(--dt-warning)" : "var(--dt-black)",
-    },
-    {
-      label: "Missed Days · 30d",
-      value: String(d.totals.missedLast30),
-      sub: "across all clients",
-      accent:
-        d.totals.missedLast30 > 30
-          ? "var(--dt-danger)"
-          : "var(--dt-warning)",
-    },
-  ];
+  // Active candidates in ATS (everything not yet hired/rejected).
+  const inAts = d.pipeline.reduce(
+    (s, p) => (p.status === "hired" ? s : s + p.count),
+    0,
+  );
 
   return (
     <Shell>
@@ -90,51 +48,130 @@ export default async function DashboardPage() {
         }
       />
 
+      {/* KPI grid — mirrors the v3 demo's six-up dashboard tiles, using
+          dt-* design tokens and the accent-bar pattern. */}
+      <KpiGrid min={200}>
+        <KpiTile
+          tone="green"
+          label="Active Employees"
+          value={d.totals.activeEmployees}
+          sub={`${d.totals.totalPlacements} placements`}
+          href="/roster"
+        />
+        <KpiTile
+          tone="gold"
+          label="In ATS"
+          value={inAts}
+          sub="candidates active"
+          href="/candidates"
+        />
+        <KpiTile
+          tone={d.totals.pendingTimecards > 5 ? "amber" : "warm"}
+          label="Pending Timecards"
+          value={d.totals.pendingTimecards}
+          sub="awaiting approval"
+          href="/timecards"
+        />
+        <KpiTile
+          tone={inbox.openConversations > 0 ? "amber" : "warm"}
+          label="Open Conversations"
+          value={inbox.openConversations}
+          sub={`${inbox.unreadMessages} unread`}
+          href="/inbox"
+        />
+        <KpiTile
+          tone="gold"
+          label="Open Invoices"
+          value={d.billing.openCount}
+          sub={`$${fmt$(d.billing.openTotal)}`}
+          href="/invoices"
+        />
+        <KpiTile
+          tone={d.billing.overdueCount > 0 ? "red" : "warm"}
+          label="Overdue"
+          value={d.billing.overdueCount}
+          sub={
+            d.billing.overdueCount > 0
+              ? `${d.billing.oldestDays}d oldest`
+              : "none"
+          }
+          href="/invoices"
+        />
+      </KpiGrid>
+
       <div
+        className="dt-overview-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-          gap: 14,
-          marginBottom: 24,
+          gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
+          gap: 22,
+          marginBottom: 22,
         }}
       >
-        {KPIS.map((k) => (
-          <div key={k.label} className="dt-card" style={{ padding: "18px 20px" }}>
-            <div
-              style={{
-                fontSize: 10.5,
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                color: "var(--dt-warm-500)",
-                fontWeight: 400,
-              }}
-            >
-              {k.label}
-            </div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: 8,
-                marginTop: 8,
-              }}
-            >
-              <div
-                className="tab-num"
-                style={{
-                  fontFamily: "var(--dt-display)",
-                  fontSize: 30,
-                  fontWeight: 300,
-                  color: k.accent,
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {k.value}
-              </div>
-              <div style={{ fontSize: 11.5, color: "var(--dt-warm-500)" }}>{k.sub}</div>
-            </div>
-          </div>
-        ))}
+        <ChartCard
+          title="Attendance · 30 Days"
+          sub="Daily counts across present, late, missed, no-show"
+          action={
+            <Link href="/attendance" className="dt-btn dt-btn-ghost tiny">
+              Open attendance →
+            </Link>
+          }
+        >
+          <AttendanceTrendChart data={d.attendanceTrend} />
+        </ChartCard>
+
+        <ChartCard
+          title="Hiring Pipeline"
+          sub="Active candidates by stage"
+          action={
+            <Link href="/candidates" className="dt-btn dt-btn-ghost tiny">
+              Open pipeline →
+            </Link>
+          }
+        >
+          <PipelineFunnelChart data={d.pipeline} />
+        </ChartCard>
+      </div>
+
+      <div
+        className="dt-overview-grid"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gap: 22,
+          marginBottom: 22,
+        }}
+      >
+        <ChartCard
+          title="Revenue · Last 6 Months"
+          sub="Billed vs. paid by month"
+          action={
+            <Link href="/invoices" className="dt-btn dt-btn-ghost tiny">
+              Open billing →
+            </Link>
+          }
+        >
+          <RevenueTrendChart data={d.revenueTrend} />
+        </ChartCard>
+
+        <ChartCard
+          title="Weekly Billing by Client"
+          sub="Estimated revenue per active engagement"
+          action={
+            <Link href="/roster" className="dt-btn dt-btn-ghost tiny">
+              Open roster →
+            </Link>
+          }
+        >
+          <WeeklyBillingChart
+            data={d.clientStats.map((s) => ({
+              name: s.client.name,
+              weeklyBilling: s.weeklyBilling,
+              weeklyHours: s.weeklyHours,
+              headcount: s.headcount,
+            }))}
+          />
+        </ChartCard>
       </div>
 
       <div
@@ -286,47 +323,6 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
-          <div className="dt-card" style={{ padding: "18px 22px" }}>
-            <div
-              className="tiny muted"
-              style={{
-                letterSpacing: "0.18em",
-                textTransform: "uppercase",
-                fontWeight: 400,
-              }}
-            >
-              Hiring Pipeline
-            </div>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 10,
-                marginTop: 12,
-              }}
-            >
-              {d.pipeline.map((p) => (
-                <div
-                  key={p.status}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
-                >
-                  <span style={{ fontSize: 12.5, fontWeight: 300 }}>{p.label}</span>
-                  <Badge tone={PIPELINE_TONE[p.status] ?? "warm"}>{p.count}</Badge>
-                </div>
-              ))}
-            </div>
-            <Link
-              href="/candidates"
-              className="dt-btn dt-btn-ghost tiny"
-              style={{ marginTop: 14, padding: 0 }}
-            >
-              View pipeline →
-            </Link>
-          </div>
         </div>
       </div>
 

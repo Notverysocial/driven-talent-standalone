@@ -4,8 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { computeFlags } from "@/lib/payroll";
-import { countInvoices } from "@/lib/invoices.server";
-import { nextInvoiceNumber } from "@/lib/invoices";
+import { commitInvoicesForPeriod } from "@/lib/payroll-invoicing.server";
 import type {
   PayrollPeriodStatus,
   TimecardDays,
@@ -104,134 +103,36 @@ export async function setTimecardFlag(
   revalidatePath(`/payroll/${periodId}`);
 }
 
-// Generate per-client invoices from approved timecards in the period.
-// Mirrors the invoices/new behavior but scoped to a payroll period.
-export async function generateInvoicesForPeriod(periodId: string) {
-  const supabase = await createClient();
-  const { data: period, error: pErr } = await supabase
-    .from("payroll_periods")
-    .select("*")
-    .eq("id", periodId)
-    .single();
-  if (pErr) throw new Error(pErr.message);
-
-  const { data: timecards, error: tcErr } = await supabase
-    .from("timecards")
-    .select(`
-      id, employee_id, client_id, week_start, reg_hours, ot_hours, holiday_hours, hourly_rate,
-      employees ( full_name ),
-      clients ( id, name, service_fee_pct )
-    `)
-    .eq("status", "approved")
-    .gte("week_start", period.start_date)
-    .lte("week_start", period.end_date);
-  if (tcErr) throw new Error(tcErr.message);
-
-  type TcRow = {
-    id: string;
-    employee_id: string;
-    client_id: string;
-    week_start: string;
-    reg_hours: number;
-    ot_hours: number;
-    holiday_hours: number;
-    hourly_rate: number;
-    employees: { full_name: string };
-    clients: { id: string; name: string; service_fee_pct: number };
-  };
-  const rows = (timecards as unknown as TcRow[]) ?? [];
-
-  // Group by client
-  const byClient = new Map<string, TcRow[]>();
-  for (const r of rows) {
-    const arr = byClient.get(r.client_id) ?? [];
-    arr.push(r);
-    byClient.set(r.client_id, arr);
-  }
-
-  let invoiceCount = await countInvoices();
-  const createdIds: string[] = [];
-
-  for (const [clientId, group] of byClient) {
-    const employeeIds = Array.from(new Set(group.map((g) => g.employee_id)));
-    const { data: assigns } = await supabase
-      .from("employee_assignments")
-      .select("employee_id, position, department")
-      .eq("client_id", clientId)
-      .eq("active", true)
-      .in("employee_id", employeeIds);
-    const assignByEmp = new Map<string, { position: string; department: string }>();
-    for (const a of (assigns ?? []) as { employee_id: string; position: string; department: string }[]) {
-      assignByEmp.set(a.employee_id, { position: a.position, department: a.department });
-    }
-
-    const lines = group.map((t, i) => {
-      const reg = Number(t.reg_hours) + Number(t.holiday_hours);
-      const ot = Number(t.ot_hours);
-      const rate = Number(t.hourly_rate);
-      const billable = reg * rate + ot * rate * 1.5;
-      const a = assignByEmp.get(t.employee_id);
-      return {
-        department: a?.department ?? null,
-        employee_name: t.employees.full_name,
-        role: a?.position ?? null,
-        hours: reg,
-        ot_hours: ot,
-        rate,
-        amount: Math.round(billable * 100) / 100,
-        employee_cost: Math.round(billable * 100) / 100,  // pre-fee cost = billable for now
-        sort_order: i,
-        timecard_id: t.id,
-      };
-    });
-
-    const subtotal = lines.reduce((s, l) => s + l.amount, 0);
-    const fee_pct = Number(group[0].clients.service_fee_pct);
-    const fee = Math.round(subtotal * (fee_pct / 100) * 100) / 100;
-    const total = Math.round((subtotal + fee) * 100) / 100;
-
-    invoiceCount++;
-    const number = nextInvoiceNumber(invoiceCount - 1);
-    const dueAt = new Date(period.end_date + "T00:00:00");
-    dueAt.setDate(dueAt.getDate() + 30);
-
-    const { data: inv, error: invErr } = await supabase
-      .from("invoices")
-      .insert({
-        number,
-        client_id: clientId,
-        period_start: period.start_date,
-        period_end: period.end_date,
-        issued_at: new Date().toISOString().slice(0, 10),
-        due_at: dueAt.toISOString().slice(0, 10),
-        terms: "Net 30",
-        subtotal,
-        fee_pct,
-        fee,
-        tax: 0,
-        total,
-        status: "draft",
-        payroll_period_id: periodId,
-      })
-      .select("id")
-      .single();
-    if (invErr) throw new Error(invErr.message);
-    createdIds.push(inv.id);
-
-    if (lines.length > 0) {
-      const { error: liErr } = await supabase
-        .from("invoice_line_items")
-        .insert(lines.map((l) => ({ ...l, invoice_id: inv.id })));
-      if (liErr) throw new Error(liErr.message);
-    }
-  }
-
-  await supabase.from("payroll_periods").update({ status: "closed" }).eq("id", periodId);
-
+// Generate invoices from approved timecards in the period, grouped by
+// (client × department) per the Driven Talent Payroll SOP. Each employee
+// produces a Reg row + an OT row at independent rates (OT = 1.5×). Uses
+// the per-assignment bill_rate when set; otherwise falls back to pay rate
+// × (1 + client.service_fee_pct/100). Logs every run to invoice_runs.
+//
+// See src/lib/payroll-invoicing.server.ts for the full pipeline.
+export async function generateInvoicesForPeriod(
+  periodId: string,
+  ranBy?: string,
+) {
+  const result = await commitInvoicesForPeriod(periodId, ranBy);
   revalidatePath(`/payroll/${periodId}`);
   revalidatePath("/payroll");
   revalidatePath("/invoices");
   revalidatePath("/dashboard");
+  return result;
+}
+
+// Set the invoice date for a period — separately editable so operators can
+// align with each client's billing calendar (SOP shows ~4 days after
+// period-end, but it varies).
+export async function setPeriodInvoiceDate(periodId: string, invoiceDate: string) {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("payroll_periods")
+    .update({ invoice_date: invoiceDate || null })
+    .eq("id", periodId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/payroll/${periodId}`);
 }
 
 export async function adjustSickBalance(employeeId: string, deltaHours: number) {
