@@ -28,6 +28,9 @@ const NAV: NavEntry[] = [
   { section: "HR" },
   { id: "onboarding", label: "Onboarding", icon: "clipboard", href: "/onboarding" },
   { id: "attendance", label: "Attendance", icon: "calendar",  href: "/attendance" },
+  { id: "sick-time",  label: "Sick Time",  icon: "check",     href: "/sick-time" },
+  { id: "loa",        label: "Leave",      icon: "file",      href: "/loa" },
+  { id: "safety",     label: "Safety",     icon: "building",  href: "/safety" },
 
   { section: "Finance" },
   { id: "timecards",  label: "Timecards",  icon: "clock", href: "/timecards" },
