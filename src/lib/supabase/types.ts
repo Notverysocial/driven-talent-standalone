@@ -521,3 +521,207 @@ export type Expense = {
   created_at: string;
   updated_at: string;
 };
+
+// ---------- Legal Docs / Tasks / Meetings / Contacts (migration 0011) ----
+
+export type LegalDocumentCategory =
+  | "handbook"
+  | "policy"
+  | "agreement"
+  | "nda"
+  | "insurance"
+  | "tax"
+  | "license"
+  | "poster"
+  | "incorporation"
+  | "compliance"
+  | "notice"
+  | "other";
+
+export type LegalDocumentStatus =
+  | "active"
+  | "expiring_soon"
+  | "expired"
+  | "superseded"
+  | "archived";
+
+export type LegalDocument = {
+  id: string;
+  title: string;
+  category: LegalDocumentCategory;
+  status: LegalDocumentStatus;
+  description: string | null;
+  file_path: string | null;
+  external_url: string | null;
+  file_mime: string | null;
+  file_size_bytes: number | null;
+  document_number: string | null;
+  issuer: string | null;
+  jurisdiction: string | null;
+  effective_date: string | null;
+  expiry_date: string | null;
+  reminder_days_before: number | null;
+  client_id: string | null;
+  employee_id: string | null;
+  tags: string[];
+  notes: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TaskStatus =
+  | "todo"
+  | "in_progress"
+  | "blocked"
+  | "done"
+  | "cancelled";
+
+export type TaskPriority = "low" | "normal" | "high" | "urgent";
+
+export type TaskReminderChannel = "in_app" | "email" | "sms";
+
+export type OpsTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee_name: string | null;
+  assignee_employee_id: string | null;
+  due_at: string;
+  start_at: string | null;
+  completed_at: string | null;
+  created_by: string | null;
+  client_id: string | null;
+  employee_id: string | null;
+  legal_document_id: string | null;
+  meeting_id: string | null;
+  tags: string[];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TaskReminder = {
+  id: string;
+  task_id: string;
+  fire_at: string;
+  channel: TaskReminderChannel;
+  fired_at: string | null;
+  acknowledged_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type MeetingStatus =
+  | "scheduled"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "rescheduled";
+
+export type MeetingAttendeeStatus =
+  | "invited"
+  | "accepted"
+  | "declined"
+  | "tentative"
+  | "attended"
+  | "no_show";
+
+export type Meeting = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: MeetingStatus;
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  location: string | null;
+  link_url: string | null;
+  agenda: string | null;
+  notes: string | null;
+  client_id: string | null;
+  organizer_name: string | null;
+  organizer_employee_id: string | null;
+  tags: string[];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MeetingAttendee = {
+  id: string;
+  meeting_id: string;
+  attendee_name: string | null;
+  attendee_email: string | null;
+  contact_id: string | null;
+  employee_id: string | null;
+  status: MeetingAttendeeStatus;
+  is_organizer: boolean;
+  created_at: string;
+};
+
+export type MeetingActionItem = {
+  id: string;
+  meeting_id: string;
+  description: string;
+  owner_name: string | null;
+  owner_employee_id: string | null;
+  due_date: string | null;
+  done: boolean;
+  task_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContactType = "employer" | "job_seeker" | "other";
+
+export type ContactRole =
+  | "client_primary"
+  | "client_billing"
+  | "client_ops"
+  | "vendor"
+  | "partner"
+  | "candidate_lead"
+  | "employee"
+  | "legal"
+  | "accountant"
+  | "insurance"
+  | "government"
+  | "other";
+
+export type Contact = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  type: ContactType;
+  source: string | null;
+  notes: string | null;
+  candidate_id: string | null;
+  client_id: string | null;
+  // Extended in 0011
+  title: string | null;
+  role: ContactRole | null;
+  mobile_phone: string | null;
+  work_phone: string | null;
+  secondary_email: string | null;
+  website: string | null;
+  linkedin_url: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+  birthday: string | null;
+  tags: string[];
+  owner: string | null;
+  favorite: boolean;
+  last_contacted_at: string | null;
+  employee_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
