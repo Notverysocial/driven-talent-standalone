@@ -9,6 +9,22 @@ import type {
   EmployeeAssignment,
 } from "./supabase/types";
 
+export type AttendanceTrendPoint = {
+  date: string;
+  present: number;
+  late: number;
+  missed: number;
+  no_show: number;
+  excused: number;
+};
+
+export type RevenueTrendPoint = {
+  month: string;
+  label: string;
+  paid: number;
+  billed: number;
+};
+
 export type DashboardData = {
   totals: {
     activeEmployees: number;
@@ -45,6 +61,8 @@ export type DashboardData = {
     status: AttendanceEntry["status"];
     notes: string | null;
   }[];
+  attendanceTrend: AttendanceTrendPoint[];
+  revenueTrend: RevenueTrendPoint[];
 };
 
 const PIPELINE_LABELS: Record<CandidateStatus, string> = {
@@ -214,6 +232,47 @@ export async function getDashboard(): Promise<DashboardData> {
     notes: i.notes,
   }));
 
+  // ----- attendance trend (30 days, daily counts) -----
+  const trendMap = new Map<string, AttendanceTrendPoint>();
+  for (let i = 29; i >= 0; i--) {
+    const d = isoDaysAgo(i);
+    trendMap.set(d, { date: d, present: 0, late: 0, missed: 0, no_show: 0, excused: 0 });
+  }
+  for (const a of att30) {
+    const p = trendMap.get(a.date);
+    if (!p) continue;
+    p[a.status]++;
+  }
+  const attendanceTrend = Array.from(trendMap.values());
+
+  // ----- revenue trend (last 6 months: billed = issued_at, paid = paid_at) -----
+  const monthBuckets = new Map<string, RevenueTrendPoint>();
+  const now = new Date();
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    monthBuckets.set(key, {
+      month: key,
+      label: d.toLocaleDateString("en-US", { month: "short" }),
+      paid: 0,
+      billed: 0,
+    });
+  }
+  for (const inv of invoices) {
+    if (inv.status === "void") continue;
+    const issued = inv.issued_at?.slice(0, 7);
+    if (issued && monthBuckets.has(issued)) {
+      monthBuckets.get(issued)!.billed += Number(inv.total);
+    }
+    if (inv.status === "paid" && inv.paid_at) {
+      const paid = inv.paid_at.slice(0, 7);
+      if (monthBuckets.has(paid)) {
+        monthBuckets.get(paid)!.paid += Number(inv.total);
+      }
+    }
+  }
+  const revenueTrend = Array.from(monthBuckets.values());
+
   return {
     totals: {
       activeEmployees,
@@ -235,5 +294,7 @@ export async function getDashboard(): Promise<DashboardData> {
     pipeline,
     clientStats,
     incidents,
+    attendanceTrend,
+    revenueTrend,
   };
 }
