@@ -269,6 +269,13 @@ function IncidentsView({
 
                 {/* Status transition column */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                  <Link
+                    href={`/safety/${inc.id}`}
+                    className="dt-btn dt-btn-gold"
+                    style={{ padding: "5px 12px", fontSize: 9.5, letterSpacing: "0.14em" }}
+                  >
+                    <span>Open Case</span>
+                  </Link>
                   {inc.status === "reported" && (
                     <StatusBtn id={inc.id} employeeId={inc.employee.id} status="investigating" label="Investigate" />
                   )}
