@@ -42,6 +42,9 @@ const NAV: NavEntry[] = [
 
   { section: "Driven Talent Internal" },
   { id: "calendar",   label: "Calendar",        icon: "calendar", href: "/calendar" },
+  { id: "tasks",      label: "Tasks",           icon: "check",    href: "/tasks" },
+  { id: "contacts",   label: "Contacts",        icon: "users",    href: "/contacts" },
+  { id: "legal",      label: "Legal · Notices", icon: "file",     href: "/legal" },
 ];
 
 export function Sidebar() {
