@@ -700,3 +700,180 @@ select.dt-filter-input {
 @media (max-width: 1100px) {
   .dt-detail-grid { grid-template-columns: 1fr; }
 }
+
+/* ====================================================================
+   CALENDAR (Module 1 — Shared Corporate Calendar)
+   ==================================================================== */
+
+.dt-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid var(--dt-warm-150);
+  background: var(--dt-warm-50);
+}
+.dt-cal-weekday {
+  padding: 11px 12px;
+  font-size: 9.5px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--dt-warm-500);
+  font-weight: 400;
+  text-align: left;
+  border-left: 1px solid var(--dt-warm-100);
+}
+.dt-cal-weekday:first-child { border-left: none; }
+
+.dt-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  grid-auto-rows: minmax(112px, auto);
+}
+.dt-cal-cell {
+  border-left: 1px solid var(--dt-warm-100);
+  border-top: 1px solid var(--dt-warm-100);
+  padding: 6px 6px 8px;
+  background: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  cursor: copy;
+  position: relative;
+  transition: background 0.12s ease;
+}
+.dt-cal-cell.out { background: #FBFAF6; color: var(--dt-warm-300); }
+.dt-cal-cell.out .dt-cal-daynum { color: var(--dt-warm-300); }
+.dt-cal-cell.today { background: #FBF6EC; }
+.dt-cal-cell.drag-over { background: var(--dt-gold-50); outline: 1px dashed var(--dt-gold); outline-offset: -2px; }
+.dt-cal-cell:nth-child(7n+1) { border-left: none; }
+.dt-cal-cell:nth-child(-n+7) { border-top: none; }
+
+.dt-cal-daynum {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  color: var(--dt-warm-700);
+  padding: 2px 4px;
+}
+.dt-cal-today-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--dt-gold);
+  display: inline-block;
+}
+
+.dt-cal-events {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+}
+
+.dt-cal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 4px;
+  font-size: 10.5px;
+  font-weight: 400;
+  font-family: var(--dt-sans);
+  text-align: left;
+  cursor: grab;
+  border: none;
+  background: transparent;
+  min-width: 0;
+  width: 100%;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  transition: transform 0.1s ease, filter 0.1s ease;
+}
+.dt-cal-chip:hover { filter: brightness(0.95); transform: translateY(-1px); }
+.dt-cal-chip:active { cursor: grabbing; }
+.dt-cal-chip-glyph {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  font-size: 8px;
+  color: #FFFFFF;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: 0;
+}
+.dt-cal-chip-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Dialog */
+.dt-cal-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(26, 26, 26, 0.4);
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.dt-cal-dialog {
+  background: #FFFFFF;
+  border: 1px solid var(--dt-warm-200);
+  border-top: 2px solid var(--dt-gold);
+  border-radius: 2px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(26, 26, 26, 0.18);
+}
+.dt-cal-dialog-head {
+  padding: 18px 22px 12px;
+  border-bottom: 1px solid var(--dt-warm-100);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dt-cal-dialog-head .crumb {
+  font-size: 9px;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--dt-warm-500);
+  font-weight: 300;
+  margin-bottom: 6px;
+}
+.dt-cal-dialog-body {
+  padding: 16px 22px 12px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dt-cal-dialog-foot {
+  padding: 14px 22px;
+  border-top: 1px solid var(--dt-warm-100);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.dt-cal-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 700px) {
+  .dt-cal-grid { grid-auto-rows: minmax(90px, auto); }
+  .dt-cal-cell { padding: 4px 4px 6px; }
+  .dt-cal-chip-text { font-size: 10px; }
+  .dt-cal-weekday { padding: 8px 6px; font-size: 9px; letter-spacing: 0.2em; }
+}
