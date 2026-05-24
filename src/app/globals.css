@@ -877,3 +877,62 @@ select.dt-filter-input {
   .dt-cal-chip-text { font-size: 10px; }
   .dt-cal-weekday { padding: 8px 6px; font-size: 9px; letter-spacing: 0.2em; }
 }
+
+/* BUG REPORT — floating affordance + modal (module 1.8) */
+.dt-bug-fab {
+  position: fixed;
+  bottom: 22px;
+  right: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 0;
+  background: var(--dt-black);
+  color: #FFFFFF;
+  border: 1px solid var(--dt-gold);
+  font-family: 'Jost', sans-serif;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 60;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dt-bug-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+.dt-bug-fab svg { color: var(--dt-gold); }
+
+.dt-bug-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 20, 0.42);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8vh 16px 16px;
+  z-index: 100;
+}
+.dt-bug-modal {
+  width: 100%;
+  max-width: 560px;
+  background: #FFFFFF;
+  max-height: 84vh;
+  overflow-y: auto;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 700px) {
+  .dt-bug-fab {
+    bottom: 14px;
+    right: 14px;
+    padding: 9px 14px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+  }
+  .dt-bug-modal-backdrop { padding: 5vh 10px 10px; }
+}

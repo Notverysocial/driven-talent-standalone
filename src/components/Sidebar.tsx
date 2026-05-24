@@ -52,6 +52,7 @@ const NAV: NavEntry[] = [
   { section: "Admin" },
   { id: "team",        label: "Team Members",         icon: "users", href: "/team" },
   { id: "terminated",  label: "Terminated / DNR",     icon: "users", href: "/team/terminated" },
+  { id: "bug-reports", label: "Bug Reports",          icon: "file",  href: "/bug-reports" },
 ];
 
 export function Sidebar() {
