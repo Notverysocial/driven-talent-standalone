@@ -16,6 +16,7 @@ import {
   fmtDateShort,
 } from "@/lib/hr";
 import { logSickEntry, deleteSickEntry } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function SickTimePage({
   searchParams,
@@ -37,13 +38,11 @@ export default async function SickTimePage({
   const lowBalance = rows.filter((r) => r.balance < 8 && r.employee.status === "active").length;
   const highUsers = rows.filter((r) => r.ytdUsed >= CA_SICK_ANNUAL_USAGE_HOURS).length;
 
+  const tb = (await getServerDictionary()).topbar.sickTime;
+
   return (
     <Shell>
-      <Topbar
-        crumb="HR / SICK TIME"
-        scriptWord="Paid "
-        title="Sick Time"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

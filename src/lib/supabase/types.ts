@@ -403,6 +403,9 @@ export type SafetyIncident = {
   refusal_signed_at: string | null;
   reported_by: string | null;
   follow_up: string | null;
+  // Peoplease workers' comp claim hand-off (migration 0013)
+  peoplease_claim_drafted_at: string | null;
+  peoplease_claim_email: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -431,6 +434,437 @@ export type DisciplinaryWarning = {
   witnessed_by: string | null;
   acknowledged_at: string | null;
   notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Reimbursements + Expenses (migration 0009) ----------
+
+export type ReimbursementStatus =
+  | "submitted"
+  | "approved"
+  | "rejected"
+  | "paid";
+
+export type ReimbursementCategory =
+  | "mileage"
+  | "meals"
+  | "travel"
+  | "supplies"
+  | "equipment"
+  | "training"
+  | "phone"
+  | "uniform"
+  | "other";
+
+export type ExpenseCategory =
+  | "rent"
+  | "utilities"
+  | "software"
+  | "marketing"
+  | "insurance"
+  | "supplies"
+  | "travel"
+  | "meals"
+  | "professional_services"
+  | "payroll"
+  | "taxes"
+  | "equipment"
+  | "other";
+
+export type ExpensePaymentMethod =
+  | "check"
+  | "ach"
+  | "card"
+  | "cash"
+  | "payroll"
+  | "wire"
+  | "other";
+
+export type ReimbursementRequest = {
+  id: string;
+  employee_id: string;
+  amount: number;
+  category: ReimbursementCategory;
+  description: string;
+  expense_date: string;
+  submitted_at: string;
+  status: ReimbursementStatus;
+  receipt_path: string | null;
+  receipt_url: string | null;
+  payment_method: ExpensePaymentMethod | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_reason: string | null;
+  rejected_at: string | null;
+  paid_at: string | null;
+  paid_reference: string | null;
+  notes: string | null;
+  client_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Expense = {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  expense_date: string;
+  vendor: string | null;
+  description: string | null;
+  payment_method: ExpensePaymentMethod | null;
+  receipt_path: string | null;
+  receipt_url: string | null;
+  client_id: string | null;
+  reimbursement_id: string | null;
+  reimbursable: boolean;
+  reference: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Legal Docs / Tasks / Meetings / Contacts (migration 0011) ----
+
+export type LegalDocumentCategory =
+  | "handbook"
+  | "policy"
+  | "agreement"
+  | "nda"
+  | "insurance"
+  | "tax"
+  | "license"
+  | "poster"
+  | "incorporation"
+  | "compliance"
+  | "notice"
+  | "other";
+
+export type LegalDocumentStatus =
+  | "active"
+  | "expiring_soon"
+  | "expired"
+  | "superseded"
+  | "archived";
+
+export type LegalDocument = {
+  id: string;
+  title: string;
+  category: LegalDocumentCategory;
+  status: LegalDocumentStatus;
+  description: string | null;
+  file_path: string | null;
+  external_url: string | null;
+  file_mime: string | null;
+  file_size_bytes: number | null;
+  document_number: string | null;
+  issuer: string | null;
+  jurisdiction: string | null;
+  effective_date: string | null;
+  expiry_date: string | null;
+  reminder_days_before: number | null;
+  client_id: string | null;
+  employee_id: string | null;
+  tags: string[];
+  notes: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TaskStatus =
+  | "todo"
+  | "in_progress"
+  | "blocked"
+  | "done"
+  | "cancelled";
+
+export type TaskPriority = "low" | "normal" | "high" | "urgent";
+
+export type TaskReminderChannel = "in_app" | "email" | "sms";
+
+export type OpsTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee_name: string | null;
+  assignee_employee_id: string | null;
+  due_at: string;
+  start_at: string | null;
+  completed_at: string | null;
+  created_by: string | null;
+  client_id: string | null;
+  employee_id: string | null;
+  legal_document_id: string | null;
+  meeting_id: string | null;
+  tags: string[];
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TaskReminder = {
+  id: string;
+  task_id: string;
+  fire_at: string;
+  channel: TaskReminderChannel;
+  fired_at: string | null;
+  acknowledged_at: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type MeetingStatus =
+  | "scheduled"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "rescheduled";
+
+export type MeetingAttendeeStatus =
+  | "invited"
+  | "accepted"
+  | "declined"
+  | "tentative"
+  | "attended"
+  | "no_show";
+
+export type Meeting = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: MeetingStatus;
+  starts_at: string;
+  ends_at: string | null;
+  all_day: boolean;
+  location: string | null;
+  link_url: string | null;
+  agenda: string | null;
+  notes: string | null;
+  client_id: string | null;
+  organizer_name: string | null;
+  organizer_employee_id: string | null;
+  tags: string[];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type MeetingAttendee = {
+  id: string;
+  meeting_id: string;
+  attendee_name: string | null;
+  attendee_email: string | null;
+  contact_id: string | null;
+  employee_id: string | null;
+  status: MeetingAttendeeStatus;
+  is_organizer: boolean;
+  created_at: string;
+};
+
+export type MeetingActionItem = {
+  id: string;
+  meeting_id: string;
+  description: string;
+  owner_name: string | null;
+  owner_employee_id: string | null;
+  due_date: string | null;
+  done: boolean;
+  task_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ContactType = "employer" | "job_seeker" | "other";
+
+export type ContactRole =
+  | "client_primary"
+  | "client_billing"
+  | "client_ops"
+  | "vendor"
+  | "partner"
+  | "candidate_lead"
+  | "employee"
+  | "legal"
+  | "accountant"
+  | "insurance"
+  | "government"
+  | "other";
+
+export type Contact = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  phone: string | null;
+  company: string | null;
+  type: ContactType;
+  source: string | null;
+  notes: string | null;
+  candidate_id: string | null;
+  client_id: string | null;
+  // Extended in 0011
+  title: string | null;
+  role: ContactRole | null;
+  mobile_phone: string | null;
+  work_phone: string | null;
+  secondary_email: string | null;
+  website: string | null;
+  linkedin_url: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country: string | null;
+  birthday: string | null;
+  tags: string[];
+  owner: string | null;
+  favorite: boolean;
+  last_contacted_at: string | null;
+  employee_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+// ---------- Incident case events (migration 0013) ----------------------
+
+export type IncidentEventType =
+  | "created"
+  | "status_changed"
+  | "compliance_flag"
+  | "note"
+  | "peoplease_email_drafted"
+  | "peoplease_email_sent"
+  | "export_pdf"
+  | "export_excel"
+  | "notification_sent";
+
+export type IncidentCaseEvent = {
+  id: string;
+  incident_id: string;
+  event_type: IncidentEventType;
+  summary: string;
+  note: string | null;
+  actor: string | null;
+  meta: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+};
+
+// ---------- Sales Pipeline / CRM (migration 0015) -----------------------
+
+export type SalesLeadStage =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "proposal"
+  | "won"
+  | "lost";
+
+export type SalesLeadSource =
+  | "referral"
+  | "cold_outreach"
+  | "inbound_web"
+  | "event"
+  | "existing_client"
+  | "partner"
+  | "other";
+
+export type SalesLeadActivityType =
+  | "note"
+  | "call"
+  | "email"
+  | "meeting"
+  | "stage_changed"
+  | "owner_changed"
+  | "task";
+
+export type SalesLead = {
+  id: string;
+  company_name: string;
+  industry: string | null;
+  website: string | null;
+  city: string | null;
+  contact_name: string | null;
+  contact_title: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  stage: SalesLeadStage;
+  source: SalesLeadSource;
+  source_detail: string | null;
+  estimated_value: number | null;
+  estimated_headcount: number | null;
+  probability: number | null;
+  owner: string | null;
+  next_action: string | null;
+  next_action_due: string | null;
+  won_at: string | null;
+  lost_at: string | null;
+  lost_reason: string | null;
+  client_id: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SalesLeadActivity = {
+  id: string;
+  lead_id: string;
+  activity_type: SalesLeadActivityType;
+  summary: string;
+  body: string | null;
+  actor: string | null;
+  meta: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+};
+
+// ---------- Bug Reports (migration 0014) --------------------------------
+
+export type BugSeverity = "low" | "medium" | "high" | "critical";
+
+export type BugStatus =
+  | "new"
+  | "in_progress"
+  | "resolved"
+  | "wont_fix"
+  | "duplicate";
+
+// ---------- RBAC / profiles (migration 0017) ---------------------------
+
+// Authorisation tier. Distinct from team_member_role (which is the
+// *job function* — recruiter/payroll/safety_manager/etc.). See
+// 0017_rbac.sql for the rationale on keeping the two enums orthogonal.
+export type AppRole = "owner" | "admin" | "user";
+
+export type Profile = {
+  id: string;             // matches auth.users.id
+  email: string | null;
+  full_name: string | null;
+  role: AppRole;
+  team_member_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BugReport = {
+  id: string;
+  reporter_name: string | null;
+  reporter_email: string | null;
+  page_path: string | null;
+  page_label: string | null;
+  user_agent: string | null;
+  description: string;
+  steps_to_reproduce: string | null;
+  severity: BugSeverity;
+  status: BugStatus;
+  attachment_path: string | null;
+  assigned_to: string | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
   created_at: string;
   updated_at: string;
 };

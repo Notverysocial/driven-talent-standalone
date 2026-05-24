@@ -15,6 +15,7 @@ import {
 } from "@/lib/hr";
 import type { LoaStatus, LoaType } from "@/lib/supabase/types";
 import { createLoaRequest, setLoaStatus } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 const STATUS_FILTERS: { key: LoaStatus | "all" | "open"; label: string }[] = [
   { key: "all", label: "All" },
@@ -52,13 +53,11 @@ export default async function LoaPage({
     (r) => r.protected && loaIsOpen(r.status),
   ).length;
 
+  const tb = (await getServerDictionary()).topbar.loa;
+
   return (
     <Shell>
-      <Topbar
-        crumb="HR / LEAVE OF ABSENCE"
-        scriptWord="Active "
-        title="Leave"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

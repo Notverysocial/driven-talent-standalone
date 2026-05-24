@@ -4,6 +4,7 @@ import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
 import { listInvoices, statusCounts } from "@/lib/invoices.server";
 import { INVOICE_STATUSES, fmtMoney, fmtPeriod } from "@/lib/invoices";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function InvoicesListPage() {
   const [rows, counts] = await Promise.all([listInvoices(), statusCounts()]);
@@ -17,12 +18,14 @@ export default async function InvoicesListPage() {
     }),
   }));
 
+  const tb = (await getServerDictionary()).topbar.invoices;
+
   return (
     <Shell>
       <Topbar
-        crumb="OPERATIONS / BILLING"
-        scriptWord="Invoice "
-        title="Ledger"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/invoices/new" className="dt-btn dt-btn-gold">
             <span>+ New Invoice</span>

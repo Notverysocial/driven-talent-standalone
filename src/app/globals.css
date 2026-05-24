@@ -477,7 +477,9 @@ button { font-family: inherit; }
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(26,26,26,0.08);
+  color: var(--dt-black);
 }
+.dt-mobile-toggle:hover { border-color: var(--dt-black); }
 .dt-mobile-overlay {
   display: none;
   position: fixed;
@@ -491,11 +493,12 @@ button { font-family: inherit; }
   .dt-sidebar {
     position: fixed;
     top: 0; left: 0; bottom: 0;
-    width: 260px;
+    width: min(86vw, 280px);
     z-index: 45;
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     overflow-y: auto;
+    padding: 24px 20px;
   }
   .dt-sidebar.open { transform: translateX(0); }
   .dt-mobile-overlay.open { display: block; }
@@ -511,8 +514,13 @@ button { font-family: inherit; }
 
 @media (max-width: 600px) {
   .dt-topbar h1 { font-size: 22px; }
+  .dt-topbar .crumb { font-size: 8.5px; letter-spacing: 0.3em; margin-bottom: 10px; }
+  .dt-topbar-right { width: 100%; }
+  .dt-topbar-right .dt-btn { flex: 1 1 auto; justify-content: center; }
   .dt-btn { padding: 8px 14px; font-size: 9.5px; letter-spacing: 0.14em; }
   .dt-main { padding: 60px 14px 28px; }
+  .dt-card-head { padding: 14px 16px 12px; }
+  .dt-card-head h3 { font-size: 13px; letter-spacing: 0.14em; }
 }
 
 /* Page-specific responsive collapses */
@@ -523,6 +531,110 @@ button { font-family: inherit; }
   .invoice-grid, .candidate-grid {
     grid-template-columns: 1fr !important;
   }
+}
+
+/* ====================================================================
+   MOBILE — universal inline-style grid collapse (Wave 3.3)
+   Most modules use inline `style={{ gridTemplateColumns: ... }}` for
+   KPI strips, detail+aside layouts, and form rows. These selectors
+   collapse the well-known patterns to a single column on small screens
+   without needing to touch every page file. Descendants of
+   `.dt-table-wrap` are excluded so horizontally-scrolling wide grids
+   (reconciliation, attendance grid, timecard grid) keep their layout
+   and remain reachable via swipe.
+   ==================================================================== */
+@media (max-width: 720px) {
+  .dt-main [style*="repeat(3, 1fr)"],
+  .dt-main [style*="repeat(4, 1fr)"],
+  .dt-main [style*="repeat(5, 1fr)"],
+  .dt-main [style*="repeat(6, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 900px) {
+  .dt-main [style*="minmax(0, 1fr) 280px"],
+  .dt-main [style*="minmax(0, 1fr) 300px"],
+  .dt-main [style*="minmax(0, 1fr) 320px"],
+  .dt-main [style*="minmax(0, 1fr) 360px"],
+  .dt-main [style*="minmax(0, 1fr) 380px"],
+  .dt-main [style*="minmax(0, 2fr) minmax(0, 1fr)"],
+  .dt-main [style*="minmax(0, 1fr) minmax(0, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+@media (max-width: 600px) {
+  .dt-main [style*="grid-template-columns:1fr 1fr"],
+  .dt-main [style*="grid-template-columns: 1fr 1fr"],
+  .dt-main [style*="grid-template-columns:2fr 1fr 1fr"],
+  .dt-main [style*="grid-template-columns: 2fr 1fr 1fr"],
+  .dt-main [style*="minmax(180px, 230px) 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* Restore for horizontally-scrolling wide tables (reconciliation header) */
+  .dt-table-wrap [style*="grid-template-columns:1fr 1fr"],
+  .dt-table-wrap [style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* Inbox 3-pane layout: stack to single column on tablet/phone.
+   The "Details" right pane and contact-list left pane are both hidden
+   when not actively in focus on small screens. */
+.dt-inbox-grid {
+  display: grid;
+  gap: 0;
+  height: calc(100vh - 120px);
+  border: 1px solid var(--dt-warm-100);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #FFFFFF;
+}
+@media (max-width: 900px) {
+  .dt-inbox-grid {
+    grid-template-columns: 1fr !important;
+    height: auto;
+    min-height: calc(100vh - 140px);
+  }
+  .dt-inbox-grid > [data-pane="detail"] {
+    display: none;
+  }
+  /* When a conversation is open, hide the list and show only the thread. */
+  .dt-inbox-grid[data-selected="true"] > [data-pane="list"] {
+    display: none;
+  }
+  .dt-inbox-grid > [data-pane="list"],
+  .dt-inbox-grid > [data-pane="thread"] {
+    min-width: 0 !important;
+    width: 100%;
+    border-right: none !important;
+  }
+}
+
+/* Generic horizontal-scroll affordance for wide kanban / pipeline strips. */
+.dt-hscroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Inbox: back chevron is desktop-hidden; surfaces only on mobile so the user
+   can return from an open conversation to the list (since the list is hidden
+   when a conversation is selected at <=900px). */
+.dt-inbox-back {
+  display: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--dt-warm-200);
+  background: #FFFFFF;
+  color: var(--dt-warm-700);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+.dt-inbox-back:hover { border-color: var(--dt-black); color: var(--dt-black); }
+@media (max-width: 900px) {
+  .dt-inbox-back { display: inline-flex; }
 }
 
 /* CHIPS — toggleable client filters */
@@ -876,4 +988,169 @@ select.dt-filter-input {
   .dt-cal-cell { padding: 4px 4px 6px; }
   .dt-cal-chip-text { font-size: 10px; }
   .dt-cal-weekday { padding: 8px 6px; font-size: 9px; letter-spacing: 0.2em; }
+}
+
+/* BUG REPORT — floating affordance + modal (module 1.8) */
+.dt-bug-fab {
+  position: fixed;
+  bottom: 22px;
+  right: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 0;
+  background: var(--dt-black);
+  color: #FFFFFF;
+  border: 1px solid var(--dt-gold);
+  font-family: 'Jost', sans-serif;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 60;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.dt-bug-fab:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+.dt-bug-fab svg { color: var(--dt-gold); }
+
+.dt-bug-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 20, 20, 0.42);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8vh 16px 16px;
+  z-index: 100;
+}
+.dt-bug-modal {
+  width: 100%;
+  max-width: 560px;
+  background: #FFFFFF;
+  max-height: 84vh;
+  overflow-y: auto;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+}
+
+@media (max-width: 700px) {
+  .dt-bug-fab {
+    bottom: 14px;
+    right: 14px;
+    padding: 9px 14px;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+  }
+  .dt-bug-modal-backdrop { padding: 5vh 10px 10px; }
+}
+
+/* LOGIN */
+.dt-login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: #F5F3EE;
+}
+.dt-login-card {
+  width: 100%;
+  max-width: 420px;
+  background: #FFFFFF;
+  border: 1px solid var(--dt-warm-150);
+  padding: 40px 36px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+.dt-login-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.dt-login-brand .name {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.dt-login-brand .sub {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dt-warm-500);
+  margin-top: 4px;
+}
+.dt-login-title {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+  font-weight: 500;
+}
+.dt-login-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dt-warm-500);
+  margin: 0 0 22px;
+}
+.dt-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dt-login-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dt-login-form label span {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dt-warm-500);
+}
+.dt-login-form input {
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--dt-warm-200);
+  background: #FFFFFF;
+  border-radius: 0;
+}
+.dt-login-form input:focus {
+  outline: none;
+  border-color: var(--dt-black);
+}
+.dt-login-error {
+  background: var(--dt-danger-bg);
+  color: var(--dt-danger);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--dt-danger);
+}
+.dt-login-form .dt-btn {
+  margin-top: 6px;
+  justify-content: center;
+}
+
+/* SIDEBAR NAV FOOT (logout) */
+.dt-nav-foot form { margin: 0; }
+.dt-nav-foot .dt-logout {
+  margin-top: 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--dt-warm-200);
+  color: var(--dt-warm-500);
+  font-family: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.dt-nav-foot .dt-logout:hover {
+  border-color: var(--dt-black);
+  color: var(--dt-black);
 }

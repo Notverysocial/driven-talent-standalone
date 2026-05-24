@@ -1,0 +1,193 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import type {
+  SalesLeadActivityType,
+  SalesLeadSource,
+  SalesLeadStage,
+} from "@/lib/supabase/types";
+
+function s(v: FormDataEntryValue | null): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  return t.length ? t : null;
+}
+
+function n(v: FormDataEntryValue | null): number | null {
+  if (typeof v !== "string" || v.trim() === "") return null;
+  const x = Number(v);
+  return Number.isFinite(x) ? x : null;
+}
+
+async function logActivity(
+  leadId: string,
+  activity_type: SalesLeadActivityType,
+  summary: string,
+  extras: { body?: string | null; actor?: string | null; meta?: Record<string, unknown> } = {},
+) {
+  const sb = await createClient();
+  await sb.from("sales_lead_activities").insert({
+    lead_id: leadId,
+    activity_type,
+    summary,
+    body: extras.body ?? null,
+    actor: extras.actor ?? null,
+    meta: extras.meta ?? {},
+  });
+}
+
+export async function createSalesLead(formData: FormData) {
+  const sb = await createClient();
+
+  const company_name = (s(formData.get("company_name")) ?? "").trim();
+  if (!company_name) throw new Error("Company name is required");
+
+  const { data, error } = await sb
+    .from("sales_leads")
+    .insert({
+      company_name,
+      industry:        s(formData.get("industry")),
+      website:         s(formData.get("website")),
+      city:            s(formData.get("city")),
+      contact_name:    s(formData.get("contact_name")),
+      contact_title:   s(formData.get("contact_title")),
+      contact_email:   s(formData.get("contact_email")),
+      contact_phone:   s(formData.get("contact_phone")),
+      stage:           (s(formData.get("stage")) ?? "new") as SalesLeadStage,
+      source:          (s(formData.get("source")) ?? "other") as SalesLeadSource,
+      source_detail:   s(formData.get("source_detail")),
+      estimated_value: n(formData.get("estimated_value")),
+      estimated_headcount: n(formData.get("estimated_headcount")),
+      probability:     n(formData.get("probability")),
+      owner:           s(formData.get("owner")),
+      next_action:     s(formData.get("next_action")),
+      next_action_due: s(formData.get("next_action_due")),
+      notes:           s(formData.get("notes")),
+      created_by:      s(formData.get("created_by")),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  await logActivity(data.id, "note", "Lead created", {
+    actor: s(formData.get("created_by")),
+  });
+
+  revalidatePath("/pipeline");
+  redirect(`/pipeline/${data.id}`);
+}
+
+export async function setLeadStage(
+  leadId: string,
+  next: SalesLeadStage,
+  actor?: string | null,
+) {
+  const sb = await createClient();
+  const { data: prev, error: getErr } = await sb
+    .from("sales_leads")
+    .select("stage")
+    .eq("id", leadId)
+    .single();
+  if (getErr) throw new Error(getErr.message);
+
+  const from = prev.stage as SalesLeadStage;
+  if (from === next) return;
+
+  const patch: Record<string, unknown> = { stage: next };
+  if (next === "won") patch.won_at = new Date().toISOString().slice(0, 10);
+  if (next === "lost") patch.lost_at = new Date().toISOString().slice(0, 10);
+
+  const { error } = await sb.from("sales_leads").update(patch).eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  await logActivity(leadId, "stage_changed", `Stage: ${from} → ${next}`, {
+    actor: actor ?? null,
+    meta: { from, to: next },
+  });
+
+  revalidatePath("/pipeline");
+  revalidatePath(`/pipeline/${leadId}`);
+}
+
+export async function setLeadOwner(
+  leadId: string,
+  owner: string | null,
+  actor?: string | null,
+) {
+  const sb = await createClient();
+  const cleaned = owner?.trim() || null;
+
+  const { data: prev, error: getErr } = await sb
+    .from("sales_leads")
+    .select("owner")
+    .eq("id", leadId)
+    .single();
+  if (getErr) throw new Error(getErr.message);
+
+  if ((prev.owner ?? null) === cleaned) return;
+
+  const { error } = await sb
+    .from("sales_leads")
+    .update({ owner: cleaned })
+    .eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  await logActivity(
+    leadId,
+    "owner_changed",
+    cleaned
+      ? `Owner: ${prev.owner ?? "—"} → ${cleaned}`
+      : `Owner cleared (was ${prev.owner ?? "—"})`,
+    { actor: actor ?? null, meta: { from: prev.owner ?? null, to: cleaned } },
+  );
+
+  revalidatePath("/pipeline");
+  revalidatePath(`/pipeline/${leadId}`);
+}
+
+export async function updateLeadDetails(leadId: string, formData: FormData) {
+  const sb = await createClient();
+  const patch: Record<string, unknown> = {
+    company_name:        s(formData.get("company_name")),
+    industry:            s(formData.get("industry")),
+    website:             s(formData.get("website")),
+    city:                s(formData.get("city")),
+    contact_name:        s(formData.get("contact_name")),
+    contact_title:       s(formData.get("contact_title")),
+    contact_email:       s(formData.get("contact_email")),
+    contact_phone:       s(formData.get("contact_phone")),
+    source:              s(formData.get("source")) ?? "other",
+    source_detail:       s(formData.get("source_detail")),
+    estimated_value:     n(formData.get("estimated_value")),
+    estimated_headcount: n(formData.get("estimated_headcount")),
+    probability:         n(formData.get("probability")),
+    next_action:         s(formData.get("next_action")),
+    next_action_due:     s(formData.get("next_action_due")),
+    lost_reason:         s(formData.get("lost_reason")),
+    notes:               s(formData.get("notes")),
+  };
+  if (!patch.company_name) throw new Error("Company name is required");
+
+  const { error } = await sb.from("sales_leads").update(patch).eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/pipeline");
+  revalidatePath(`/pipeline/${leadId}`);
+}
+
+export async function addLeadActivity(leadId: string, formData: FormData) {
+  const activity_type =
+    (s(formData.get("activity_type")) as SalesLeadActivityType | null) ?? "note";
+  const summary = (s(formData.get("summary")) ?? "").trim();
+  if (!summary) throw new Error("Activity summary is required");
+
+  await logActivity(leadId, activity_type, summary, {
+    body:  s(formData.get("body")),
+    actor: s(formData.get("actor")),
+  });
+
+  revalidatePath(`/pipeline/${leadId}`);
+}

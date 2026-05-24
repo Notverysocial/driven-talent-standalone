@@ -9,6 +9,7 @@ import {
   type ApplicationIntakeStatus,
 } from "@/lib/recruiting";
 import { IntakeCard } from "./IntakeCard";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -19,6 +20,7 @@ function fmtDateTime(d: string | null) {
 
 export default async function ApplicationsPage() {
   const intakes = await listApplicationIntakes();
+  const tb = (await getServerDictionary()).topbar.applications;
 
   const counts = new Map<ApplicationIntakeStatus, number>();
   for (const s of INTAKE_STATUSES) counts.set(s.id, 0);
@@ -31,9 +33,9 @@ export default async function ApplicationsPage() {
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / INBOX / APPLICATIONS"
-        scriptWord="Website "
-        title="Applications"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/inbox" className="dt-btn">
             ← Inbox

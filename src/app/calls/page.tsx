@@ -6,6 +6,7 @@ import { listInboundCalls } from "@/lib/recruiting.server";
 import { CALL_STATUSES, type InboundCallStatus } from "@/lib/recruiting";
 import { logInboundCall } from "./actions";
 import { CallRow } from "./CallRow";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -23,13 +24,14 @@ export default async function InboundCallsPage() {
   const counts = new Map<InboundCallStatus, number>();
   for (const s of CALL_STATUSES) counts.set(s.id, 0);
   for (const c of calls) counts.set(c.follow_up_status, (counts.get(c.follow_up_status) ?? 0) + 1);
+  const tb = (await getServerDictionary()).topbar.calls;
 
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / RECRUITING / CALLS"
-        scriptWord="Inbound "
-        title="Calls"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/candidates" className="dt-btn">
             ← Pipeline

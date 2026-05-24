@@ -18,8 +18,8 @@ export type ChecklistTemplateItem = {
 export const ONBOARDING_TEMPLATE: ChecklistTemplateItem[] = [
   { key: "personal_info",     label: "Employee personal information received",          detail: "Verify ID, address, emergency contacts on file",                category: "Documentation", ord: 1 },
   { key: "welcome_email",     label: "Welcome letter sent by email",                    detail: "Generated from template; sent to candidate's personal email",   category: "Documentation", ord: 2 },
-  { key: "welcome_pandadocs", label: "Welcome letter via PandaDocs",                    detail: "Signature required",                                              category: "Documentation", ord: 3 },
-  { key: "agreement",         label: "Agreement and Expectations document signed",     detail: "Signature required; varies by client",                            category: "Compliance",    ord: 4 },
+  { key: "welcome_pandadocs", label: "Welcome letter e-sign request sent",              detail: "Signature required — sent via the configured e-sign provider (default Documenso). Legacy key retained for back-compat.", category: "Documentation", ord: 3 },
+  { key: "agreement",         label: "Agreement and Expectations document signed",     detail: "Signature required; sent via e-sign provider; varies by client",  category: "Compliance",    ord: 4 },
   { key: "orientation",       label: "Orientation scheduled",                            detail: "Date, time, person in charge",                                    category: "Training",      ord: 5 },
   { key: "agreement_copy",    label: "Copy of agreements + orientation sent to employee", detail: "PDFs forwarded after signing + orientation confirmation",     category: "Documentation", ord: 6 },
   { key: "background",        label: "Background check completed",                       detail: "Client-dependent; check whether client requires it",             category: "Compliance",    ord: 7 },

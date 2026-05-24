@@ -34,6 +34,7 @@ import {
   markComplianceFlag,
   setIncidentStatus,
 } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 type View = "incidents" | "warnings";
 
@@ -61,13 +62,12 @@ export default async function SafetyPage({
   const finalWarnings = warnings.filter((w) => w.level === "final" || w.level === "suspension").length;
   const unacknowledged = warnings.filter((w) => !w.acknowledged_at).length;
 
+  const tbDict = (await getServerDictionary()).topbar;
+  const tb = view === "incidents" ? tbDict.safetyInc : tbDict.safetyWarn;
+
   return (
     <Shell>
-      <Topbar
-        crumb="HR / SAFETY · WARNINGS"
-        scriptWord={view === "incidents" ? "Workplace " : "Disciplinary "}
-        title={view === "incidents" ? "Safety" : "Warnings"}
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{
@@ -269,6 +269,13 @@ function IncidentsView({
 
                 {/* Status transition column */}
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+                  <Link
+                    href={`/safety/${inc.id}`}
+                    className="dt-btn dt-btn-gold"
+                    style={{ padding: "5px 12px", fontSize: 9.5, letterSpacing: "0.14em" }}
+                  >
+                    <span>Open Case</span>
+                  </Link>
                   {inc.status === "reported" && (
                     <StatusBtn id={inc.id} employeeId={inc.employee.id} status="investigating" label="Investigate" />
                   )}

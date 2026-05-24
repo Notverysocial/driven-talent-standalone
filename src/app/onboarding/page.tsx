@@ -4,6 +4,7 @@ import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import { listOnboardingSummaries } from "@/lib/onboarding.server";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -34,12 +35,14 @@ export default async function OnboardingListPage() {
           }, 0) / summaries.length,
         );
 
+  const tb = (await getServerDictionary()).topbar.onboarding;
+
   return (
     <Shell>
       <Topbar
-        crumb="HR / ONBOARDING"
-        scriptWord="Active "
-        title="Onboarding"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/roster/new" className="dt-btn dt-btn-gold">
             <span>+ New Hire</span>

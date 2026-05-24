@@ -1,6 +1,7 @@
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 type ReconStatus = "match" | "variance" | "missing";
 type ReconRow = {
@@ -60,19 +61,20 @@ function StatusIcon({ status }: { status: ReconStatus }) {
   );
 }
 
-export default function ReconciliationPage() {
+export default async function ReconciliationPage() {
   const dtTotal = RECON.rows.reduce((s, r) => s + r.dt.amount, 0);
   const cTotal = RECON.rows.reduce((s, r) => s + r.client.amount, 0);
   const variance = cTotal - dtTotal;
   const matches = RECON.rows.filter((r) => r.status === "match").length;
   const issues = RECON.rows.length - matches;
+  const tb = (await getServerDictionary()).topbar.reconciliation;
 
   return (
     <Shell>
       <Topbar
-        crumb="OPERATIONS / WEEK 17"
-        scriptWord="Recon"
-        title="ciliation"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <>
             <button className="dt-btn">Import client log</button>

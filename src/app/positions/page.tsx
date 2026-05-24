@@ -10,6 +10,7 @@ import {
   type Position,
   type PositionStatus,
 } from "@/lib/recruiting";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -44,12 +45,14 @@ export default async function PositionsPage() {
     .concat(byStatus.get("on_hold") ?? [])
     .reduce((s, p) => s + Math.max(0, (p.headcount ?? 1) - (p.filled_count ?? 0)), 0);
 
+  const tb = (await getServerDictionary()).topbar.positions;
+
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / RECRUITING / POSITIONS"
-        scriptWord="Open "
-        title="Positions"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/positions/new" className="dt-btn dt-btn-gold">
             <span>+ New Position</span>

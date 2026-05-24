@@ -12,14 +12,31 @@ import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
 import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
 import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
 import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
+import { getServerDictionary, getLocale } from "@/lib/i18n/server";
 
-function fmt$(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmt$(n: number, locale: string) {
+  return n.toLocaleString(locale === "es" ? "es-MX" : "en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+// Time-of-day greeting. Spanish has gendered plural ("Buenos días")
+// so we keep the prefix as part of the dictionary (`greetingPrefix`)
+// and pick the right time-of-day noun.
+function pickGreeting(d: typeof import("@/lib/i18n/locales/en").en["dashboard"]) {
+  const h = new Date().getHours();
+  if (h < 12) return d.morning;
+  if (h < 18) return d.afternoon;
+  return d.evening;
 }
 
 export default async function DashboardPage() {
   const d = await getDashboard();
   const inbox = await getInboxCounts();
+  const dict = await getServerDictionary();
+  const locale = await getLocale();
+  const dd = dict.dashboard;
 
   // Active candidates in ATS (everything not yet hired/rejected).
   const inAts = d.pipeline.reduce(
@@ -30,70 +47,68 @@ export default async function DashboardPage() {
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / OVERVIEW"
-        scriptWord="Good "
-        title="Morning"
+        crumb={dd.crumb}
+        scriptWord={dd.greetingPrefix}
+        title={pickGreeting(dd)}
         actions={
           <>
             <Link href="/timecards" className="dt-btn">
-              Timecards
+              {dd.timecards}
             </Link>
             <Link href="/candidates" className="dt-btn">
-              Pipeline
+              {dd.pipeline}
             </Link>
             <Link href="/roster" className="dt-btn dt-btn-gold">
-              <span>+ View Roster</span>
+              <span>{dd.viewRoster}</span>
             </Link>
           </>
         }
       />
 
-      {/* KPI grid — mirrors the v3 demo's six-up dashboard tiles, using
-          dt-* design tokens and the accent-bar pattern. */}
       <KpiGrid min={200}>
         <KpiTile
           tone="green"
-          label="Active Employees"
+          label={dd.kpiActiveEmployees}
           value={d.totals.activeEmployees}
-          sub={`${d.totals.totalPlacements} placements`}
+          sub={`${d.totals.totalPlacements} ${dd.kpiPlacementsSub}`}
           href="/roster"
         />
         <KpiTile
           tone="gold"
-          label="In ATS"
+          label={dd.kpiInAts}
           value={inAts}
-          sub="candidates active"
+          sub={dd.kpiInAtsSub}
           href="/candidates"
         />
         <KpiTile
           tone={d.totals.pendingTimecards > 5 ? "amber" : "warm"}
-          label="Pending Timecards"
+          label={dd.kpiPendingTimecards}
           value={d.totals.pendingTimecards}
-          sub="awaiting approval"
+          sub={dd.kpiPendingTimecardsSub}
           href="/timecards"
         />
         <KpiTile
           tone={inbox.openConversations > 0 ? "amber" : "warm"}
-          label="Open Conversations"
+          label={dd.kpiOpenConversations}
           value={inbox.openConversations}
-          sub={`${inbox.unreadMessages} unread`}
+          sub={`${inbox.unreadMessages} ${dd.kpiUnreadSub}`}
           href="/inbox"
         />
         <KpiTile
           tone="gold"
-          label="Open Invoices"
+          label={dd.kpiOpenInvoices}
           value={d.billing.openCount}
-          sub={`$${fmt$(d.billing.openTotal)}`}
+          sub={`$${fmt$(d.billing.openTotal, locale)}`}
           href="/invoices"
         />
         <KpiTile
           tone={d.billing.overdueCount > 0 ? "red" : "warm"}
-          label="Overdue"
+          label={dd.kpiOverdue}
           value={d.billing.overdueCount}
           sub={
             d.billing.overdueCount > 0
-              ? `${d.billing.oldestDays}d oldest`
-              : "none"
+              ? `${d.billing.oldestDays}${dd.kpiOldestDaysSuffix}`
+              : dd.kpiOverdueNone
           }
           href="/invoices"
         />
@@ -109,11 +124,11 @@ export default async function DashboardPage() {
         }}
       >
         <ChartCard
-          title="Attendance · 30 Days"
-          sub="Daily counts across present, late, missed, no-show"
+          title={dd.attendanceTitle}
+          sub={dd.attendanceSub}
           action={
             <Link href="/attendance" className="dt-btn dt-btn-ghost tiny">
-              Open attendance →
+              {dd.openAttendance}
             </Link>
           }
         >
@@ -121,11 +136,11 @@ export default async function DashboardPage() {
         </ChartCard>
 
         <ChartCard
-          title="Hiring Pipeline"
-          sub="Active candidates by stage"
+          title={dd.pipelineTitle}
+          sub={dd.pipelineSub}
           action={
             <Link href="/candidates" className="dt-btn dt-btn-ghost tiny">
-              Open pipeline →
+              {dd.openPipeline}
             </Link>
           }
         >
@@ -143,11 +158,11 @@ export default async function DashboardPage() {
         }}
       >
         <ChartCard
-          title="Revenue · Last 6 Months"
-          sub="Billed vs. paid by month"
+          title={dd.revenueTitle}
+          sub={dd.revenueSub}
           action={
             <Link href="/invoices" className="dt-btn dt-btn-ghost tiny">
-              Open billing →
+              {dd.openBilling}
             </Link>
           }
         >
@@ -155,11 +170,11 @@ export default async function DashboardPage() {
         </ChartCard>
 
         <ChartCard
-          title="Weekly Billing by Client"
-          sub="Estimated revenue per active engagement"
+          title={dd.weeklyBillingTitle}
+          sub={dd.weeklyBillingSub}
           action={
             <Link href="/roster" className="dt-btn dt-btn-ghost tiny">
-              Open roster →
+              {dd.openRoster}
             </Link>
           }
         >
@@ -186,11 +201,11 @@ export default async function DashboardPage() {
         <div className="dt-card gold-edge">
           <div className="dt-card-head">
             <div>
-              <h3>Recent Attendance Incidents</h3>
-              <div className="sub">Missed days, no-shows, lates · last 14 days</div>
+              <h3>{dd.recentIncidentsTitle}</h3>
+              <div className="sub">{dd.recentIncidentsSub}</div>
             </div>
             <Link href="/attendance" className="dt-btn dt-btn-ghost tiny">
-              Full report →
+              {dd.fullReport}
             </Link>
           </div>
           <div style={{ padding: "8px 0 0" }}>
@@ -202,7 +217,7 @@ export default async function DashboardPage() {
                   fontStyle: "italic",
                 }}
               >
-                No incidents in the window. Everybody showed up.
+                {dd.noIncidents}
               </div>
             ) : (
               d.incidents.map((a, i) => {
@@ -243,10 +258,10 @@ export default async function DashboardPage() {
                       </div>
                     </div>
                     <Badge tone={tone}>
-                      {new Date(a.date).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {new Date(a.date).toLocaleDateString(
+                        locale === "es" ? "es-MX" : "en-US",
+                        { month: "short", day: "numeric" },
+                      )}
                     </Badge>
                   </Link>
                 );
@@ -265,7 +280,7 @@ export default async function DashboardPage() {
                 fontWeight: 400,
               }}
             >
-              Outstanding Receivables
+              {dd.outstandingReceivables}
             </div>
             <div
               className="tab-num"
@@ -278,16 +293,19 @@ export default async function DashboardPage() {
                 letterSpacing: "-0.01em",
               }}
             >
-              ${fmt$(d.billing.openTotal)}
+              ${fmt$(d.billing.openTotal, locale)}
             </div>
             <div style={{ fontSize: 12, color: "var(--dt-warm-500)", marginTop: 6 }}>
-              {d.billing.openCount} {d.billing.openCount === 1 ? "invoice" : "invoices"} open
-              {d.billing.openCount > 0 && ` · oldest ${d.billing.oldestDays} days`}
+              {d.billing.openCount}{" "}
+              {d.billing.openCount === 1 ? dd.invoice : dd.invoices}{" "}
+              {dd.invoicesOpen}
+              {d.billing.openCount > 0 &&
+                ` · ${dd.oldest} ${d.billing.oldestDays}${dd.days}`}
               {d.billing.overdueCount > 0 && (
                 <>
                   {" · "}
                   <span style={{ color: "var(--dt-danger)", fontWeight: 400 }}>
-                    {d.billing.overdueCount} overdue
+                    {d.billing.overdueCount} {dd.overdue}
                   </span>
                 </>
               )}
@@ -301,7 +319,7 @@ export default async function DashboardPage() {
                 fontWeight: 400,
               }}
             >
-              Paid YTD
+              {dd.paidYTD}
             </div>
             <div
               className="tab-num"
@@ -312,14 +330,14 @@ export default async function DashboardPage() {
                 marginTop: 4,
               }}
             >
-              ${fmt$(d.billing.paidYTD)}
+              ${fmt$(d.billing.paidYTD, locale)}
             </div>
             <Link
               href="/invoices"
               className="dt-btn"
               style={{ marginTop: 18, justifyContent: "center", width: "100%" }}
             >
-              Open Billing
+              {dd.openBillingBtn}
             </Link>
           </div>
 
@@ -329,24 +347,24 @@ export default async function DashboardPage() {
       <div className="dt-card">
         <div className="dt-card-head">
           <div>
-            <h3>Active Clients</h3>
-            <div className="sub">Headcount, hours, and weekly billing</div>
+            <h3>{dd.activeClients}</h3>
+            <div className="sub">{dd.activeClientsSub}</div>
           </div>
           <Link href="/roster" className="dt-btn dt-btn-ghost tiny">
-            View roster →
+            {dd.viewRosterLink}
           </Link>
         </div>
         <div className="dt-table-wrap">
           <table className="dt-table">
             <thead>
               <tr>
-                <th style={{ paddingLeft: 22 }}>Client</th>
-                <th>Headcount</th>
-                <th>Placements</th>
-                <th>Missed (30d)</th>
-                <th>Hours / Wk</th>
+                <th style={{ paddingLeft: 22 }}>{dd.tblClient}</th>
+                <th>{dd.tblHeadcount}</th>
+                <th>{dd.tblPlacements}</th>
+                <th>{dd.tblMissed30}</th>
+                <th>{dd.tblHoursWk}</th>
                 <th style={{ textAlign: "right", paddingRight: 22 }}>
-                  Est. Weekly Billing
+                  {dd.tblEstWeeklyBilling}
                 </th>
               </tr>
             </thead>
@@ -391,7 +409,7 @@ export default async function DashboardPage() {
                       fontWeight: 400,
                     }}
                   >
-                    ${fmt$(s.weeklyBilling)}
+                    ${fmt$(s.weeklyBilling, locale)}
                   </td>
                 </tr>
               ))}
@@ -406,7 +424,7 @@ export default async function DashboardPage() {
                       fontStyle: "italic",
                     }}
                   >
-                    No clients yet.
+                    {dd.noClients}
                   </td>
                 </tr>
               )}

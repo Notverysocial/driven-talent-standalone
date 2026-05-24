@@ -6,6 +6,7 @@ import { Badge } from "@/components/Badge";
 import { CANDIDATE_STATUSES, scoreColor, tierLabel } from "@/lib/candidates";
 import { listCandidates } from "@/lib/candidates.server";
 import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -18,13 +19,14 @@ export default async function CandidatesListPage() {
   const byStatus = new Map<CandidateStatus, Candidate[]>();
   for (const s of CANDIDATE_STATUSES) byStatus.set(s.id, []);
   for (const c of candidates) byStatus.get(c.status)?.push(c);
+  const tb = (await getServerDictionary()).topbar.candidates;
 
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / PIPELINE"
-        scriptWord="Hiring "
-        title="Pipeline"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/candidates/new" className="dt-btn dt-btn-gold">
             <span>+ New Candidate</span>
