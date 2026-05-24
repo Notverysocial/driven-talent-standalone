@@ -43,6 +43,9 @@ const NAV: NavEntry[] = [
   { id: "bonuses",    label: "Bonuses",         icon: "star",  href: "/bonuses" },
   { id: "expenses",   label: "Expenses",        icon: "file",  href: "/expenses" },
 
+  { section: "Sales" },
+  { id: "pipeline",   label: "Sales Pipeline",  icon: "chart",    href: "/pipeline" },
+
   { section: "Driven Talent Internal" },
   { id: "calendar",   label: "Calendar",        icon: "calendar", href: "/calendar" },
   { id: "tasks",      label: "Tasks",           icon: "check",    href: "/tasks" },

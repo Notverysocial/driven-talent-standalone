@@ -753,6 +753,75 @@ export type IncidentCaseEvent = {
   created_at: string;
 };
 
+// ---------- Sales Pipeline / CRM (migration 0015) -----------------------
+
+export type SalesLeadStage =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "proposal"
+  | "won"
+  | "lost";
+
+export type SalesLeadSource =
+  | "referral"
+  | "cold_outreach"
+  | "inbound_web"
+  | "event"
+  | "existing_client"
+  | "partner"
+  | "other";
+
+export type SalesLeadActivityType =
+  | "note"
+  | "call"
+  | "email"
+  | "meeting"
+  | "stage_changed"
+  | "owner_changed"
+  | "task";
+
+export type SalesLead = {
+  id: string;
+  company_name: string;
+  industry: string | null;
+  website: string | null;
+  city: string | null;
+  contact_name: string | null;
+  contact_title: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  stage: SalesLeadStage;
+  source: SalesLeadSource;
+  source_detail: string | null;
+  estimated_value: number | null;
+  estimated_headcount: number | null;
+  probability: number | null;
+  owner: string | null;
+  next_action: string | null;
+  next_action_due: string | null;
+  won_at: string | null;
+  lost_at: string | null;
+  lost_reason: string | null;
+  client_id: string | null;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type SalesLeadActivity = {
+  id: string;
+  lead_id: string;
+  activity_type: SalesLeadActivityType;
+  summary: string;
+  body: string | null;
+  actor: string | null;
+  meta: Record<string, unknown>;
+  occurred_at: string;
+  created_at: string;
+};
+
 // ---------- Bug Reports (migration 0014) --------------------------------
 
 export type BugSeverity = "low" | "medium" | "high" | "critical";
