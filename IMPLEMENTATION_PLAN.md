@@ -80,13 +80,14 @@ team — until proper auth lands.
 | 6 | LOA (Leave of Absence) tab | Email | Medium | Module 4 |
 | 7 | Safety / Warnings tab — incident cases | Email + Incident SOP v2.1 + Build Spec System B | High (compliance) | Module 4 |
 | 8 | Payroll → automated invoice creation in-app | Email + existing payroll module | Medium | Module 5 |
+| 9 | **Website → app intake** — applications from driven-talent.com flow into the existing **Inbox** as items to process, then promote to Candidates/ATS | Antonio (added after Round 1) + Build Spec §4.7 | High | Module 6 |
 
 What's **not** in this gap list but exists in the Build Spec and
 should be tracked: **Do Not Return** blocklist (Spec §4.5),
-**Terminations** module (Spec §4.6), **website → ATS auto-upload**
-integration (Spec §4.7), audit/history log on every table, RBAC, file
-storage hardening, and California compliance reminders (Spec §12.4).
-These are deferred until the gap-list modules are in.
+**Terminations** module (Spec §4.6), audit/history log on every
+table, RBAC, file storage hardening, and California compliance
+reminders (Spec §12.4). These are deferred until the gap-list
+modules are in.
 
 ---
 
@@ -95,6 +96,38 @@ These are deferred until the gap-list modules are in.
 Each module = additive Supabase migration + new pages/components/server
 loaders/actions + sidebar entry where appropriate. No production
 deploys; Antonio reviews each module locally before merge.
+
+### Parallel build — branching strategy
+
+Modules 1–4 of the gap list are being built **in parallel across
+separate code sessions**, each in its own clone of the repo, each on
+its own feature branch off `main`. Antonio merges them back in order.
+
+| Branch | Owner | Module |
+|---|---|---|
+| `feat/ops-calendar` | This session | Module 1 — Shared Corporate Calendar + master plan |
+| `feat/ops-charts` | Parallel session | Module 2 — Charts & Visual Analytics |
+| `feat/ops-recruiting` | Parallel session | Module 3 — Inbound Calls + Open Positions |
+| `feat/ops-hr-safety` | Parallel session | Module 4 — Sick Time + LOA + Safety/Warnings |
+
+To keep these mergeable, every branch follows the same rules:
+- **Migrations are isolated, additive files** (`0003_<area>.sql`,
+  `0004_<area>.sql`, …). Antonio re-numbers at merge if collisions
+  appear; no in-place edits to prior migrations.
+- **Shared-file edits stay minimal** — chiefly the sidebar
+  (`src/components/Sidebar.tsx`, one line per module), the types
+  file (`src/lib/supabase/types.ts`, additive blocks), and
+  `src/app/globals.css` (append-only). Each branch touches its own
+  module folder under `src/app/<module>/` and its own
+  `src/lib/<module>.{ts,server.ts}` files — no overlap.
+- **No `package.json` / `package-lock.json` churn** unless the
+  module genuinely needs a new dep. If a dep is added, call it out
+  explicitly so other branches can rebase.
+- Modules 5 and 6 are sequenced **after** the parallel batch lands,
+  since they depend on it (Payroll→Invoice needs the merged
+  Payroll/Invoices code; Website→Inbox needs the Inbox stable +
+  benefits from the Module 3 Open Positions for accurate position
+  mapping).
 
 ### Module 1 — Shared Corporate Calendar (THIS ROUND)
 Standalone Calendar page at `/calendar`. Month grid with 4 event tracks:
@@ -158,6 +191,87 @@ closure to:
 
 Will confirm the operational SOP (manual review gates, sign-off,
 margin display) with Antonio before coding.
+
+### Module 6 — Website → App Application Intake (lands in Inbox)
+
+**Goal.** Every job application submitted on **driven-talent.com**
+flows automatically into the ops app and appears in the existing
+**Inbox** as an item to be processed. From the Inbox, the team
+triages the application and promotes it into the Candidates / ATS
+pipeline. No applicant lost, no manual re-keying.
+
+Pairs with Module 3 (the Inbound Calls log + Open Positions panel
+give the Inbox a second front door for candidate intake and the
+target Position to map to).
+
+**Why Inbox is the right landing point.** The existing `/inbox` page
+already houses `contacts` + `conversations` + `messages` (migration
+`0002_messaging.sql`) and is where the team triages web-chat threads.
+A website application is conceptually the same shape — an inbound
+item with a contact, a topic, and a status — and the team already
+checks Inbox as part of the daily flow. Adding a new
+`web_application` conversation channel keeps it in their existing
+workflow rather than creating a parallel inbox.
+
+**Behavior.**
+- On form submission, create:
+  1. A `contacts` row (`type = 'job_seeker'`), de-duped by email/phone.
+  2. A `conversations` row tied to that contact with
+     `channel = 'web_application'` (new enum value), status `open`,
+     subject derived from the position applied for.
+  3. A `messages` row that carries the application body and a
+     structured `web_application` payload (JSONB on a new column or
+     stored as the message body's machine-readable section): name,
+     email, phone, position-of-interest, source, resume URL, free
+     text, raw form payload.
+- Resume file uploaded to a new `applications` storage bucket; link
+  stored on the message + on a promoted `candidates.resume_path` if
+  the operator promotes.
+- Inbox UI gets a filter chip for "Applications" so they sort apart
+  from web-chat threads.
+- **"Promote to Candidate"** action on the conversation creates a
+  `candidates` row prefilled from the structured payload, links the
+  conversation, and (if Module 3 has shipped) links to the matching
+  `open_positions` row.
+- **Do Not Return check** — the new application is screened against
+  the (future) DNR list and flagged before the recruiter spends time;
+  this is a Build Spec §4.7 requirement.
+- **De-dupe** existing contacts by email/phone before creating a new
+  one; merge into the same contact thread.
+
+**Database changes** (`supabase/migrations/0008_web_intake.sql`,
+exact number depends on merge order):
+- Extend `message_channel` enum with `'web_application'`.
+- Add `web_application_payload jsonb` to `messages` (nullable; only
+  populated for application messages).
+- Storage bucket `applications` + open policy matching existing
+  buckets.
+
+**Implementation options for the website side** (pick before coding):
+1. **API endpoint on the ops app** — the website POSTs directly to
+   `/api/intake/application`. Cleanest, real-time. The endpoint
+   validates a shared secret and writes via the service-role client.
+2. **Webhook from whatever form service driven-talent.com uses
+   today.** Same endpoint, different sender.
+3. **Email-to-inbox fallback** — the website forwards applications
+   to an inbox address that a scheduled worker polls. Lowest
+   integration effort but slowest and least clean.
+
+**Open item — form-field inventory.** The exact field shape of
+**driven-talent.com's** application form must be inventoried before
+the mapping is written, so the structured payload matches what the
+website actually sends. This is a one-time task: pull the form
+source / vendor schema / a sample submission and confirm:
+- which fields exist and whether any are required,
+- how the resume upload is handled (multipart file vs. hosted link),
+- whether the form already collects a position-of-interest dropdown
+  (and what its option set is),
+- what notification email the website currently sends — useful for
+  the email-fallback option.
+
+The manual "Add Candidate" form already shipped in `/candidates/new`
+remains essential — most applicants today still arrive via Indeed,
+referrals, walk-ins, and the soon-to-be Inbound Calls log.
 
 ### Future / deferred (not in current scope)
 Do Not Return blocklist enforcement, full Terminations module
@@ -270,8 +384,12 @@ modules ship. Listed here so they don't surprise us.
    too (Build Spec §4.8), or is calendar + the Inbox enough?
 4. **Do Not Return enforcement.** The Build Spec wants the ATS
    intake to *actively check* this list. Not in current scope.
-5. **Website → ATS auto-upload.** Needs an inventory of the
-   driven-talent.com form fields. Out of scope until inventoried.
+5. **Website → Inbox intake (Module 6).** Needs a one-time
+   inventory of the driven-talent.com application-form fields so
+   the structured payload mapping is exact, plus a decision on the
+   transport (direct API POST vs. webhook from existing form
+   service vs. email fallback). Coding starts once the inventory
+   is in hand.
 6. **Document storage.** When Safety/Warnings ships, PII handling
    needs a real plan (current storage policies are also open).
 7. **Confirm Payroll SOP.** Brief mentioned a Payroll SOP that isn't
