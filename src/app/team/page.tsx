@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
+import { requireRole } from "@/lib/auth.server";
 import { listTeamMembers } from "@/lib/team.server";
 import {
   ROLE_LABEL,
@@ -13,6 +14,7 @@ import { TeamMemberRow } from "./TeamMemberRow";
 import { createTeamMember } from "./actions";
 
 export default async function TeamMembersPage() {
+  await requireRole("admin");
   const members = await listTeamMembers();
 
   const active = members.filter((m) => m.status === "active");

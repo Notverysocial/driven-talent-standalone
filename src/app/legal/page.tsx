@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
+import { requireRole } from "@/lib/auth.server";
 import { listLegalDocuments, listClientsForPicker, listEmployeesForPicker } from "@/lib/legal-tasks.server";
 import {
   LEGAL_CATEGORY_LABEL,
@@ -22,6 +23,7 @@ export default async function LegalDocsPage({
 }: {
   searchParams: Promise<{ category?: string }>;
 }) {
+  await requireRole("admin");
   const sp = await searchParams;
   const filterCategory = (sp.category && CATEGORIES.includes(sp.category as LegalDocumentCategory)
     ? sp.category

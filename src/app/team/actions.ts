@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/auth.server";
 import {
   SEPARATION_ELIGIBILITIES,
   SEPARATION_REASONS,
@@ -13,9 +14,14 @@ import {
   type TeamMemberStatus,
 } from "@/lib/team";
 
+// All team/separation mutations are admin-tier (owner can do everything
+// admin can). The proxy already blocks unauthenticated callers; this
+// adds the authoritative role check.
+
 // ---------- Team members ------------------------------------------------
 
 export async function createTeamMember(formData: FormData) {
+  await assertRole("admin");
   const sb = await createClient();
 
   const fullName = (formData.get("full_name") as string)?.trim();
@@ -49,6 +55,7 @@ export async function createTeamMember(formData: FormData) {
 }
 
 export async function updateTeamMemberRole(id: string, role: TeamMemberRole) {
+  await assertRole("admin");
   if (!TEAM_ROLES.includes(role)) throw new Error(`Invalid role: ${role}`);
   const sb = await createClient();
   const { error } = await sb
@@ -60,6 +67,7 @@ export async function updateTeamMemberRole(id: string, role: TeamMemberRole) {
 }
 
 export async function setTeamMemberStatus(id: string, status: TeamMemberStatus) {
+  await assertRole("admin");
   if (status !== "active" && status !== "inactive") {
     throw new Error(`Invalid status: ${status}`);
   }
@@ -76,6 +84,7 @@ export async function setTeamMemberStatus(id: string, status: TeamMemberStatus) 
 }
 
 export async function deleteTeamMember(id: string) {
+  await assertRole("owner");
   const sb = await createClient();
   const { error } = await sb.from("team_members").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -85,6 +94,7 @@ export async function deleteTeamMember(id: string) {
 // ---------- Separations / DNR -------------------------------------------
 
 export async function processSeparation(formData: FormData) {
+  await assertRole("admin");
   const sb = await createClient();
 
   const employeeId = (formData.get("employee_id") as string)?.trim();
@@ -147,6 +157,7 @@ export async function processSeparation(formData: FormData) {
 }
 
 export async function reinstateEmployee(employeeId: string) {
+  await assertRole("admin");
   const sb = await createClient();
   const { error } = await sb
     .from("employees")
@@ -164,6 +175,7 @@ export async function updateSeparationEligibility(
   eligibility: SeparationEligibility,
   note: string | null,
 ) {
+  await assertRole("admin");
   if (!SEPARATION_ELIGIBILITIES.includes(eligibility)) {
     throw new Error(`Invalid eligibility: ${eligibility}`);
   }

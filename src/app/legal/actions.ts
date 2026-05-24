@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/auth.server";
 import type {
   LegalDocumentCategory,
   LegalDocumentStatus,
@@ -31,6 +32,7 @@ const STATUSES: LegalDocumentStatus[] = [
 ];
 
 export async function createLegalDocument(formData: FormData) {
+  await assertRole("admin");
   const supabase = await createClient();
 
   const title = (formData.get("title") as string)?.trim();
@@ -82,6 +84,7 @@ export async function createLegalDocument(formData: FormData) {
 }
 
 export async function setLegalDocumentStatus(id: string, status: LegalDocumentStatus) {
+  await assertRole("admin");
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const supabase = await createClient();
   const { error } = await supabase
@@ -93,6 +96,7 @@ export async function setLegalDocumentStatus(id: string, status: LegalDocumentSt
 }
 
 export async function deleteLegalDocument(id: string) {
+  await assertRole("admin");
   const supabase = await createClient();
   const { error } = await supabase.from("legal_documents").delete().eq("id", id);
   if (error) throw new Error(error.message);

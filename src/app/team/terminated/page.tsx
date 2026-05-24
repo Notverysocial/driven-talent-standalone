@@ -3,6 +3,7 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { requireRole } from "@/lib/auth.server";
 import {
   listActiveEmployeesForPicker,
   listClientsForPicker,
@@ -21,6 +22,7 @@ import {
 import { processSeparation, reinstateEmployee } from "../actions";
 
 export default async function TerminatedPage() {
+  await requireRole("admin");
   const [rows, employees, clients] = await Promise.all([
     listSeparatedEmployees(),
     listActiveEmployeesForPicker(),

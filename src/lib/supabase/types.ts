@@ -833,6 +833,23 @@ export type BugStatus =
   | "wont_fix"
   | "duplicate";
 
+// ---------- RBAC / profiles (migration 0017) ---------------------------
+
+// Authorisation tier. Distinct from team_member_role (which is the
+// *job function* — recruiter/payroll/safety_manager/etc.). See
+// 0017_rbac.sql for the rationale on keeping the two enums orthogonal.
+export type AppRole = "owner" | "admin" | "user";
+
+export type Profile = {
+  id: string;             // matches auth.users.id
+  email: string | null;
+  full_name: string | null;
+  role: AppRole;
+  team_member_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type BugReport = {
   id: string;
   reporter_name: string | null;

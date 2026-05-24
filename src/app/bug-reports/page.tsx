@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
+import { requireRole } from "@/lib/auth.server";
 import { listBugReports } from "@/lib/bug-reports.server";
 import {
   BUG_SEVERITIES,
@@ -23,6 +24,7 @@ export default async function BugReportsPage({
 }: {
   searchParams: Promise<{ view?: string }>;
 }) {
+  await requireRole("admin");
   const sp = await searchParams;
   const view: View =
     sp.view === "all" ? "all" : sp.view === "resolved" ? "resolved" : "open";

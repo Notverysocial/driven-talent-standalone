@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/auth.server";
 import { BUG_SEVERITIES, BUG_STATUSES } from "@/lib/bug-reports";
 import type { BugSeverity, BugStatus } from "@/lib/supabase/types";
 
@@ -54,6 +55,9 @@ export async function createBugReport(formData: FormData) {
 }
 
 export async function setBugStatus(id: string, status: BugStatus) {
+  // Triage actions are admin-only. createBugReport (above) remains
+  // available to any authenticated user so anyone can file a bug.
+  await assertRole("admin");
   if (!BUG_STATUSES.includes(status)) {
     throw new Error(`Invalid status: ${status}`);
   }
@@ -75,6 +79,7 @@ export async function setBugStatus(id: string, status: BugStatus) {
 }
 
 export async function updateBugTriage(formData: FormData) {
+  await assertRole("admin");
   const id = (formData.get("id") as string)?.trim();
   if (!id) throw new Error("Bug id is required");
 

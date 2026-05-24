@@ -936,3 +936,109 @@ select.dt-filter-input {
   }
   .dt-bug-modal-backdrop { padding: 5vh 10px 10px; }
 }
+
+/* LOGIN */
+.dt-login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: #F5F3EE;
+}
+.dt-login-card {
+  width: 100%;
+  max-width: 420px;
+  background: #FFFFFF;
+  border: 1px solid var(--dt-warm-150);
+  padding: 40px 36px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
+}
+.dt-login-brand {
+  text-align: center;
+  margin-bottom: 28px;
+}
+.dt-login-brand .name {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+.dt-login-brand .sub {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dt-warm-500);
+  margin-top: 4px;
+}
+.dt-login-title {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
+  font-weight: 500;
+}
+.dt-login-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dt-warm-500);
+  margin: 0 0 22px;
+}
+.dt-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dt-login-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dt-login-form label span {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dt-warm-500);
+}
+.dt-login-form input {
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--dt-warm-200);
+  background: #FFFFFF;
+  border-radius: 0;
+}
+.dt-login-form input:focus {
+  outline: none;
+  border-color: var(--dt-black);
+}
+.dt-login-error {
+  background: var(--dt-danger-bg);
+  color: var(--dt-danger);
+  font-size: 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--dt-danger);
+}
+.dt-login-form .dt-btn {
+  margin-top: 6px;
+  justify-content: center;
+}
+
+/* SIDEBAR NAV FOOT (logout) */
+.dt-nav-foot form { margin: 0; }
+.dt-nav-foot .dt-logout {
+  margin-top: 8px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--dt-warm-200);
+  color: var(--dt-warm-500);
+  font-family: inherit;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.dt-nav-foot .dt-logout:hover {
+  border-color: var(--dt-black);
+  color: var(--dt-black);
+}
