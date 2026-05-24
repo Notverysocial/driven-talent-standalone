@@ -434,3 +434,33 @@ export type DisciplinaryWarning = {
   created_at: string;
   updated_at: string;
 };
+
+// ---------- Bug Reports (migration 0014) --------------------------------
+
+export type BugSeverity = "low" | "medium" | "high" | "critical";
+
+export type BugStatus =
+  | "new"
+  | "in_progress"
+  | "resolved"
+  | "wont_fix"
+  | "duplicate";
+
+export type BugReport = {
+  id: string;
+  reporter_name: string | null;
+  reporter_email: string | null;
+  page_path: string | null;
+  page_label: string | null;
+  user_agent: string | null;
+  description: string;
+  steps_to_reproduce: string | null;
+  severity: BugSeverity;
+  status: BugStatus;
+  attachment_path: string | null;
+  assigned_to: string | null;
+  resolution_notes: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
