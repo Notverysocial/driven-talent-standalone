@@ -20,6 +20,7 @@ import {
   type SeparationReason,
 } from "@/lib/team";
 import { processSeparation, reinstateEmployee } from "../actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function TerminatedPage() {
   await requireRole("admin");
@@ -35,12 +36,14 @@ export default async function TerminatedPage() {
     (r) => !r.separation || r.separation.eligibility === "eligible",
   );
 
+  const tb = (await getServerDictionary()).topbar.terminated;
+
   return (
     <Shell>
       <Topbar
-        crumb="ADMIN / TERMINATED · DO-NOT-RETURN"
-        scriptWord="Separated "
-        title="Employees"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/team" className="dt-btn">
             ← Team Members

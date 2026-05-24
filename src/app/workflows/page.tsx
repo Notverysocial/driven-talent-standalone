@@ -20,6 +20,7 @@ import {
   summariseTrigger,
 } from "@/lib/workflows";
 import { completeTask, installTemplate, tickScheduledJobs, toggleWorkflowEnabled } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function WorkflowsPage() {
   const [workflows, runs, runCounts, openTasks] = await Promise.all([
@@ -38,12 +39,14 @@ export default async function WorkflowsPage() {
     (t) => t.due_at && new Date(t.due_at).getTime() < Date.now(),
   ).length;
 
+  const tb = (await getServerDictionary()).topbar.workflows;
+
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / AUTOMATION / WORKFLOWS"
-        scriptWord="Workflow "
-        title="Builder"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <div style={{ display: "flex", gap: 8 }}>
             <form action={tickScheduledJobs}>

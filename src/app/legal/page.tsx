@@ -15,6 +15,7 @@ import {
 } from "@/lib/legal-tasks";
 import type { LegalDocumentCategory } from "@/lib/supabase/types";
 import { createLegalDocument, setLegalDocumentStatus } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 const CATEGORIES = Object.keys(LEGAL_CATEGORY_LABEL) as LegalDocumentCategory[];
 
@@ -52,13 +53,11 @@ export default async function LegalDocsPage({
   for (const c of CATEGORIES) allCounts.set(c, 0);
   for (const d of decorated) allCounts.set(d.category, (allCounts.get(d.category) ?? 0) + 1);
 
+  const tb = (await getServerDictionary()).topbar.legal;
+
   return (
     <Shell>
-      <Topbar
-        crumb="WORKSPACE / LEGAL · NOTICES"
-        scriptWord="Legal "
-        title="Documents"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

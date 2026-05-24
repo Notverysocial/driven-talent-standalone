@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Jost } from "next/font/google";
 import "./globals.css";
+import { getLocale } from "@/lib/i18n/server";
+import { LocaleProvider } from "@/lib/i18n/client";
 
 const jost = Jost({
   subsets: ["latin"],
@@ -15,14 +17,17 @@ export const metadata: Metadata = {
     "Driven Talent is a California staffing operation pairing handpicked talent with clients in hospitality, healthcare, warehouse, and manufacturing.",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getLocale();
   return (
-    <html lang="en" className={jost.variable}>
-      <body>{children}</body>
+    <html lang={locale} className={jost.variable}>
+      <body>
+        <LocaleProvider locale={locale}>{children}</LocaleProvider>
+      </body>
     </html>
   );
 }

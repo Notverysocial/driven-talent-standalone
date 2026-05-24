@@ -6,6 +6,7 @@ import { Badge } from "@/components/Badge";
 import { listTimecards } from "@/lib/timecards.server";
 import { TIMECARD_STATUSES, fmtWeekRange } from "@/lib/timecards";
 import type { TimecardStatus } from "@/lib/supabase/types";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function TimecardsListPage() {
   const all = await listTimecards();
@@ -14,12 +15,14 @@ export default async function TimecardsListPage() {
   for (const s of TIMECARD_STATUSES) byStatus.set(s.id, []);
   for (const t of all) byStatus.get(t.status)?.push(t);
 
+  const tb = (await getServerDictionary()).topbar.timecards;
+
   return (
     <Shell>
       <Topbar
-        crumb="OPERATIONS / TIMECARDS"
-        scriptWord="Weekly "
-        title="Timecards"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <>
             <Link href="/timecards/export" className="dt-btn">

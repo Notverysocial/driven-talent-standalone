@@ -3,25 +3,28 @@
 import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { login, type LoginState } from "./actions";
+import { useT } from "@/lib/i18n/client";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
+  const t = useT();
   return (
     <button type="submit" className="dt-btn dt-btn-primary" disabled={pending}>
-      {pending ? "Signing in…" : "Sign in"}
+      {pending ? t("login.submitting") : t("login.submit")}
     </button>
   );
 }
 
 export function LoginForm({ next }: { next: string }) {
   const [state, formAction] = useActionState<LoginState, FormData>(login, {});
+  const t = useT();
 
   return (
     <form action={formAction} className="dt-login-form">
       <input type="hidden" name="next" value={next} />
 
       <label>
-        <span>Email</span>
+        <span>{t("login.email")}</span>
         <input
           name="email"
           type="email"
@@ -32,7 +35,7 @@ export function LoginForm({ next }: { next: string }) {
       </label>
 
       <label>
-        <span>Password</span>
+        <span>{t("login.password")}</span>
         <input
           name="password"
           type="password"

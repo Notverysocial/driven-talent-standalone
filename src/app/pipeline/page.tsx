@@ -14,6 +14,7 @@ import {
 import type { SalesLead, SalesLeadStage } from "@/lib/supabase/types";
 import { createSalesLead } from "./actions";
 import { StageMover } from "./StageMover";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function SalesPipelinePage() {
   const [leads, owners] = await Promise.all([
@@ -41,12 +42,14 @@ export default async function SalesPipelinePage() {
       new Date(l.next_action_due) < new Date(new Date().toDateString()),
   ).length;
 
+  const tb = (await getServerDictionary()).topbar.pipeline;
+
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / SALES / PIPELINE"
-        scriptWord="Sales "
-        title="Pipeline"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <a href="#new-lead" className="dt-btn dt-btn-gold">
             <span>+ New Lead</span>

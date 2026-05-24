@@ -3,6 +3,7 @@ import { Topbar } from "@/components/Topbar";
 import { getMonthEvents } from "@/lib/calendar.server";
 import { todayYM } from "@/lib/calendar";
 import { CalendarClient } from "./CalendarClient";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function parseMonth(raw?: string): { year: number; month0: number } {
   if (raw && /^\d{4}-\d{2}$/.test(raw)) {
@@ -20,14 +21,11 @@ export default async function CalendarPage({
   const sp = await searchParams;
   const { year, month0 } = parseMonth(sp.month);
   const { events, employees, clients } = await getMonthEvents(year, month0);
+  const tb = (await getServerDictionary()).topbar.calendar;
 
   return (
     <Shell>
-      <Topbar
-        crumb="OPERATIONS / CALENDAR"
-        scriptWord="Shared "
-        title="Calendar"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
       <CalendarClient
         year={year}
         month0={month0}

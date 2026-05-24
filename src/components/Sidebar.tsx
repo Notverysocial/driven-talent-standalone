@@ -4,18 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { NavIcon, type IconName } from "./NavIcon";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 import { logout } from "@/app/login/actions";
+import { useT, useDict } from "@/lib/i18n/client";
 import type { AppRole } from "@/lib/supabase/types";
 
 type NavLink = {
   id: string;
-  label: string;
+  // i18n key under the `nav.` namespace (e.g. "dashboard").
+  labelKey: string;
   icon: IconName;
   href: string;
   // Minimum role required to see the link. Omit for "any signed-in user".
   minRole?: AppRole;
 };
-type NavSection = { section: string; minRole?: AppRole };
+type NavSection = { sectionKey: string; minRole?: AppRole };
 type NavEntry = NavLink | NavSection;
 
 export type SidebarViewer = {
@@ -28,47 +31,48 @@ export type SidebarViewer = {
 // Order mirrors the Driven Talent Operations Dashboard v3 demo:
 // Overview / Recruiting / HR & Safety / Payroll & Finance / Internal.
 // Admin section + a few admin-only pages are role-gated via minRole.
+// `sectionKey` / `labelKey` resolve against the `nav.` namespace.
 const NAV: NavEntry[] = [
-  { section: "Overview" },
-  { id: "dashboard",  label: "Dashboard",      icon: "home",     href: "/dashboard" },
-  { id: "inbox",      label: "Inbox",          icon: "message",  href: "/inbox" },
+  { sectionKey: "overview" },
+  { id: "dashboard",  labelKey: "dashboard",   icon: "home",     href: "/dashboard" },
+  { id: "inbox",      labelKey: "inbox",       icon: "message",  href: "/inbox" },
 
-  { section: "Recruiting" },
-  { id: "applications", label: "Applicant Tracking", icon: "file",      href: "/applications" },
-  { id: "calls",        label: "Inbound Calls",      icon: "message",   href: "/calls" },
-  { id: "candidates",   label: "Candidates",         icon: "star",      href: "/candidates" },
-  { id: "positions",    label: "Open Positions",     icon: "clipboard", href: "/positions" },
-  { id: "job-postings", label: "Job Postings",       icon: "file",      href: "/job-postings" },
-  { id: "onboarding",   label: "Onboarding",         icon: "clipboard", href: "/onboarding" },
-  { id: "employees",    label: "Active Employees",   icon: "users",     href: "/roster" },
+  { sectionKey: "recruiting" },
+  { id: "applications", labelKey: "applications", icon: "file",      href: "/applications" },
+  { id: "calls",        labelKey: "calls",        icon: "message",   href: "/calls" },
+  { id: "candidates",   labelKey: "candidates",   icon: "star",      href: "/candidates" },
+  { id: "positions",    labelKey: "positions",    icon: "clipboard", href: "/positions" },
+  { id: "job-postings", labelKey: "jobPostings",  icon: "file",      href: "/job-postings" },
+  { id: "onboarding",   labelKey: "onboarding",   icon: "clipboard", href: "/onboarding" },
+  { id: "employees",    labelKey: "employees",    icon: "users",     href: "/roster" },
 
-  { section: "HR & Safety" },
-  { id: "attendance", label: "Attendance",       icon: "calendar", href: "/attendance" },
-  { id: "sick-time",  label: "Sick Time",        icon: "check",    href: "/sick-time" },
-  { id: "loa",        label: "Leave of Absence", icon: "file",     href: "/loa" },
-  { id: "safety",     label: "Safety / Warnings", icon: "building", href: "/safety" },
+  { sectionKey: "hrSafety" },
+  { id: "attendance", labelKey: "attendance", icon: "calendar", href: "/attendance" },
+  { id: "sick-time",  labelKey: "sickTime",   icon: "check",    href: "/sick-time" },
+  { id: "loa",        labelKey: "loa",        icon: "file",     href: "/loa" },
+  { id: "safety",     labelKey: "safety",     icon: "building", href: "/safety" },
 
-  { section: "Payroll & Finance" },
-  { id: "timecards",  label: "Timecards",       icon: "clock", href: "/timecards" },
-  { id: "payroll",    label: "Payroll",         icon: "chart", href: "/payroll" },
-  { id: "invoices",   label: "Invoices",        icon: "file",  href: "/invoices" },
-  { id: "bonuses",    label: "Bonuses",         icon: "star",  href: "/bonuses" },
-  { id: "expenses",   label: "Expenses",        icon: "file",  href: "/expenses" },
+  { sectionKey: "payrollFinance" },
+  { id: "timecards",  labelKey: "timecards", icon: "clock", href: "/timecards" },
+  { id: "payroll",    labelKey: "payroll",   icon: "chart", href: "/payroll" },
+  { id: "invoices",   labelKey: "invoices",  icon: "file",  href: "/invoices" },
+  { id: "bonuses",    labelKey: "bonuses",   icon: "star",  href: "/bonuses" },
+  { id: "expenses",   labelKey: "expenses",  icon: "file",  href: "/expenses" },
 
-  { section: "Sales" },
-  { id: "pipeline",   label: "Sales Pipeline",  icon: "chart",    href: "/pipeline" },
+  { sectionKey: "sales" },
+  { id: "pipeline",   labelKey: "pipeline",  icon: "chart", href: "/pipeline" },
 
-  { section: "Driven Talent Internal" },
-  { id: "calendar",   label: "Calendar",        icon: "calendar", href: "/calendar" },
-  { id: "tasks",      label: "Tasks",           icon: "check",    href: "/tasks" },
-  { id: "contacts",   label: "Contacts",        icon: "users",    href: "/contacts" },
-  { id: "legal",      label: "Legal · Notices", icon: "file",     href: "/legal",     minRole: "admin" },
-  { id: "workflows",  label: "Workflows",       icon: "check",    href: "/workflows", minRole: "admin" },
+  { sectionKey: "internal" },
+  { id: "calendar",   labelKey: "calendar",  icon: "calendar", href: "/calendar" },
+  { id: "tasks",      labelKey: "tasks",     icon: "check",    href: "/tasks" },
+  { id: "contacts",   labelKey: "contacts",  icon: "users",    href: "/contacts" },
+  { id: "legal",      labelKey: "legal",     icon: "file",     href: "/legal",     minRole: "admin" },
+  { id: "workflows",  labelKey: "workflows", icon: "check",    href: "/workflows", minRole: "admin" },
 
-  { section: "Admin", minRole: "admin" },
-  { id: "team",        label: "Team Members",     icon: "users", href: "/team",            minRole: "admin" },
-  { id: "terminated",  label: "Terminated / DNR", icon: "users", href: "/team/terminated", minRole: "admin" },
-  { id: "bug-reports", label: "Bug Reports",      icon: "file",  href: "/bug-reports",     minRole: "admin" },
+  { sectionKey: "admin", minRole: "admin" },
+  { id: "team",        labelKey: "team",       icon: "users", href: "/team",            minRole: "admin" },
+  { id: "terminated",  labelKey: "terminated", icon: "users", href: "/team/terminated", minRole: "admin" },
+  { id: "bug-reports", labelKey: "bugReports", icon: "file",  href: "/bug-reports",     minRole: "admin" },
 ];
 
 const ROLE_RANK: Record<AppRole, number> = { user: 0, admin: 1, owner: 2 };
@@ -81,6 +85,8 @@ function roleAtLeast(role: AppRole | undefined, minimum: AppRole | undefined): b
 export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const t = useT();
+  const dict = useDict();
 
   useEffect(() => {
     setOpen(false);
@@ -93,13 +99,13 @@ export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
   const visibleEntries: NavEntry[] = [];
   for (let i = 0; i < NAV.length; i++) {
     const entry = NAV[i];
-    if ("section" in entry) {
+    if ("sectionKey" in entry) {
       if (!roleAtLeast(viewer?.role, entry.minRole)) continue;
       // Look ahead to see if any item in this section is visible.
       let hasVisible = false;
       for (let j = i + 1; j < NAV.length; j++) {
         const peek = NAV[j];
-        if ("section" in peek) break;
+        if ("sectionKey" in peek) break;
         if (roleAtLeast(viewer?.role, peek.minRole)) {
           hasVisible = true;
           break;
@@ -113,11 +119,15 @@ export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
     }
   }
 
+  const roleLabel = viewer?.role
+    ? (dict.roles[viewer.role] ?? viewer.role).toUpperCase()
+    : t("nav.guest");
+
   return (
     <>
       <button
         className="dt-mobile-toggle"
-        aria-label="Open navigation"
+        aria-label={t("nav.dashboard")}
         onClick={() => setOpen(true)}
       >
         <svg
@@ -138,13 +148,13 @@ export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
       />
       <aside className={"dt-sidebar" + (open ? " open" : "")}>
         <div className="dt-brand">
-          <div className="name">Driven Talent</div>
-          <div className="sub">Operations · Dashboard</div>
+          <div className="name">{t("nav.brandName")}</div>
+          <div className="sub">{t("nav.brandSub")}</div>
         </div>
         {visibleEntries.map((entry, i) =>
-          "section" in entry ? (
+          "sectionKey" in entry ? (
             <div key={"s" + i} className="dt-nav-section">
-              {entry.section}
+              {t(`nav.${entry.sectionKey}`)}
             </div>
           ) : (
             <Link
@@ -162,7 +172,7 @@ export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
               <span className="ico">
                 <NavIcon name={entry.icon} />
               </span>
-              <span>{entry.label}</span>
+              <span>{t(`nav.${entry.labelKey}`)}</span>
             </Link>
           )
         )}
@@ -170,13 +180,14 @@ export function Sidebar({ viewer }: { viewer: SidebarViewer | null }) {
           <div className="av">{viewer?.initials ?? "DT"}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="who" title={viewer?.email ?? undefined}>
-              {viewer?.name ?? "Signed out"}
+              {viewer?.name ?? t("nav.signedOut")}
             </div>
-            <div className="role">{(viewer?.role ?? "guest").toUpperCase()}</div>
+            <div className="role">{roleLabel}</div>
+            <LanguageSwitcher />
             {viewer ? (
               <form action={logout}>
                 <button type="submit" className="dt-logout">
-                  Sign out
+                  {t("nav.signOut")}
                 </button>
               </form>
             ) : null}

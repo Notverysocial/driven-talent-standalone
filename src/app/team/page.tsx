@@ -12,6 +12,7 @@ import {
 } from "@/lib/team";
 import { TeamMemberRow } from "./TeamMemberRow";
 import { createTeamMember } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function TeamMembersPage() {
   await requireRole("admin");
@@ -23,12 +24,14 @@ export default async function TeamMembersPage() {
   for (const r of TEAM_ROLES) byRole.set(r, 0);
   for (const m of active) byRole.set(m.role, (byRole.get(m.role) ?? 0) + 1);
 
+  const tb = (await getServerDictionary()).topbar.team;
+
   return (
     <Shell>
       <Topbar
-        crumb="ADMIN / TEAM MEMBERS"
-        scriptWord="Internal "
-        title="Team"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/team/terminated" className="dt-btn">
             Terminated / DNR →

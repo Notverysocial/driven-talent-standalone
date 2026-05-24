@@ -4,6 +4,7 @@ import { Topbar } from "@/components/Topbar";
 import { createClient } from "@/lib/supabase/server";
 import { getConversations } from "./actions";
 import { InboxClient } from "./InboxClient";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function InboxPage() {
   const conversations = await getConversations();
@@ -16,12 +17,14 @@ export default async function InboxPage() {
     .select("id", { count: "exact", head: true })
     .eq("status", "new");
 
+  const tb = (await getServerDictionary()).topbar.inbox;
+
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / INBOX"
-        scriptWord=""
-        title="Inbox"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link
             href="/applications"

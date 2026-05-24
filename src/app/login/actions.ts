@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getServerT } from "@/lib/i18n/server";
 
 // Sign in with email + password. Validation is intentionally minimal —
 // Supabase Auth surfaces the right errors (invalid credentials, rate
@@ -26,7 +27,8 @@ export async function login(
   const next = safeNext(formData.get("next"));
 
   if (!email || !password) {
-    return { error: "Email and password are required." };
+    const t = await getServerT();
+    return { error: t("login.bothRequired") };
   }
 
   const supabase = await createClient();

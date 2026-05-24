@@ -27,6 +27,7 @@ import {
   deleteTask,
   setTaskStatus,
 } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "urgent"];
@@ -85,12 +86,14 @@ export default async function TasksPage({
   ).length;
   const doneCount = tasks.filter((t) => t.status === "done").length;
 
+  const tb = (await getServerDictionary()).topbar.tasks;
+
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / TASKS · MEETINGS"
-        scriptWord="Team "
-        title="Tasks"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/contacts" className="dt-btn">
             ← Contacts

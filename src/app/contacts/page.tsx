@@ -20,6 +20,7 @@ import {
   markContacted,
   toggleContactFavorite,
 } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 const ROLES = Object.keys(CONTACT_ROLE_LABEL) as ContactRole[];
 const TYPES = Object.keys(CONTACT_TYPE_LABEL) as ContactType[];
@@ -49,13 +50,14 @@ export default async function ContactsPage({
   }
 
   const favoriteCount = allContacts.filter((c) => c.favorite).length;
+  const tb = (await getServerDictionary()).topbar.contacts;
 
   return (
     <Shell>
       <Topbar
-        crumb="WORKSPACE / CONTACTS"
-        scriptWord="Driven Talent "
-        title="Contacts"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/tasks" className="dt-btn">
             Tasks →

@@ -21,6 +21,7 @@ import {
   type BonusStatus,
 } from "@/lib/bonuses";
 import { createBonus, markBonusPaid, setBonusStatus } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 type View = "all" | BonusKind;
 
@@ -59,14 +60,11 @@ export default async function BonusesPage({
 
   const recruiterCount = bonuses.filter((b) => b.kind === "recruiter").length;
   const referralCount = bonuses.filter((b) => b.kind === "referral").length;
+  const tb = (await getServerDictionary()).topbar.bonuses;
 
   return (
     <Shell>
-      <Topbar
-        crumb="WORKSPACE / PAYROLL & FINANCE / BONUSES"
-        scriptWord="Recruiter & Referral "
-        title="Bonuses"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

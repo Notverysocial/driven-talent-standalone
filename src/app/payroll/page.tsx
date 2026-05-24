@@ -12,6 +12,7 @@ import {
   fmtPeriodRange,
 } from "@/lib/payroll";
 import { createPayrollPeriod } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -36,13 +37,11 @@ export default async function PayrollPage() {
   const nextEnd = new Date(nextStart);
   nextEnd.setDate(nextEnd.getDate() + 6);
 
+  const tb = (await getServerDictionary()).topbar.payroll;
+
   return (
     <Shell>
-      <Topbar
-        crumb="OPERATIONS / PAYROLL"
-        scriptWord="Pay "
-        title="Periods"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       {current ? (
         <div

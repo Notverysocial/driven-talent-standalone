@@ -16,6 +16,7 @@ import {
 } from "@/lib/bug-reports";
 import type { BugReport, BugStatus } from "@/lib/supabase/types";
 import { setBugStatus, updateBugTriage } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 type View = "open" | "all" | "resolved";
 
@@ -53,13 +54,11 @@ export default async function BugReportsPage({
     resolved: resolved.length,
   };
 
+  const tb = (await getServerDictionary()).topbar.bugReports;
+
   return (
     <Shell>
-      <Topbar
-        crumb="ADMIN / BUG REPORTS"
-        scriptWord="Bug "
-        title="Reports"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

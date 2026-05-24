@@ -32,6 +32,7 @@ import {
   createReimbursement,
   setReimbursementStatus,
 } from "./actions";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 type View = "reimbursements" | "expenses";
 
@@ -65,14 +66,12 @@ export default async function ExpensesPage({
   const mtdExpenses = expenses
     .filter((e) => e.expense_date >= mtdStart)
     .reduce((s, e) => s + Number(e.amount), 0);
+  const tbDict = (await getServerDictionary()).topbar;
+  const tb = view === "reimbursements" ? tbDict.expensesReim : tbDict.expensesBiz;
 
   return (
     <Shell>
-      <Topbar
-        crumb="WORKSPACE / PAYROLL & FINANCE / EXPENSES"
-        scriptWord={view === "reimbursements" ? "Reimbursement " : "Business "}
-        title={view === "reimbursements" ? "Requests" : "Expenses"}
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

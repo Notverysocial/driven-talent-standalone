@@ -13,6 +13,7 @@ import {
 } from "@/lib/job-postings";
 import { createJobPosting } from "./actions";
 import { JobPostingRow } from "./JobPostingRow";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function JobPostingsPage() {
   const [postings, clients, openPositions] = await Promise.all([
@@ -44,13 +45,11 @@ export default async function JobPostingsPage() {
     perPlatform.set(p.platform, (perPlatform.get(p.platform) ?? 0) + 1);
   }
 
+  const tb = (await getServerDictionary()).topbar.jobPostings;
+
   return (
     <Shell>
-      <Topbar
-        crumb="WORKSPACE / RECRUITING / JOB POSTINGS"
-        scriptWord="Job "
-        title="Postings"
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
       <div
         style={{

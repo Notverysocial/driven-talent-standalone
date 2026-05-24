@@ -5,16 +5,18 @@ import { Badge } from "@/components/Badge";
 import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import { getClientMarginsOverview } from "@/lib/clients.server";
 import { fmtPct, fmtUSD, marginTone } from "@/lib/clients";
+import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function ClientsPage() {
   const { totals, rows } = await getClientMarginsOverview();
+  const tb = (await getServerDictionary()).topbar.clients;
 
   return (
     <Shell>
       <Topbar
-        crumb="OPERATIONS / CLIENTS"
-        scriptWord="Margin "
-        title="Book"
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
         actions={
           <Link href="/invoices" className="dt-btn">
             Invoice ledger →
