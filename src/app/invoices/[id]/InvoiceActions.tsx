@@ -1,7 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { InvoiceStatus } from "@/lib/supabase/types";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { markPaid, markVoid, sendInvoice } from "../actions";
 
 export function InvoiceActions({
@@ -14,6 +15,7 @@ export function InvoiceActions({
   isOverdue: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [voidOpen, setVoidOpen] = useState(false);
 
   return (
     <>
@@ -55,16 +57,27 @@ export function InvoiceActions({
         <button
           className="dt-btn"
           disabled={isPending}
-          onClick={() => {
-            if (!confirm("Void this invoice? This cannot be undone via the UI.")) return;
-            startTransition(async () => {
-              await markVoid(invoiceId);
-            });
-          }}
+          onClick={() => setVoidOpen(true)}
         >
           Void
         </button>
       )}
+      <ConfirmDialog
+        open={voidOpen}
+        title="Void this invoice?"
+        description="This cannot be undone via the UI."
+        confirmLabel="Void invoice"
+        destructive
+        busy={isPending}
+        onCancel={() => setVoidOpen(false)}
+        onConfirm={() => {
+          startTransition(async () => {
+            await markVoid(invoiceId);
+            setVoidOpen(false);
+          });
+        }}
+        testId="invoice-void-dialog"
+      />
     </>
   );
 }

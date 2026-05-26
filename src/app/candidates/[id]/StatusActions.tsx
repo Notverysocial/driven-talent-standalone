@@ -1,8 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { CANDIDATE_STATUSES } from "@/lib/candidates";
 import type { CandidateStatus } from "@/lib/supabase/types";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { advanceToPlacement, setStatus } from "../actions";
 
 export function StatusActions({
@@ -13,6 +14,7 @@ export function StatusActions({
   currentStatus: CandidateStatus;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [hireOpen, setHireOpen] = useState(false);
 
   return (
     <>
@@ -41,15 +43,25 @@ export function StatusActions({
       <button
         className="dt-btn dt-btn-gold"
         disabled={isPending || currentStatus === "hired"}
-        onClick={() => {
-          if (!confirm("Hire this candidate? An employee record + 13-step onboarding will be created.")) return;
-          startTransition(async () => {
-            await advanceToPlacement(candidateId);
-          });
-        }}
+        onClick={() => setHireOpen(true)}
       >
         <span>{currentStatus === "hired" ? "Hired" : "Hire Candidate"}</span>
       </button>
+      <ConfirmDialog
+        open={hireOpen}
+        title="Hire this candidate?"
+        description="An employee record + 13-step onboarding will be created."
+        confirmLabel="Hire candidate"
+        busy={isPending}
+        onCancel={() => setHireOpen(false)}
+        onConfirm={() => {
+          startTransition(async () => {
+            await advanceToPlacement(candidateId);
+            setHireOpen(false);
+          });
+        }}
+        testId="candidate-hire-dialog"
+      />
     </>
   );
 }

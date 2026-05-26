@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { markWelcomeLetterSent, saveWelcomeLetter } from "../actions";
 
 export function WelcomeLetter({
@@ -17,6 +18,8 @@ export function WelcomeLetter({
   const [body, setBody] = useState(initialBody ?? generatedBody);
   const [savedBody, setSavedBody] = useState(initialBody ?? "");
   const [isPending, startTransition] = useTransition();
+  const [resetOpen, setResetOpen] = useState(false);
+  const [sentOpen, setSentOpen] = useState(false);
 
   const isDirty = body !== savedBody && body !== "";
   const isSent = !!sentAt;
@@ -28,20 +31,9 @@ export function WelcomeLetter({
     });
   };
 
-  const onResetTemplate = () => {
-    if (!confirm("Reset to template? Your edits will be lost.")) return;
-    setBody(generatedBody);
-  };
+  const onResetTemplate = () => setResetOpen(true);
 
-  const onMarkSent = () => {
-    if (!confirm("Mark this welcome letter as sent? This will also flip the email checklist item to Done.")) return;
-    startTransition(async () => {
-      // Save first so the canonical body matches the version we're claiming was sent
-      await saveWelcomeLetter(employeeId, body);
-      await markWelcomeLetterSent(employeeId);
-      setSavedBody(body);
-    });
-  };
+  const onMarkSent = () => setSentOpen(true);
 
   const onCopy = async () => {
     try {
@@ -129,6 +121,36 @@ export function WelcomeLetter({
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={resetOpen}
+        title="Reset to template?"
+        description="Your edits will be lost."
+        confirmLabel="Reset"
+        destructive
+        onCancel={() => setResetOpen(false)}
+        onConfirm={() => {
+          setBody(generatedBody);
+          setResetOpen(false);
+        }}
+        testId="welcome-letter-reset-dialog"
+      />
+      <ConfirmDialog
+        open={sentOpen}
+        title="Mark this welcome letter as sent?"
+        description="This will also flip the email checklist item to Done."
+        confirmLabel="Mark sent"
+        busy={isPending}
+        onCancel={() => setSentOpen(false)}
+        onConfirm={() => {
+          startTransition(async () => {
+            await saveWelcomeLetter(employeeId, body);
+            await markWelcomeLetterSent(employeeId);
+            setSavedBody(body);
+            setSentOpen(false);
+          });
+        }}
+        testId="welcome-letter-sent-dialog"
+      />
     </div>
   );
 }
