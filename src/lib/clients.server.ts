@@ -255,11 +255,15 @@ export async function getClientMarginDetail(
   if (!clientRow) return null;
   const client = clientRow as Client;
 
+  // Query `invoices` directly rather than the `invoices_with_overdue` view:
+  // the view was created from `invoices.*` before `department` was added in
+  // migration 0006, so it's missing newer columns until something refreshes
+  // it. Compute `is_overdue` in JS to remove the dependency entirely.
   const [invoicesRes, assignmentsRes] = await Promise.all([
     supabase
-      .from("invoices_with_overdue")
+      .from("invoices")
       .select(
-        "id, number, status, issued_at, period_start, period_end, department, total, subtotal, is_overdue",
+        "id, number, status, issued_at, period_start, period_end, department, total, subtotal, due_at",
       )
       .eq("client_id", client.id)
       .order("issued_at", { ascending: false }),
@@ -286,9 +290,10 @@ export async function getClientMarginDetail(
     department: string | null;
     total: number;
     subtotal: number;
-    is_overdue: boolean;
+    due_at: string;
   };
   const invoiceRows = (invoicesRes.data ?? []) as InvRow[];
+  const todayISO = new Date().toISOString().slice(0, 10);
   const invoiceIds = invoiceRows.map((r) => r.id);
 
   let lineItems: Pick<InvoiceLineItem, "invoice_id" | "amount" | "employee_cost">[] = [];
@@ -330,7 +335,7 @@ export async function getClientMarginDetail(
       gross,
       marginPct: revenue > 0 ? (gross / revenue) * 100 : null,
       total: Number(inv.total ?? 0),
-      is_overdue: inv.is_overdue,
+      is_overdue: inv.status === "sent" && inv.due_at < todayISO,
     };
   });
 

@@ -34,7 +34,15 @@ export default async function ClientMarginDetailPage(props: {
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await props.params;
-  const detail = await getClientMarginDetail(slug);
+  let detail: Awaited<ReturnType<typeof getClientMarginDetail>> = null;
+  try {
+    detail = await getClientMarginDetail(slug);
+  } catch (err) {
+    // If the detail query throws (e.g. schema drift, missing relation), surface
+    // a not-found page rather than letting the exception bubble to a 500.
+    console.error(`[clients/${slug}] failed to load detail`, err);
+    notFound();
+  }
   if (!detail) notFound();
 
   const { client, overview, invoices, assignments } = detail;

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
@@ -93,60 +94,79 @@ export default async function ClientsPage() {
                     : tone === "red"
                     ? "var(--dt-danger)"
                     : "var(--dt-warm-700)";
+                const href = `/clients/${r.client.slug}`;
+                // Wrap every cell's content in a Link so the entire row is a
+                // clickable navigation target (the table headline copy
+                // promises drill-in behavior). Each cell renders a real
+                // anchor, so middle-click / copy-link / keyboard nav all work.
+                const cellLink = (children: ReactNode) => (
+                  <Link
+                    href={href}
+                    style={{
+                      display: "block",
+                      textDecoration: "none",
+                      color: "inherit",
+                    }}
+                  >
+                    {children}
+                  </Link>
+                );
                 return (
-                  <tr key={r.client.id}>
+                  <tr key={r.client.id} className="dt-row-clickable">
                     <td style={{ paddingLeft: 22 }}>
-                      <Link
-                        href={`/clients/${r.client.slug}`}
-                        className="dt-person-link"
-                        style={{ textDecoration: "none", color: "inherit" }}
-                      >
-                        <div
-                          className="name"
-                          style={{ fontWeight: 500, color: "var(--dt-warm-900)" }}
-                        >
-                          {r.client.name}
-                        </div>
-                        <div
-                          className="meta"
-                          style={{
-                            fontSize: 10.5,
-                            color: "var(--dt-warm-500)",
-                            marginTop: 3,
-                            letterSpacing: "0.06em",
-                          }}
-                        >
-                          {r.client.city ?? "—"} · {r.client.industry ?? "—"}
-                        </div>
-                      </Link>
+                      {cellLink(
+                        <>
+                          <div
+                            className="name"
+                            style={{ fontWeight: 500, color: "var(--dt-warm-900)" }}
+                          >
+                            {r.client.name}
+                          </div>
+                          <div
+                            className="meta"
+                            style={{
+                              fontSize: 10.5,
+                              color: "var(--dt-warm-500)",
+                              marginTop: 3,
+                              letterSpacing: "0.06em",
+                            }}
+                          >
+                            {r.client.city ?? "—"} · {r.client.industry ?? "—"}
+                          </div>
+                        </>,
+                      )}
                     </td>
                     <td className="tab-num" style={{ fontSize: 12 }}>
-                      {r.activeHeadcount}
-                      <span style={{ color: "var(--dt-warm-500)" }}>
-                        {" "}
-                        / {r.activePlacements}
-                      </span>
+                      {cellLink(
+                        <>
+                          {r.activeHeadcount}
+                          <span style={{ color: "var(--dt-warm-500)" }}>
+                            {" "}
+                            / {r.activePlacements}
+                          </span>
+                        </>,
+                      )}
                     </td>
                     <td className="tab-num" style={{ fontSize: 12 }}>
-                      {r.invoiceCount}
+                      {cellLink(<>{r.invoiceCount}</>)}
                     </td>
                     <td
                       className="tab-num"
                       style={{ textAlign: "right", fontWeight: 400 }}
                     >
-                      {fmtUSD(r.realizedRevenue)}
+                      {cellLink(<>{fmtUSD(r.realizedRevenue)}</>)}
                     </td>
                     <td
                       className="tab-num"
                       style={{ textAlign: "right", color: "var(--dt-warm-700)" }}
                     >
-                      {fmtUSD(r.realizedCost)}
+                      {cellLink(<>{fmtUSD(r.realizedCost)}</>)}
                     </td>
                     <td
                       className="tab-num"
                       style={{ textAlign: "right", fontWeight: 400 }}
                     >
-                      {fmtUSD(r.realizedGross)}
+                      {cellLink(<>{fmtUSD(r.realizedGross)}</>)}
                     </td>
                     <td
                       className="tab-num"
@@ -156,7 +176,7 @@ export default async function ClientsPage() {
                         fontWeight: 500,
                       }}
                     >
-                      {fmtPct(r.realizedMarginPct)}
+                      {cellLink(<>{fmtPct(r.realizedMarginPct)}</>)}
                     </td>
                     <td
                       className="tab-num"
@@ -166,17 +186,21 @@ export default async function ClientsPage() {
                         fontSize: 12,
                       }}
                     >
-                      {fmtUSD(r.expectedWeeklyRevenue)}
-                      <div
-                        style={{
-                          fontSize: 10,
-                          color: "var(--dt-warm-500)",
-                          marginTop: 2,
-                          letterSpacing: "0.06em",
-                        }}
-                      >
-                        {fmtPct(r.expectedMarginPct, 0)} fwd
-                      </div>
+                      {cellLink(
+                        <>
+                          {fmtUSD(r.expectedWeeklyRevenue)}
+                          <div
+                            style={{
+                              fontSize: 10,
+                              color: "var(--dt-warm-500)",
+                              marginTop: 2,
+                              letterSpacing: "0.06em",
+                            }}
+                          >
+                            {fmtPct(r.expectedMarginPct, 0)} fwd
+                          </div>
+                        </>,
+                      )}
                     </td>
                   </tr>
                 );
