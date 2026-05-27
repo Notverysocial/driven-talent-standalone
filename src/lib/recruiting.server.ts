@@ -18,6 +18,37 @@ export async function listInboundCalls(): Promise<InboundCall[]> {
   return (data ?? []) as InboundCall[];
 }
 
+export type InboundCallDetail = InboundCall & {
+  converted_candidate_name: string | null;
+};
+
+export async function getInboundCall(
+  id: string,
+): Promise<InboundCallDetail | null> {
+  const sb = await createClient();
+  const { data, error } = await sb
+    .from("inbound_calls")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const call = data as InboundCall;
+
+  let converted_candidate_name: string | null = null;
+  if (call.converted_candidate_id) {
+    const { data: cand } = await sb
+      .from("candidates")
+      .select("full_name")
+      .eq("id", call.converted_candidate_id)
+      .maybeSingle();
+    converted_candidate_name =
+      (cand as { full_name: string } | null)?.full_name ?? null;
+  }
+
+  return { ...call, converted_candidate_name };
+}
+
 // ---------- Positions ---------------------------------------------------
 
 export async function listPositions(): Promise<Position[]> {
@@ -77,4 +108,35 @@ export async function getApplicationIntake(
     .maybeSingle();
   if (error) throw new Error(error.message);
   return (data as ApplicationIntake | null) ?? null;
+}
+
+export type ApplicationIntakeDetail = ApplicationIntake & {
+  promoted_candidate_name: string | null;
+};
+
+export async function getApplicationIntakeDetail(
+  id: string,
+): Promise<ApplicationIntakeDetail | null> {
+  const sb = await createClient();
+  const { data, error } = await sb
+    .from("application_intakes")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const intake = data as ApplicationIntake;
+
+  let promoted_candidate_name: string | null = null;
+  if (intake.promoted_candidate_id) {
+    const { data: cand } = await sb
+      .from("candidates")
+      .select("full_name")
+      .eq("id", intake.promoted_candidate_id)
+      .maybeSingle();
+    promoted_candidate_name =
+      (cand as { full_name: string } | null)?.full_name ?? null;
+  }
+
+  return { ...intake, promoted_candidate_name };
 }

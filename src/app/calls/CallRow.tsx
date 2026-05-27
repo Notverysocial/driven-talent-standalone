@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
@@ -23,30 +24,47 @@ export function CallRow({ call, fmt }: { call: InboundCall; fmt: string }) {
 
   const durationText = formatDuration(call.call_duration_seconds ?? null);
 
+  // Display cells link to the drill-in; the RingCentral toggle, status select,
+  // and action button stay outside the link so they remain interactive (no
+  // nested anchors/buttons).
+  const href = `/calls/${call.id}`;
+  const cellLink = (children: ReactNode) => (
+    <Link
+      href={href}
+      style={{ display: "block", textDecoration: "none", color: "inherit" }}
+    >
+      {children}
+    </Link>
+  );
+
   return (
     <>
-      <tr>
+      <tr className="dt-row-clickable">
         <td style={{ paddingLeft: 22 }}>
-          <div style={{ fontWeight: 500 }}>{call.caller_name}</div>
-          <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
-            {call.caller_phone ?? "—"}
-            {call.caller_email ? ` · ${call.caller_email}` : ""}
-            {durationText ? ` · ${durationText}` : ""}
-          </div>
-          {call.notes && (
-            <div
-              className="muted"
-              style={{
-                fontSize: 11.5,
-                marginTop: 4,
-                maxWidth: 380,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {call.notes}
-            </div>
+          {cellLink(
+            <>
+              <div style={{ fontWeight: 500 }}>{call.caller_name}</div>
+              <div className="muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                {call.caller_phone ?? "—"}
+                {call.caller_email ? ` · ${call.caller_email}` : ""}
+                {durationText ? ` · ${durationText}` : ""}
+              </div>
+              {call.notes && (
+                <div
+                  className="muted"
+                  style={{
+                    fontSize: 11.5,
+                    marginTop: 4,
+                    maxWidth: 380,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {call.notes}
+                </div>
+              )}
+            </>,
           )}
           {hasRcDetails && (
             <button
@@ -68,9 +86,13 @@ export function CallRow({ call, fmt }: { call: InboundCall; fmt: string }) {
             </button>
           )}
         </td>
-        <td>{call.position_of_interest ?? "—"}</td>
-        <td className="tab-num" style={{ fontSize: 12 }}>{fmt}</td>
-        <td className="muted" style={{ fontSize: 12 }}>{call.taken_by ?? "—"}</td>
+        <td>{cellLink(<>{call.position_of_interest ?? "—"}</>)}</td>
+        <td className="tab-num" style={{ fontSize: 12 }}>
+          {cellLink(<>{fmt}</>)}
+        </td>
+        <td className="muted" style={{ fontSize: 12 }}>
+          {cellLink(<>{call.taken_by ?? "—"}</>)}
+        </td>
         <td>
           <select
             value={call.follow_up_status}
