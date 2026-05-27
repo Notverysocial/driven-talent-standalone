@@ -67,11 +67,26 @@ export function sourceLabel(s: SalesLeadSource): string {
   return SALES_LEAD_SOURCES.find((x) => x.id === s)?.label ?? s;
 }
 
-export function fmtCurrency(n: number | null): string {
+// Currency display for pipeline value strip, stage tiles, lead cards,
+// lead detail, and Won YTD widget. Format contract:
+//   < $1,000        → "$N"             (e.g. "$500")
+//   ≥ $1,000        → "$Nk"            (e.g. "$5k", "$12.5k")
+//   ≥ $1,000,000    → "$NM"            (e.g. "$1M", "$1.5M")
+// Partial thousands/millions keep one decimal so $12,500 reads as "$12.5k"
+// instead of collapsing to "$13k" — preserves the magnitude the user typed.
+export function fmtCurrency(n: number | null | undefined): string {
   if (n == null) return "—";
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `$${Math.round(n / 1_000)}k`;
-  return `$${n.toLocaleString()}`;
+  const num = Number(n);
+  if (!Number.isFinite(num)) return "—";
+  const sign = num < 0 ? "-" : "";
+  const abs = Math.abs(num);
+  if (abs >= 1_000_000) return `${sign}$${trimDecimal(abs / 1_000_000)}M`;
+  if (abs >= 1_000) return `${sign}$${trimDecimal(abs / 1_000)}k`;
+  return `${sign}$${Math.round(abs).toLocaleString("en-US")}`;
+}
+
+function trimDecimal(n: number): string {
+  return n.toFixed(1).replace(/\.0$/, "");
 }
 
 export function fmtShortDate(d: string | null): string {
