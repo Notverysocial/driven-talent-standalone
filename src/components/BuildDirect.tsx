@@ -26,8 +26,10 @@ interface SubmissionState {
  * The endpoint creates a ClickUp task in list 901714336938 ("DT Live Fix Queue")
  * and emails Antonio. The user receives a ticket ID for tracking.
  *
- * No external dependencies beyond React. Tailwind classes used for styling
- * — assumes Tailwind is configured in the host project.
+ * Layout is all inline styles (no Tailwind dependency) — works regardless of
+ * the host project's CSS pipeline. The existing dashboard already has a
+ * "Report a bug" FAB in bottom-right, so this one sits OFFSET to its left
+ * to avoid collision.
  */
 export default function BuildDirect() {
   const [open, setOpen] = useState(false);
@@ -37,10 +39,9 @@ export default function BuildDirect() {
   const [screenshot, setScreenshot] = useState<string | null>(null);
   const [state, setState] = useState<SubmissionState>({ status: "idle" });
 
-  // Reset state when modal closes
+  // Reset state after success when modal closes
   useEffect(() => {
     if (!open) {
-      // Small delay so the close animation completes first
       const t = setTimeout(() => {
         if (state.status === "success") {
           setTitle("");
@@ -103,22 +104,51 @@ export default function BuildDirect() {
     [title, description, severity, screenshot]
   );
 
-  // The floating button
+  const fonts = "system-ui, -apple-system, sans-serif";
+
+  // The floating button (closed state)
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
-        aria-label="Report an issue or request a fix"
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-neutral-900 px-4 py-3 text-sm font-medium text-white shadow-lg ring-1 ring-black/10 transition hover:bg-neutral-800 hover:shadow-xl"
-        style={{ fontFamily: "system-ui, sans-serif" }}
+        aria-label="Open Build Direct — report an issue or request a fix"
+        style={{
+          position: "fixed",
+          bottom: 24,
+          right: 96,
+          zIndex: 9000,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          borderRadius: 9999,
+          background: "#111111",
+          color: "#ffffff",
+          padding: "12px 18px",
+          border: "none",
+          fontFamily: fonts,
+          fontSize: 13,
+          fontWeight: 600,
+          letterSpacing: "0.01em",
+          boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+          cursor: "pointer",
+          transition: "transform 120ms ease, box-shadow 120ms ease",
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
+          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 28px rgba(0,0,0,0.24)";
+        }}
+        onMouseLeave={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 6px 20px rgba(0,0,0,0.18)";
+        }}
       >
         <svg
-          width="18"
-          height="18"
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2"
+          strokeWidth="2.2"
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden="true"
@@ -130,56 +160,115 @@ export default function BuildDirect() {
     );
   }
 
-  // The modal
+  // The modal (open state)
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={(e) => e.target === e.currentTarget && setOpen(false)}
-      style={{ fontFamily: "system-ui, sans-serif" }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Build Direct submission form"
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 9001,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        fontFamily: fonts,
+      }}
     >
-      <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 520,
+          background: "#ffffff",
+          borderRadius: 16,
+          padding: 24,
+          boxShadow: "0 24px 60px rgba(0,0,0,0.30)",
+          maxHeight: "90vh",
+          overflowY: "auto",
+        }}
+      >
         {state.status === "success" ? (
-          <div className="text-center">
-            <div className="mb-3 inline-flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-600">
+          <div style={{ textAlign: "center" }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 48,
+                height: 48,
+                borderRadius: "50%",
+                background: "#dcfce7",
+                marginBottom: 12,
+              }}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="20 6 9 17 4 12"></polyline>
               </svg>
             </div>
-            <h2 className="text-lg font-semibold text-neutral-900">Submitted — thank you.</h2>
-            <p className="mt-2 text-sm text-neutral-600">
-              Ticket <span className="font-mono font-medium text-neutral-900">#{state.ticketId}</span> is in our queue. Antonio's been notified. Expect a fix within 4 hours on weekends, 30 minutes during business hours.
+            <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0a0a0a" }}>
+              Submitted — thank you.
+            </h2>
+            <p style={{ margin: "10px 0 0 0", fontSize: 13, color: "#525252", lineHeight: 1.5 }}>
+              Ticket{" "}
+              <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 600, color: "#0a0a0a" }}>
+                #{state.ticketId}
+              </span>{" "}
+              is in our queue. Antonio&apos;s been notified. Expect a response within 4 hours on weekends, under 30 minutes during business hours.
             </p>
             <button
               onClick={() => setOpen(false)}
-              className="mt-5 inline-flex items-center justify-center rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+              style={{
+                marginTop: 20,
+                padding: "10px 20px",
+                background: "#111111",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: fonts,
+              }}
             >
               Close
             </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit}>
-            <div className="mb-4 flex items-start justify-between">
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
-                <h2 className="text-lg font-semibold text-neutral-900">Build Direct</h2>
-                <p className="mt-0.5 text-xs text-neutral-500">
-                  Spotted a bug, polish request, or question? Send it to us — we'll fix it.
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#0a0a0a" }}>Build Direct</h2>
+                <p style={{ margin: "4px 0 0 0", fontSize: 12, color: "#737373" }}>
+                  Spotted a bug, polish request, or question? We&apos;ll fix it.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close"
-                className="-mr-2 -mt-2 rounded-lg p-2 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-600"
+                style={{
+                  marginTop: -8,
+                  marginRight: -8,
+                  padding: 8,
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  color: "#737373",
+                  borderRadius: 8,
+                }}
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
                 </svg>
               </button>
             </div>
 
-            <label className="mb-3 block">
-              <span className="mb-1 block text-xs font-medium text-neutral-700">Title</span>
+            <Field label="Title">
               <input
                 type="text"
                 value={title}
@@ -187,12 +276,11 @@ export default function BuildDirect() {
                 placeholder="What's the issue, in one line"
                 required
                 maxLength={120}
-                className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 focus:border-neutral-900"
+                style={inputStyle}
               />
-            </label>
+            </Field>
 
-            <label className="mb-3 block">
-              <span className="mb-1 block text-xs font-medium text-neutral-700">Description</span>
+            <Field label="Description">
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -200,45 +288,52 @@ export default function BuildDirect() {
                 required
                 rows={4}
                 maxLength={2000}
-                className="w-full resize-y rounded-lg border border-neutral-300 px-3 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-900"
+                style={{ ...inputStyle, resize: "vertical", minHeight: 90 }}
               />
-            </label>
+            </Field>
 
-            <div className="mb-3 grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-neutral-700">Severity</span>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+              <Field label="Severity">
                 <select
                   value={severity}
                   onChange={(e) => setSeverity(e.target.value as Severity)}
-                  className="w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-900"
+                  style={inputStyle}
                 >
-                  <option value="low">Low — cosmetic / nice-to-have</option>
+                  <option value="low">Low — cosmetic</option>
                   <option value="normal">Normal — broken but workable</option>
                   <option value="high">High — blocking my team</option>
                 </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-neutral-700">Screenshot (optional)</span>
+              </Field>
+              <Field label="Screenshot (optional)">
                 <input
                   type="file"
                   accept="image/*"
                   onChange={(e) => e.target.files?.[0] && handleScreenshot(e.target.files[0])}
-                  className="block w-full text-xs text-neutral-600 file:mr-2 file:rounded-lg file:border file:border-neutral-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-neutral-700 hover:file:bg-neutral-50"
+                  style={{ ...inputStyle, padding: "6px 8px" }}
                 />
-              </label>
+              </Field>
             </div>
 
             {screenshot && (
-              <div className="mb-3">
+              <div style={{ marginBottom: 12 }}>
                 <img
                   src={screenshot}
                   alt="Attached screenshot preview"
-                  className="max-h-32 rounded-lg border border-neutral-200"
+                  style={{ maxHeight: 120, borderRadius: 8, border: "1px solid #e5e5e5" }}
                 />
                 <button
                   type="button"
                   onClick={() => setScreenshot(null)}
-                  className="mt-1 text-xs text-neutral-500 hover:text-neutral-700"
+                  style={{
+                    display: "block",
+                    marginTop: 4,
+                    background: "transparent",
+                    border: "none",
+                    color: "#737373",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
                 >
                   Remove screenshot
                 </button>
@@ -246,19 +341,41 @@ export default function BuildDirect() {
             )}
 
             {state.status === "error" && (
-              <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
-                Couldn't send — {state.error}. Email Antonio directly at artemisexecutiveclub@gmail.com.
+              <div
+                style={{
+                  marginBottom: 12,
+                  padding: "8px 12px",
+                  background: "#fef2f2",
+                  color: "#b91c1c",
+                  fontSize: 11,
+                  borderRadius: 8,
+                  lineHeight: 1.5,
+                }}
+              >
+                Couldn&apos;t send — {state.error}. Email Antonio directly at artemisexecutiveclub@gmail.com.
               </div>
             )}
 
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-neutral-500">
-                Auto-captured: this page URL + your browser info
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <p style={{ margin: 0, fontSize: 11, color: "#a3a3a3" }}>
+                Auto-captured: page URL + browser info
               </p>
               <button
                 type="submit"
                 disabled={state.status === "submitting" || !title.trim() || !description.trim()}
-                className="inline-flex items-center justify-center rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-400"
+                style={{
+                  padding: "10px 18px",
+                  background:
+                    state.status === "submitting" || !title.trim() || !description.trim() ? "#a3a3a3" : "#111111",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor:
+                    state.status === "submitting" || !title.trim() || !description.trim() ? "not-allowed" : "pointer",
+                  fontFamily: fonts,
+                }}
               >
                 {state.status === "submitting" ? "Sending…" : "Send to Antonio"}
               </button>
@@ -267,5 +384,37 @@ export default function BuildDirect() {
         )}
       </div>
     </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  borderRadius: 8,
+  border: "1px solid #d4d4d4",
+  padding: "8px 12px",
+  fontSize: 13,
+  color: "#0a0a0a",
+  outline: "none",
+  fontFamily: "system-ui, -apple-system, sans-serif",
+  background: "#ffffff",
+  boxSizing: "border-box",
+};
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: "block", marginBottom: 12 }}>
+      <span
+        style={{
+          display: "block",
+          marginBottom: 4,
+          fontSize: 11,
+          fontWeight: 600,
+          color: "#404040",
+        }}
+      >
+        {label}
+      </span>
+      {children}
+    </label>
   );
 }
