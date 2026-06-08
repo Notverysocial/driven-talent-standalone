@@ -1316,3 +1316,44 @@ select.dt-filter-input {
   .dt-topbar h1 { font-size: 24px !important; }
   .dt-topbar { padding-bottom: 14px; margin-bottom: 18px; }
 }
+
+
+/* ---------- 2026-06-08 mobile font fix (round 2) ----------
+   The smoke-test caught that the 600px shrink block + un-overridden class
+   selectors still rendered <14px text. This block lives last so cascade
+   wins, and explicitly bumps the holdouts the QA found:
+   - .dt-btn was 9.5-10.5px
+   - .dt-table thead th was 10.5px (shrunk by the 600px block above)
+   - .dt-topbar .crumb was 8.5-12px
+   - .dt-cal-weekday was 9-11px
+   - nav anchors / spans shrunk below 14
+*/
+@media (max-width: 900px) {
+  /* Buttons */
+  .dt-btn { font-size: 14px !important; min-height: 44px; padding: 10px 14px !important; }
+  .dt-btn-sm { font-size: 13px !important; min-height: 40px; }
+
+  /* Table headers — bump from 10.5 → 13 */
+  .dt-table thead th { font-size: 13px !important; letter-spacing: 0.06em !important; }
+  .dt-table tbody td { font-size: 14px !important; }
+
+  /* Topbar breadcrumb + script word + title */
+  .dt-topbar .crumb { font-size: 13px !important; }
+  .dt-topbar .script { font-size: 22px !important; }
+  .dt-topbar h1 { font-size: 26px !important; }
+
+  /* Calendar weekday row */
+  .dt-cal-weekday { font-size: 12px !important; }
+  .dt-cal-daynum { font-size: 14px !important; }
+
+  /* Sidebar nav items */
+  .dt-nav a, .dt-nav-item, .dt-nav-section span { font-size: 15px !important; }
+  .dt-nav-section .label { font-size: 12px !important; }
+}
+
+/* Phone (<=600) — keep table cells tappable; don't shrink fonts */
+@media (max-width: 600px) {
+  .dt-table thead th { font-size: 13px !important; padding: 12px 8px !important; }
+  .dt-btn { font-size: 14px !important; }
+  .dt-topbar h1 { font-size: 24px !important; }
+}
