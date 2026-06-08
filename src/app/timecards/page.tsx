@@ -105,11 +105,29 @@ export default async function TimecardsListPage() {
                 <tbody>
                   {rows.map((t) => {
                     const gross = t.reg_hours * t.hourly_rate + t.ot_hours * t.hourly_rate * 1.5;
+                    const href = `/timecards/${t.id}`;
+                    // Cell wrapper: every TD's content is a Link to the detail page,
+                    // so clicking any cell of the row navigates. Display:block + width:100%
+                    // makes the entire cell area clickable, not just the text.
+                    const cellLink = (content: React.ReactNode, extraStyle?: React.CSSProperties): React.ReactNode => (
+                      <Link
+                        href={href}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          color: "inherit",
+                          textDecoration: "none",
+                          ...extraStyle,
+                        }}
+                      >
+                        {content}
+                      </Link>
+                    );
                     return (
-                      <tr key={t.id}>
+                      <tr key={t.id} style={{ cursor: "pointer" }}>
                         <td style={{ paddingLeft: 22 }}>
                           <Link
-                            href={`/timecards/${t.id}`}
+                            href={href}
                             className="dt-person dt-person-link"
                           >
                             <Avatar name={t.employees.full_name} />
@@ -119,24 +137,26 @@ export default async function TimecardsListPage() {
                             </div>
                           </Link>
                         </td>
-                        <td>{t.clients.name}</td>
+                        <td>{cellLink(t.clients.name)}</td>
                         <td className="tab-num" style={{ fontSize: 12 }}>
-                          {fmtWeekRange(t.week_start)}
+                          {cellLink(fmtWeekRange(t.week_start))}
                         </td>
-                        <td className="tab-num">{Number(t.reg_hours).toFixed(1)}</td>
+                        <td className="tab-num">{cellLink(Number(t.reg_hours).toFixed(1))}</td>
                         <td
                           className="tab-num"
                           style={{ color: t.ot_hours > 0 ? "var(--dt-gold-deep)" : "var(--dt-warm-300)" }}
                         >
-                          {Number(t.ot_hours).toFixed(1)}
+                          {cellLink(Number(t.ot_hours).toFixed(1))}
                         </td>
                         <td className="tab-num" style={{ fontWeight: 400 }}>
-                          {Number(t.total_hours).toFixed(1)}
+                          {cellLink(Number(t.total_hours).toFixed(1))}
                         </td>
                         <td className="tab-num" style={{ fontSize: 11 }}>
-                          {t.submitted_at
-                            ? new Date(t.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                            : "—"}
+                          {cellLink(
+                            t.submitted_at
+                              ? new Date(t.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                              : "—",
+                          )}
                         </td>
                         <td
                           className="tab-num"
@@ -147,7 +167,7 @@ export default async function TimecardsListPage() {
                             color: "var(--dt-gold-deep)",
                           }}
                         >
-                          ${gross.toFixed(2)}
+                          {cellLink(`$${gross.toFixed(2)}`, { textAlign: "right" })}
                         </td>
                       </tr>
                     );
