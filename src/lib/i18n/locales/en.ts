@@ -52,6 +52,7 @@ export const en = {
     workflows: "Workflows",
     team: "Team Members",
     terminated: "Terminated / DNR",
+    access: "Access · Users",
     bugReports: "Bug Reports",
 
     brandName: "Driven Talent",
