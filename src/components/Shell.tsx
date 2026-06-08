@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { Sidebar, type SidebarViewer } from "./Sidebar";
-import { BugReportButton } from "./BugReportButton";
 import { AUTH_ENABLED, getCurrentUser } from "@/lib/auth.server";
 
 export async function Shell({ children }: { children: ReactNode }) {
@@ -17,7 +16,6 @@ export async function Shell({ children }: { children: ReactNode }) {
     <div className="dt-screen">
       <Sidebar viewer={viewer} authEnabled={AUTH_ENABLED} />
       <div className="dt-main">{children}</div>
-      <BugReportButton />
     </div>
   );
 }
