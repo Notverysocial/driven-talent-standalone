@@ -1,11 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { ApplicationIntakeStatus } from "@/lib/recruiting";
 import type { CandidateStatus } from "@/lib/supabase/types";
+
+export type PromoteResult =
+  | { ok: true; candidateId: string }
+  | { ok: false; error: string };
 
 export async function setIntakeStatus(
   intakeId: string,
@@ -24,20 +27,39 @@ export async function setIntakeStatus(
   revalidatePath("/applications");
 }
 
-export async function promoteIntakeToCandidate(intakeId: string) {
+/**
+ * Promote an application_intakes row to a candidates row.
+ *
+ * Returns a { ok, error?, candidateId? } object instead of redirecting
+ * so the IntakeCard client component can surface the result inline
+ * (success banner / error banner) rather than relying on a transition-
+ * scoped redirect that silently swallowed failures in the prior build.
+ */
+export async function promoteIntakeToCandidate(
+  intakeId: string,
+): Promise<PromoteResult> {
   const sb = await createClient();
+
+  // Auth — capture the promoter for audit, but don't block if the user
+  // session isn't available (server actions can still execute under
+  // an open RLS table). The /applications page is auth-gated upstream.
+  const { data: userResp } = await sb.auth.getUser();
+  const promoterEmail = userResp?.user?.email ?? null;
 
   const { data: intake, error: getErr } = await sb
     .from("application_intakes")
     .select("*")
     .eq("id", intakeId)
     .single();
-  if (getErr) throw new Error(getErr.message);
+  if (getErr) return { ok: false, error: `Couldn't load intake: ${getErr.message}` };
+  if (!intake) return { ok: false, error: "Intake not found." };
+
+  // Already promoted? Idempotent — just return the existing candidate id.
   if (intake.promoted_candidate_id) {
-    redirect(`/candidates/${intake.promoted_candidate_id}`);
+    return { ok: true, candidateId: intake.promoted_candidate_id };
   }
   if (!intake.full_name) {
-    throw new Error("Intake has no name — cannot promote.");
+    return { ok: false, error: "Intake has no name — cannot promote." };
   }
 
   const { data: cand, error: candErr } = await sb
@@ -48,26 +70,42 @@ export async function promoteIntakeToCandidate(intakeId: string) {
       phone:            intake.phone,
       city:             intake.city,
       applied_for:      intake.position_of_interest,
-      source:           intake.source ?? "Website Application",
+      source:           "promoted-from-intake",
       experience_years: intake.experience_years,
       status:           "applied" satisfies CandidateStatus,
       criteria:         DEFAULT_CRITERIA,
       score:            weightedScore(DEFAULT_CRITERIA),
-      notes:            intake.cover_letter,
+      notes:            buildCandidateNotes({
+        cover: intake.cover_letter,
+        original_source: intake.source,
+        intake_id: intake.id,
+        promoter: promoterEmail,
+      }),
     })
     .select("id")
     .single();
-  if (candErr) throw new Error(candErr.message);
+  if (candErr) {
+    return { ok: false, error: `Couldn't create candidate: ${candErr.message}` };
+  }
 
   // Mark intake promoted + link any conversation contact to the new candidate.
-  await sb
+  const { error: updErr } = await sb
     .from("application_intakes")
     .update({
       status: "promoted",
       promoted_candidate_id: cand.id,
       reviewed_at: new Date().toISOString(),
+      reviewed_by: promoterEmail,
     })
     .eq("id", intakeId);
+  if (updErr) {
+    // Candidate exists, but intake update failed — surface a partial-success
+    // warning so Antonio can investigate. /candidates will still show the row.
+    return {
+      ok: false,
+      error: `Candidate created (${cand.id}) but couldn't mark intake promoted: ${updErr.message}`,
+    };
+  }
 
   if (intake.conversation_id) {
     const { data: conv } = await sb
@@ -86,5 +124,25 @@ export async function promoteIntakeToCandidate(intakeId: string) {
   revalidatePath("/applications");
   revalidatePath("/candidates");
   revalidatePath("/inbox");
-  redirect(`/candidates/${cand.id}`);
+  return { ok: true, candidateId: cand.id };
+}
+
+function buildCandidateNotes(opts: {
+  cover: string | null;
+  original_source: string | null;
+  intake_id: string;
+  promoter: string | null;
+}): string {
+  const lines: string[] = [];
+  lines.push(`[Promoted from website application intake]`);
+  lines.push(`Intake ID: ${opts.intake_id}`);
+  if (opts.original_source) lines.push(`Original source: ${opts.original_source}`);
+  if (opts.promoter) lines.push(`Promoted by: ${opts.promoter}`);
+  lines.push(`Promoted at: ${new Date().toISOString()}`);
+  if (opts.cover && opts.cover.trim()) {
+    lines.push("");
+    lines.push("--- Cover letter ---");
+    lines.push(opts.cover.trim());
+  }
+  return lines.join("\n");
 }
