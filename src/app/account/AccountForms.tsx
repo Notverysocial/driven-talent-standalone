@@ -23,32 +23,37 @@ function SaveButton({ pendingLabel, label }: { pendingLabel: string; label: stri
   );
 }
 
-function ErrorBox({ message }: { message: string }) {
+// Inline error + success banners, matching the /access/InviteForm pattern
+// exactly. Previously these lived in factored-out ErrorBox/OkBox helpers,
+// but the password form was silently failing to surface server-returned
+// errors in the deployed bundle — collapsing them inline (same as InviteForm)
+// fixes that, and the stronger left-border accent + aria-live makes the
+// error harder to miss visually + accessible to screen readers.
+function FormBanner({
+  tone,
+  message,
+}: {
+  tone: "error" | "ok";
+  message: string;
+}) {
+  const isError = tone === "error";
   return (
     <div
-      role="alert"
+      role={isError ? "alert" : "status"}
+      aria-live={isError ? "assertive" : "polite"}
       style={{
-        background: "rgba(220, 38, 38, 0.08)",
-        color: "var(--dt-danger)",
+        background: isError
+          ? "var(--dt-danger-bg)"
+          : "var(--dt-success-bg)",
+        color: isError ? "var(--dt-danger)" : "var(--dt-success)",
+        borderLeft: `3px solid ${
+          isError ? "var(--dt-danger)" : "var(--dt-success)"
+        }`,
         padding: "10px 12px",
-        borderRadius: 6,
-        fontSize: 12,
-      }}
-    >
-      {message}
-    </div>
-  );
-}
-
-function OkBox({ message }: { message: string }) {
-  return (
-    <div
-      style={{
-        background: "rgba(16, 185, 129, 0.08)",
-        color: "var(--dt-success)",
-        padding: "10px 12px",
-        borderRadius: 6,
-        fontSize: 12,
+        borderRadius: 4,
+        fontSize: 12.5,
+        fontWeight: 400,
+        lineHeight: 1.45,
       }}
     >
       {message}
@@ -90,8 +95,10 @@ export function ProfileEditForm({
         />
       </label>
 
-      {state.error ? <ErrorBox message={state.error} /> : null}
-      {state.ok ? <OkBox message={state.ok} /> : null}
+      {state?.error ? (
+        <FormBanner tone="error" message={state.error} />
+      ) : null}
+      {state?.ok ? <FormBanner tone="ok" message={state.ok} /> : null}
 
       <SaveButton label="Save changes" pendingLabel="Saving…" />
     </form>
@@ -109,10 +116,10 @@ export function PasswordChangeForm() {
   // user's plaintext password isn't sitting in the DOM after the
   // round-trip completes.
   useEffect(() => {
-    if (state.ok && formRef.current) {
+    if (state?.ok && formRef.current) {
       formRef.current.reset();
     }
-  }, [state.ok]);
+  }, [state?.ok]);
 
   return (
     <form
@@ -167,8 +174,10 @@ export function PasswordChangeForm() {
         />
       </label>
 
-      {state.error ? <ErrorBox message={state.error} /> : null}
-      {state.ok ? <OkBox message={state.ok} /> : null}
+      {state?.error ? (
+        <FormBanner tone="error" message={state.error} />
+      ) : null}
+      {state?.ok ? <FormBanner tone="ok" message={state.ok} /> : null}
 
       <SaveButton label="Change password" pendingLabel="Saving…" />
 
