@@ -20,13 +20,15 @@ const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
 // Public paths that should NEVER be gated. Includes /login and the
 // auth callback routes, the bug-report writer API (used by the public
 // site), the workflow tick endpoint (called by Vercel Cron with its
-// own shared-secret), and the external applicant-intake API (used by
-// driven-talent.com with its own shared-secret).
+// own shared-secret), the external applicant-intake API (used by
+// driven-talent.com with its own shared-secret), and the one-time
+// owner-bootstrap endpoint (gated by its own BOOTSTRAP_SECRET header).
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/login") return true;
   if (pathname.startsWith("/auth/")) return true;
   if (pathname === "/api/intake/application") return true;
   if (pathname === "/api/workflows/tick") return true;
+  if (pathname === "/api/auth-bootstrap") return true;
   return false;
 }
 
