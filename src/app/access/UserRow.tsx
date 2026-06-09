@@ -1,9 +1,16 @@
 "use client";
 
+import { useActionState, useState } from "react";
+import { useFormStatus } from "react-dom";
 import { Badge } from "@/components/Badge";
 import type { AccessUser } from "@/lib/users.server";
 import type { AppRole } from "@/lib/supabase/types";
-import { changeUserRole, removeUser, resendInvite } from "./actions";
+import {
+  changeUserRole,
+  removeUser,
+  resetPassword,
+  type ResetState,
+} from "./actions";
 
 const ROLE_TONE: Record<AppRole, "warm" | "gold" | "green"> = {
   user: "warm",
@@ -28,6 +35,117 @@ function fmt(ts: string | null): string {
   });
 }
 
+function ResetButton() {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      type="submit"
+      className="dt-btn"
+      style={{ padding: "6px 10px", fontSize: 11 }}
+      disabled={pending}
+      title="Generate a new temp password and share it manually"
+    >
+      {pending ? "Resetting…" : "Reset password"}
+    </button>
+  );
+}
+
+function ResetCredentialBox({
+  email,
+  password,
+}: {
+  email: string;
+  password: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const blob = `Email: ${email}\nPassword: ${password}`;
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(blob);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        background: "rgba(16, 185, 129, 0.08)",
+        border: "1px solid rgba(16, 185, 129, 0.25)",
+        borderRadius: 6,
+        padding: "10px 12px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        textAlign: "left",
+      }}
+    >
+      <div style={{ fontSize: 11, color: "var(--dt-success)", fontWeight: 500 }}>
+        New password — share with user via Signal/text
+      </div>
+      <div
+        style={{
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          fontSize: 11.5,
+          background: "var(--dt-white, #fff)",
+          border: "1px solid var(--dt-warm-200, rgba(0,0,0,0.08))",
+          borderRadius: 4,
+          padding: "6px 8px",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+        }}
+      >
+        {password}
+      </div>
+      <button
+        type="button"
+        onClick={copy}
+        className="dt-btn"
+        style={{
+          alignSelf: "flex-start",
+          padding: "4px 8px",
+          fontSize: 10.5,
+        }}
+      >
+        {copied ? "Copied!" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
+function ResetForm({ email }: { email: string }) {
+  const [state, formAction] = useActionState<ResetState, FormData>(
+    resetPassword,
+    {},
+  );
+  return (
+    <div style={{ display: "inline-flex", flexDirection: "column", gap: 0 }}>
+      <form action={formAction}>
+        <input type="hidden" name="email" value={email} />
+        <ResetButton />
+      </form>
+      {state.error ? (
+        <div
+          role="alert"
+          style={{
+            marginTop: 6,
+            fontSize: 11,
+            color: "var(--dt-danger)",
+          }}
+        >
+          {state.error}
+        </div>
+      ) : null}
+      {state.tempPassword && state.email ? (
+        <ResetCredentialBox email={state.email} password={state.tempPassword} />
+      ) : null}
+    </div>
+  );
+}
+
 export function UserRow({
   user,
   viewerId,
@@ -40,7 +158,9 @@ export function UserRow({
   const isSelf = user.id === viewerId;
   const isOwnerViewer = viewerRole === "owner";
   const canChangeOwner = isOwnerViewer;
-  const pending = !user.confirmed_at;
+  // With Option A there is no separate "pending" state — accounts are
+  // confirmed immediately when created. last_sign_in_at tells the story.
+  const neverSignedIn = !user.last_sign_in_at;
 
   return (
     <tr>
@@ -82,35 +202,24 @@ export function UserRow({
         </form>
       </td>
       <td>
-        {pending ? (
-          <Badge tone="amber">Pending invite</Badge>
+        {neverSignedIn ? (
+          <Badge tone="amber">Never signed in</Badge>
         ) : (
           <Badge tone={ROLE_TONE[user.role]}>{ROLE_LABEL[user.role]}</Badge>
         )}
       </td>
       <td style={{ fontSize: 12 }}>{fmt(user.last_sign_in_at)}</td>
-      <td style={{ fontSize: 12 }}>{fmt(user.invited_at ?? user.created_at)}</td>
+      <td style={{ fontSize: 12 }}>{fmt(user.created_at)}</td>
       <td style={{ paddingRight: 22, textAlign: "right" }}>
         <div
           style={{
             display: "inline-flex",
             gap: 6,
             justifyContent: "flex-end",
+            alignItems: "flex-start",
           }}
         >
-          {user.email ? (
-            <form action={resendInvite}>
-              <input type="hidden" name="email" value={user.email} />
-              <button
-                type="submit"
-                className="dt-btn"
-                style={{ padding: "6px 10px", fontSize: 11 }}
-                title="Send a password-reset / re-invite email"
-              >
-                Resend
-              </button>
-            </form>
-          ) : null}
+          {user.email ? <ResetForm email={user.email} /> : null}
           {!isSelf && (canChangeOwner || user.role !== "owner") ? (
             <form
               action={removeUser}

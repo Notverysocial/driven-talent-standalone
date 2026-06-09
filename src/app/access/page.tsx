@@ -26,7 +26,10 @@ export default async function AccessPage() {
   const owners = users.filter((u) => u.role === "owner").length;
   const admins = users.filter((u) => u.role === "admin").length;
   const usersCount = users.filter((u) => u.role === "user").length;
-  const pending = users.filter((u) => !u.confirmed_at).length;
+  // Option A: accounts are confirmed at creation. "Never signed in" is
+  // the meaningful "pending" signal now (admin created account, user
+  // hasn't logged in yet).
+  const pending = users.filter((u) => !u.last_sign_in_at).length;
 
   return (
     <Shell>
@@ -48,11 +51,12 @@ export default async function AccessPage() {
         >
           <div style={{ fontSize: 13, lineHeight: 1.6 }}>
             <strong>Auth is currently OFF.</strong> The app runs as a synthetic
-            Owner regardless of who hits the URL. You can still invite users
-            here so they exist when you flip auth on. To enable secure access,
-            set <code>AUTH_ENABLED=true</code> in Vercel env vars and redeploy.
-            Users you invite below will receive their setup email once the
-            redeploy is live.
+            Owner regardless of who hits the URL. You can still create user
+            accounts here so they exist when you flip auth on. To enable
+            secure access, set <code>AUTH_ENABLED=true</code> in Vercel env
+            vars and redeploy. Accounts created below take effect once auth
+            is enabled — share the temp password with the user via Signal or
+            text.
           </div>
         </div>
       )}
@@ -69,9 +73,9 @@ export default async function AccessPage() {
         <KPI label="Admins" value={String(admins)} sub="manage team + settings" />
         <KPI label="Users" value={String(usersCount)} sub="standard access" />
         <KPI
-          label="Pending"
+          label="Never signed in"
           value={String(pending)}
-          sub="invited, not signed in yet"
+          sub="account created, not used yet"
           accent={pending > 0 ? "var(--dt-warm-500)" : "var(--dt-black)"}
         />
       </div>
@@ -117,7 +121,7 @@ export default async function AccessPage() {
                     <th>Role</th>
                     <th>Status</th>
                     <th>Last sign-in</th>
-                    <th>Invited</th>
+                    <th>Created</th>
                     <th style={{ paddingRight: 22, textAlign: "right" }}>
                       Actions
                     </th>
@@ -143,7 +147,7 @@ export default async function AccessPage() {
                           fontStyle: "italic",
                         }}
                       >
-                        No users yet — invite the first one using the form on
+                        No users yet — create the first one using the form on
                         the right.
                       </td>
                     </tr>
@@ -157,8 +161,8 @@ export default async function AccessPage() {
         <aside className="dt-card" style={{ padding: 0 }}>
           <div className="dt-card-head">
             <div>
-              <h3>Invite User</h3>
-              <div className="sub">Send a one-time setup email</div>
+              <h3>Create User</h3>
+              <div className="sub">Owner sets the password, no email sent</div>
             </div>
           </div>
           <InviteForm canInviteOwner={me.profile.role === "owner"} />

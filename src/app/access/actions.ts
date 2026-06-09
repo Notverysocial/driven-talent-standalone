@@ -5,7 +5,7 @@ import { assertRole, getCurrentUser } from "@/lib/auth.server";
 import {
   deleteAccessUser,
   inviteAccessUser,
-  sendPasswordReset,
+  resetUserPassword,
   setUserRole,
 } from "@/lib/users.server";
 import type { AppRole } from "@/lib/supabase/types";
@@ -16,7 +16,13 @@ function asRole(input: FormDataEntryValue | null): AppRole {
   return "user";
 }
 
-export type InviteState = { error?: string; ok?: string };
+export type InviteState = {
+  error?: string;
+  ok?: string;
+  // Auth Option A — admin sees the temp password to share out-of-band.
+  tempPassword?: string;
+  email?: string;
+};
 
 export async function inviteUser(
   _prev: InviteState,
@@ -27,15 +33,21 @@ export async function inviteUser(
     const email = String(formData.get("email") ?? "").trim().toLowerCase();
     const fullName = String(formData.get("full_name") ?? "").trim() || null;
     const role = asRole(formData.get("role"));
+    const customPassword =
+      String(formData.get("password") ?? "").trim() || undefined;
 
     // Only owners can mint other owners; admins can invite users + admins.
     if (role === "owner") {
       await assertRole("owner");
     }
 
-    await inviteAccessUser(email, role, fullName);
+    const { password } = await inviteAccessUser(email, role, fullName, customPassword);
     revalidatePath("/access");
-    return { ok: `Invite sent to ${email}` };
+    return {
+      ok: `Account created for ${email}`,
+      tempPassword: password,
+      email,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Invite failed";
     return { error: msg };
@@ -64,12 +76,32 @@ export async function changeUserRole(formData: FormData): Promise<void> {
   revalidatePath("/access");
 }
 
-export async function resendInvite(formData: FormData): Promise<void> {
-  await assertRole("admin");
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
-  if (!email) throw new Error("Missing email");
-  await sendPasswordReset(email);
-  revalidatePath("/access");
+export type ResetState = {
+  error?: string;
+  ok?: string;
+  tempPassword?: string;
+  email?: string;
+};
+
+export async function resetPassword(
+  _prev: ResetState,
+  formData: FormData,
+): Promise<ResetState> {
+  try {
+    await assertRole("admin");
+    const email = String(formData.get("email") ?? "").trim().toLowerCase();
+    if (!email) throw new Error("Missing email");
+    const { password } = await resetUserPassword(email);
+    revalidatePath("/access");
+    return {
+      ok: `Password reset for ${email}`,
+      tempPassword: password,
+      email,
+    };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Reset failed";
+    return { error: msg };
+  }
 }
 
 export async function removeUser(formData: FormData): Promise<void> {

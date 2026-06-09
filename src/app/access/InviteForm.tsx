@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { useFormStatus } from "react-dom";
 import { inviteUser, type InviteState } from "./actions";
 
@@ -14,7 +14,7 @@ function SubmitButton({ canInviteOwner }: { canInviteOwner: boolean }) {
       disabled={pending}
       style={{ marginTop: 4 }}
     >
-      <span>{pending ? "Sending…" : "+ Send Invite"}</span>
+      <span>{pending ? "Creating…" : "+ Create Account"}</span>
     </button>
   );
 }
@@ -68,6 +68,19 @@ export function InviteForm({ canInviteOwner }: { canInviteOwner: boolean }) {
         </select>
       </label>
 
+      <label className="dt-filter">
+        <span className="dt-filter-label">
+          Custom password (leave blank to auto-generate)
+        </span>
+        <input
+          name="password"
+          type="text"
+          autoComplete="off"
+          placeholder="auto-generate"
+          className="dt-filter-input"
+        />
+      </label>
+
       {state.error ? (
         <div
           role="alert"
@@ -82,7 +95,10 @@ export function InviteForm({ canInviteOwner }: { canInviteOwner: boolean }) {
           {state.error}
         </div>
       ) : null}
-      {state.ok ? (
+
+      {state.tempPassword && state.email ? (
+        <CredentialPanel email={state.email} password={state.tempPassword} />
+      ) : state.ok ? (
         <div
           style={{
             background: "rgba(16, 185, 129, 0.08)",
@@ -99,9 +115,78 @@ export function InviteForm({ canInviteOwner }: { canInviteOwner: boolean }) {
       <SubmitButton canInviteOwner={canInviteOwner} />
 
       <p style={{ fontSize: 11.5, color: "var(--dt-warm-500)", margin: 0 }}>
-        Supabase sends a one-time invite link. The invitee sets their own
-        password on first sign-in.
+        Owner sets the initial password. No email is sent — share the temp
+        password with the new user via Signal or text. They can change it
+        from settings after first sign-in.
       </p>
     </form>
+  );
+}
+
+export function CredentialPanel({
+  email,
+  password,
+}: {
+  email: string;
+  password: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const blob = `Email: ${email}\nPassword: ${password}`;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(blob);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // clipboard unavailable; user can still copy manually
+    }
+  }
+
+  return (
+    <div
+      style={{
+        background: "rgba(16, 185, 129, 0.08)",
+        border: "1px solid rgba(16, 185, 129, 0.25)",
+        borderRadius: 6,
+        padding: "12px 14px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 500, color: "var(--dt-success)" }}>
+        Account created. Share these credentials with the user via Signal or
+        text. They can change the password from settings after logging in.
+      </div>
+      <div
+        style={{
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+          fontSize: 12,
+          background: "var(--dt-white, #fff)",
+          border: "1px solid var(--dt-warm-200, rgba(0,0,0,0.08))",
+          borderRadius: 4,
+          padding: "8px 10px",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+        }}
+      >
+        Email: {email}
+        {"\n"}Password: {password}
+      </div>
+      <button
+        type="button"
+        onClick={copy}
+        className="dt-btn"
+        style={{
+          alignSelf: "flex-start",
+          padding: "6px 10px",
+          fontSize: 11,
+        }}
+      >
+        {copied ? "Copied!" : "Copy credentials"}
+      </button>
+    </div>
   );
 }
