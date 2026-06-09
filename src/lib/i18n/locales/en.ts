@@ -57,6 +57,7 @@ export const en = {
 
     brandName: "Driven Talent",
     brandSub: "Operations · Dashboard",
+    account: "Account",
     signOut: "Sign out",
     signedOut: "Signed out",
     guest: "GUEST",

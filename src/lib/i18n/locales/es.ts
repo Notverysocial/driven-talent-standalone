@@ -55,6 +55,7 @@ export const es: Dictionary = {
 
     brandName: "Driven Talent",
     brandSub: "Operaciones · Panel",
+    account: "Cuenta",
     signOut: "Cerrar sesión",
     signedOut: "Sesión cerrada",
     guest: "INVITADO",

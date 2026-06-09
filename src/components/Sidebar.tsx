@@ -193,6 +193,21 @@ export function Sidebar({
             </div>
             <div className="role">{roleLabel}</div>
             <LanguageSwitcher />
+            {viewer ? (
+              <Link
+                href="/account"
+                className="dt-logout"
+                onClick={close}
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  marginTop: 8,
+                }}
+              >
+                {t("nav.account")}
+              </Link>
+            ) : null}
             {viewer && authEnabled ? (
               <form action={logout}>
                 <button type="submit" className="dt-logout">
