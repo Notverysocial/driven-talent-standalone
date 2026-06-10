@@ -41,7 +41,8 @@ for (const p of ALL_PROVIDERS) {
 // because Next bundles the module graph; provider agents should add
 // their `import "./providers/<name>";` line below.
 // -------------------------------------------------------------------
-// import "./providers/ringcentral";
+import { ringcentralClient } from "./providers/ringcentral";
+registerClient("ringcentral", ringcentralClient);
 import { indeedClient } from "./providers/indeed";
 registerClient("indeed", indeedClient);
 // import "./providers/uattend";
