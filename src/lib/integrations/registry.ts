@@ -42,7 +42,8 @@ for (const p of ALL_PROVIDERS) {
 // their `import "./providers/<name>";` line below.
 // -------------------------------------------------------------------
 // import "./providers/ringcentral";
-import "./providers/indeed";
+import { indeedClient } from "./providers/indeed";
+registerClient("indeed", indeedClient);
 // import "./providers/uattend";
 // import "./providers/pandadoc";
 // import "./providers/calendly";

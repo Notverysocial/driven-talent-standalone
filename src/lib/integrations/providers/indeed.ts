@@ -22,7 +22,6 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
-import { registerClient } from "../registry";
 import {
   getIntegration,
   updateIntegrationStatus,
@@ -332,6 +331,6 @@ function sumField(
   return total;
 }
 
-registerClient("indeed", new IndeedClient());
+export const indeedClient = new IndeedClient();
 
 export { IndeedClient, FEED_URL, WEBHOOK_URL };
