@@ -47,6 +47,7 @@ registerClient("indeed", indeedClient);
 // import "./providers/uattend";
 import { pandadocClient } from "./providers/pandadoc";
 registerClient("pandadoc", pandadocClient);
-// import "./providers/calendly";
+import { calendlyClient } from "./providers/calendly";
+registerClient("calendly", calendlyClient);
 
 export { ALL_PROVIDERS };
