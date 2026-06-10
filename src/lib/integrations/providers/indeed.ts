@@ -187,13 +187,14 @@ class IndeedClient implements IntegrationClient {
     const applicant = (payload.applicant ?? {}) as Record<string, unknown>;
     const job = (payload.job ?? {}) as Record<string, unknown>;
 
+    const joinedName = [str(applicant.firstName), str(applicant.lastName)]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
     const full_name =
       str(applicant.fullName) ??
       str(applicant.name) ??
-      [str(applicant.firstName), str(applicant.lastName)]
-        .filter(Boolean)
-        .join(" ") ||
-      null;
+      (joinedName.length > 0 ? joinedName : null);
     const email = str(applicant.email);
     const phone = str(applicant.phoneNumber) ?? str(applicant.phone);
     const positionTitle = str(job.jobTitle) ?? str(job.title);
