@@ -28,7 +28,6 @@ function isPublicPath(pathname: string): boolean {
   if (pathname.startsWith("/auth/")) return true;
   if (pathname === "/api/intake/application") return true;
   if (pathname === "/api/workflows/tick") return true;
-  if (pathname === "/api/auth-bootstrap") return true;
   return false;
 }
 
