@@ -7,9 +7,21 @@ import { listTimecards } from "@/lib/timecards.server";
 import { TIMECARD_STATUSES, fmtWeekRange } from "@/lib/timecards";
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { getIntegration } from "@/lib/integrations/db";
 
 export default async function TimecardsListPage() {
   const all = await listTimecards();
+
+  // uAttend connection status — shown as a thin banner so payroll
+  // sees at a glance whether punches are flowing.  We swallow errors
+  // (e.g. the integrations table not yet migrated in dev) so the
+  // page still renders if the row is missing.
+  let uattend: Awaited<ReturnType<typeof getIntegration>> | null = null;
+  try {
+    uattend = await getIntegration("uattend");
+  } catch {
+    uattend = null;
+  }
 
   const byStatus = new Map<TimecardStatus, typeof all>();
   for (const s of TIMECARD_STATUSES) byStatus.set(s.id, []);
@@ -34,6 +46,8 @@ export default async function TimecardsListPage() {
           </>
         }
       />
+
+      <UAttendStatus integration={uattend} />
 
       <div
         style={{
@@ -191,5 +205,92 @@ export default async function TimecardsListPage() {
         </div>
       )}
     </Shell>
+  );
+}
+
+// Thin banner rendered above the KPI row.  Three states:
+//   1. uAttend connected + recently synced — green dot + relative time
+//   2. uAttend connected but no recent sync — amber dot + warning
+//   3. uAttend disconnected / no row — neutral dot + Connect link
+function UAttendStatus({
+  integration,
+}: {
+  integration: {
+    status: string;
+    last_sync_at: string | null;
+    last_error: string | null;
+  } | null;
+}) {
+  const status = integration?.status ?? "disconnected";
+  const lastSync = integration?.last_sync_at ?? null;
+  const lastErr = integration?.last_error ?? null;
+
+  let dot = "var(--dt-warm-300)";
+  let label: React.ReactNode = (
+    <>
+      uAttend not connected —{" "}
+      <Link href="/integrations" style={{ color: "var(--dt-gold-deep)" }}>
+        go to /integrations
+      </Link>
+    </>
+  );
+
+  if (status === "connected") {
+    dot = "var(--dt-success)";
+    label = lastSync ? (
+      <>
+        Last uAttend sync{" "}
+        <span className="tab-num" style={{ color: "var(--dt-black)" }}>
+          {new Date(lastSync).toLocaleString(undefined, {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+        </span>
+      </>
+    ) : (
+      <>uAttend connected — no sync yet</>
+    );
+  } else if (status === "error") {
+    dot = "var(--dt-danger)";
+    label = (
+      <>
+        uAttend sync error{lastErr ? ` — ${lastErr.slice(0, 120)}` : ""} ·{" "}
+        <Link href="/integrations" style={{ color: "var(--dt-gold-deep)" }}>
+          view
+        </Link>
+      </>
+    );
+  } else if (status === "syncing") {
+    dot = "var(--dt-gold-deep)";
+    label = <>uAttend syncing…</>;
+  }
+
+  return (
+    <div
+      className="dt-card"
+      style={{
+        padding: "10px 18px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        fontSize: 12.5,
+        color: "var(--dt-warm-700, #5a4a3a)",
+      }}
+    >
+      <span
+        aria-hidden
+        style={{
+          display: "inline-block",
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: dot,
+        }}
+      />
+      <span>{label}</span>
+    </div>
   );
 }

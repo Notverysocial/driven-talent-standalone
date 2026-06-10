@@ -11,6 +11,7 @@ import {
   updateIntegrationStatus,
 } from "@/lib/integrations/db";
 import { isIntegrationProvider } from "@/lib/integrations/types";
+import { createServiceClient } from "@/lib/supabase/server";
 
 export type IntegrationActionState = { error?: string; ok?: string };
 
@@ -103,6 +104,85 @@ export async function saveApiKeyAction(
     });
     revalidatePath("/integrations");
     return { ok: "Connected" };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "save_failed" };
+  }
+}
+
+// ---------- uAttend employee-mapping admin ----------
+//
+// integrations.uattend.config.employee_mapping is a JSON map of
+// uAttend employee id -> DT employees.id (uuid).  This action accepts
+// a form payload of the shape:
+//
+//   uattend_id[]   = ["123", "456", ...]
+//   dt_employee[]  = ["<uuid>", "", ...]   ("" means unset / skip)
+//
+// We merge non-empty pairs into the existing map; setting dt_employee
+// to "__remove__" clears that key.  After saving we backfill any
+// existing timeclock_punches rows whose employee_id is null but whose
+// uattend_employee_id now has a match — so the timecards page picks
+// them up immediately without waiting for the next cron pull.
+export async function saveUattendMappingAction(
+  _prev: IntegrationActionState,
+  formData: FormData,
+): Promise<IntegrationActionState> {
+  try {
+    await assertRole("admin");
+    const row = await getIntegration("uattend");
+    if (!row) return { error: "integration_row_missing" };
+
+    const uIds = formData.getAll("uattend_id").map((v) => String(v));
+    const dtIds = formData.getAll("dt_employee").map((v) => String(v));
+
+    const cfg = (row.config ?? {}) as Record<string, unknown>;
+    const existing =
+      (cfg.employee_mapping as Record<string, string> | undefined) ?? {};
+    const merged: Record<string, string> = { ...existing };
+
+    let added = 0;
+    let removed = 0;
+    for (let i = 0; i < uIds.length; i++) {
+      const uid = uIds[i]?.trim();
+      const dtid = dtIds[i]?.trim();
+      if (!uid) continue;
+      if (dtid === "__remove__") {
+        if (uid in merged) {
+          delete merged[uid];
+          removed += 1;
+        }
+        continue;
+      }
+      if (!dtid) continue; // skip empty (no choice made)
+      if (!/^[0-9a-f-]{36}$/i.test(dtid)) continue; // sanity check uuid shape
+      merged[uid] = dtid;
+      added += 1;
+    }
+
+    await updateIntegrationStatus("uattend", {
+      config: { ...cfg, employee_mapping: merged },
+    });
+
+    // Backfill: any existing punches with this uattend_employee_id
+    // and null employee_id should get the new mapping applied.
+    const sb = createServiceClient();
+    let backfilled = 0;
+    for (const [uid, dtid] of Object.entries(merged)) {
+      const { error, count } = await sb
+        .from("timeclock_punches")
+        .update({ employee_id: dtid }, { count: "exact" })
+        .is("employee_id", null)
+        .eq("uattend_employee_id", uid);
+      if (!error && typeof count === "number") backfilled += count;
+    }
+
+    revalidatePath("/integrations");
+    revalidatePath("/timecards");
+    return {
+      ok: `Saved ${added} mapping${added === 1 ? "" : "s"}${
+        removed ? `, removed ${removed}` : ""
+      }${backfilled ? `, backfilled ${backfilled} punch${backfilled === 1 ? "" : "es"}` : ""}.`,
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "save_failed" };
   }

@@ -11,9 +11,14 @@ import {
   type IntegrationRow,
   type IntegrationStatus,
 } from "@/lib/integrations/types";
+import {
+  listEmployeeOptions,
+  listUnmappedUattendEmployeeIds,
+} from "@/lib/timeclock-punches.server";
 import { ApiKeyForm } from "./ApiKeyForm";
 import { DisconnectButton } from "./DisconnectButton";
 import { syncIntegrationAction } from "./actions";
+import { UattendMappingEditor } from "./UattendMappingEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -87,6 +92,24 @@ export default async function IntegrationsPage({
   }
 
   const byProvider = indexByProvider(rows);
+
+  // For the uAttend card mapping editor, pre-load the unmapped ids
+  // and the DT employee dropdown options.  Both are cheap reads.
+  const uattendRow = byProvider.get("uattend") ?? null;
+  const uattendMapping =
+    ((uattendRow?.config ?? {}) as Record<string, unknown>).employee_mapping as
+      | Record<string, string>
+      | undefined;
+  let uattendUnmapped: Awaited<ReturnType<typeof listUnmappedUattendEmployeeIds>> = [];
+  let uattendEmployees: Awaited<ReturnType<typeof listEmployeeOptions>> = [];
+  try {
+    uattendUnmapped = await listUnmappedUattendEmployeeIds({
+      mapping: uattendMapping ?? {},
+    });
+    uattendEmployees = await listEmployeeOptions();
+  } catch {
+    // table may not be migrated yet — fall through with empty lists
+  }
 
   const connectedCount = rows.filter((r) => r.status === "connected").length;
   const errorCount = rows.filter((r) => r.status === "error").length;
@@ -221,7 +244,12 @@ export default async function IntegrationsPage({
             <div
               key={provider}
               className="dt-card"
-              style={{ padding: 0, display: "flex", flexDirection: "column" }}
+              style={{
+                padding: 0,
+                display: provider === "uattend" ? "grid" : "flex",
+                gridTemplateColumns: provider === "uattend" ? "1fr" : undefined,
+                flexDirection: "column",
+              }}
             >
               <div className="dt-card-head" style={{ alignItems: "center" }}>
                 <div>
@@ -321,6 +349,13 @@ export default async function IntegrationsPage({
                         Sync now
                       </button>
                     </form>
+                    {provider === "uattend" && (
+                      <UattendMappingEditor
+                        unmapped={uattendUnmapped}
+                        currentMapping={uattendMapping ?? {}}
+                        employees={uattendEmployees}
+                      />
+                    )}
                     <DisconnectButton
                       provider={provider}
                       displayName={displayName}
