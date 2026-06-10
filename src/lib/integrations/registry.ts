@@ -45,7 +45,8 @@ for (const p of ALL_PROVIDERS) {
 import { indeedClient } from "./providers/indeed";
 registerClient("indeed", indeedClient);
 // import "./providers/uattend";
-// import "./providers/pandadoc";
+import { pandadocClient } from "./providers/pandadoc";
+registerClient("pandadoc", pandadocClient);
 // import "./providers/calendly";
 
 export { ALL_PROVIDERS };

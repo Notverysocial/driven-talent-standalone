@@ -168,3 +168,61 @@ export async function advanceToPlacement(candidateId: string) {
   revalidatePath("/onboarding");
   redirect(`/onboarding/${emp.id}`);
 }
+
+// Send the candidate a PandaDoc onboarding offer document. The PandaDoc
+// integration row must be connected and `config.onboarding_template_id`
+// must be set. On success we stash the returned PandaDoc document_id on
+// the candidate row so the webhook + sync can map status updates back.
+export async function sendOnboardingDoc(
+  candidateId: string,
+): Promise<
+  | { ok: true; document_id: string }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const { data: cand, error } = await supabase
+    .from("candidates")
+    .select("id, full_name, email, status, pandadoc_document_id")
+    .eq("id", candidateId)
+    .single();
+  if (error || !cand) {
+    return { ok: false, error: "candidate_not_found" };
+  }
+  if (!cand.email) {
+    return { ok: false, error: "candidate_has_no_email" };
+  }
+  if (cand.pandadoc_document_id) {
+    return { ok: true, document_id: cand.pandadoc_document_id };
+  }
+
+  const { pandadocClient } = await import(
+    "@/lib/integrations/providers/pandadoc"
+  );
+  const r = await pandadocClient.createOnboardingDocFromTemplate({
+    candidateId: cand.id,
+    candidateName: cand.full_name,
+    candidateEmail: cand.email,
+  });
+
+  if (!r.ok || !r.document_id) {
+    return { ok: false, error: r.error ?? "send_failed" };
+  }
+
+  // Persist the document_id so the webhook can map back. Use the
+  // service-role client through our server lib so we bypass RLS — but
+  // candidate updates by an admin via the normal client work too.
+  const { error: updErr } = await supabase
+    .from("candidates")
+    .update({
+      pandadoc_document_id: r.document_id,
+      pandadoc_document_status: "document.sent",
+    })
+    .eq("id", cand.id);
+  if (updErr) {
+    return { ok: false, error: `db_update_failed: ${updErr.message}` };
+  }
+
+  revalidatePath(`/candidates/${candidateId}`);
+  revalidatePath("/candidates");
+  return { ok: true, document_id: r.document_id };
+}
