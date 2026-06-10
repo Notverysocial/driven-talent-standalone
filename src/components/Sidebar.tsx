@@ -73,6 +73,7 @@ const NAV: NavEntry[] = [
   { id: "team",        labelKey: "team",       icon: "users", href: "/team",            minRole: "admin" },
   { id: "terminated",  labelKey: "terminated", icon: "users", href: "/team/terminated", minRole: "admin" },
   { id: "access",      labelKey: "access",     icon: "users", href: "/access",          minRole: "admin" },
+  { id: "integrations",labelKey: "integrations",icon: "chart", href: "/integrations",    minRole: "admin" },
   { id: "bug-reports", labelKey: "bugReports", icon: "file",  href: "/bug-reports",     minRole: "admin" },
 ];
 

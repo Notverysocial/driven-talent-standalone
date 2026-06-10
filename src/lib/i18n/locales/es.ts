@@ -51,6 +51,7 @@ export const es: Dictionary = {
     team: "Equipo interno",
     terminated: "Terminados / No recontratar",
     access: "Acceso · Usuarios",
+    integrations: "Integraciones",
     bugReports: "Reportes de errores",
 
     brandName: "Driven Talent",

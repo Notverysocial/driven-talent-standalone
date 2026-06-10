@@ -21,13 +21,18 @@ const AUTH_ENABLED = process.env.AUTH_ENABLED === "true";
 // auth callback routes, the bug-report writer API (used by the public
 // site), the workflow tick endpoint (called by Vercel Cron with its
 // own shared-secret), the external applicant-intake API (used by
-// driven-talent.com with its own shared-secret), and the one-time
+// driven-talent.com with its own shared-secret), the integrations
+// cron + webhook + OAuth-callback routes (each have their own
+// shared-secret or signature verification), and the one-time
 // owner-bootstrap endpoint (gated by its own BOOTSTRAP_SECRET header).
 function isPublicPath(pathname: string): boolean {
   if (pathname === "/login") return true;
   if (pathname.startsWith("/auth/")) return true;
   if (pathname === "/api/intake/application") return true;
   if (pathname === "/api/workflows/tick") return true;
+  if (pathname === "/api/integrations/cron") return true;
+  if (pathname.startsWith("/api/integrations/webhook/")) return true;
+  if (pathname.startsWith("/api/integrations/oauth/")) return true;
   return false;
 }
 

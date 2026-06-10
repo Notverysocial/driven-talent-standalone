@@ -53,6 +53,7 @@ export const en = {
     team: "Team Members",
     terminated: "Terminated / DNR",
     access: "Access · Users",
+    integrations: "Integrations",
     bugReports: "Bug Reports",
 
     brandName: "Driven Talent",
