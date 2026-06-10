@@ -42,7 +42,7 @@ for (const p of ALL_PROVIDERS) {
 // their `import "./providers/<name>";` line below.
 // -------------------------------------------------------------------
 // import "./providers/ringcentral";
-// import "./providers/indeed";
+import "./providers/indeed";
 // import "./providers/uattend";
 // import "./providers/pandadoc";
 // import "./providers/calendly";
