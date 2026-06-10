@@ -33,6 +33,9 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/api/integrations/cron") return true;
   if (pathname.startsWith("/api/integrations/webhook/")) return true;
   if (pathname.startsWith("/api/integrations/oauth/")) return true;
+  // Indeed crawls the XML feed unauthenticated on a 6h schedule; the
+  // route reads only public position fields and emits feed XML.
+  if (pathname === "/api/integrations/indeed/feed") return true;
   return false;
 }
 
