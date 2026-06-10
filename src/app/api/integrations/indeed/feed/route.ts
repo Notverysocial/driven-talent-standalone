@@ -71,7 +71,7 @@ export async function GET(): Promise<Response> {
     .select(
       "id, role_title, company_name, department, job_category, city, locality, pay_rate, pay_rate_unit, min_pay_rate, max_pay_rate, schedule_hours, shift, special_skills, requirements, recruiting_notes, recruiter_email, manager_email, status, opened_at, created_at, updated_at",
     )
-    .eq("status", "Open")
+    .eq("status", "open")
     .order("created_at", { ascending: false });
 
   if (error) {
