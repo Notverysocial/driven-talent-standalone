@@ -12,6 +12,7 @@ import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
 import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
 import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
 import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
+import { SiteTrafficCard } from "@/components/dashboard/SiteTrafficCard";
 import { getServerDictionary, getLocale } from "@/lib/i18n/server";
 
 function fmt$(n: number, locale: string) {
@@ -152,7 +153,7 @@ export default async function DashboardPage() {
         className="dt-overview-grid"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr)",
           gap: 22,
           marginBottom: 22,
         }}
@@ -187,6 +188,8 @@ export default async function DashboardPage() {
             }))}
           />
         </ChartCard>
+
+        <SiteTrafficCard />
       </div>
 
       <div
