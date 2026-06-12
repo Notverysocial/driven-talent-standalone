@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useEffect, useRef, useTransition } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ConversationListItem, MessageItem } from "./actions";
@@ -10,6 +11,7 @@ import {
   assignConversation,
   createContactFromConversation,
   getConversations,
+  promoteConversationToCandidate,
 } from "./actions";
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; label: string }> = {
@@ -76,6 +78,7 @@ export function InboxClient({
 
   async function selectConversation(id: string) {
     setSelected(id);
+    setPromoteFeedback(null);
     const msgs = await getMessages(id);
     setMessages(msgs);
     // Refresh to update unread counts
@@ -114,6 +117,31 @@ export function InboxClient({
       const updated = await getConversations();
       setConversations(updated);
     });
+  }
+
+  const [promoteFeedback, setPromoteFeedback] = useState<
+    | { kind: "ok"; message: string; candidateId: string }
+    | { kind: "err"; message: string }
+    | null
+  >(null);
+
+  async function handlePromoteToCandidate() {
+    if (!selected) return;
+    setPromoteFeedback(null);
+    const result = await promoteConversationToCandidate(selected);
+    if (result.ok) {
+      setPromoteFeedback({
+        kind: "ok",
+        message: "Promoted to pipeline.",
+        candidateId: result.candidateId,
+      });
+      startTransition(async () => {
+        const updated = await getConversations();
+        setConversations(updated);
+      });
+    } else {
+      setPromoteFeedback({ kind: "err", message: result.error });
+    }
   }
 
   async function handleCreateCandidate() {
@@ -578,13 +606,63 @@ export function InboxClient({
 
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {!activeConv.contact?.candidate_id && (
-              <button onClick={handleCreateCandidate} className="dt-btn" style={{ fontSize: 11.5, padding: "6px 12px", justifyContent: "center", width: "100%" }}>
-                Create Candidate
-              </button>
+              <>
+                <button
+                  onClick={handlePromoteToCandidate}
+                  className="dt-btn dt-btn-gold"
+                  style={{ fontSize: 11.5, padding: "6px 12px", justifyContent: "center", width: "100%" }}
+                  disabled={isPending}
+                >
+                  → Promote to Candidate
+                </button>
+                <button
+                  onClick={handleCreateCandidate}
+                  className="dt-btn"
+                  style={{ fontSize: 11, padding: "5px 12px", justifyContent: "center", width: "100%", opacity: 0.7 }}
+                  title="Quick create — no chat transcript copied into candidate notes."
+                >
+                  Quick Create Candidate
+                </button>
+              </>
             )}
             {activeConv.contact?.candidate_id && (
-              <div style={{ fontSize: 11, color: "var(--dt-success, #22c55e)", fontWeight: 500 }}>
-                Linked to Candidate
+              <Link
+                href={`/candidates/${activeConv.contact.candidate_id}`}
+                className="dt-btn"
+                style={{ fontSize: 11.5, padding: "6px 12px", justifyContent: "center", width: "100%", textAlign: "center" }}
+              >
+                View Linked Candidate →
+              </Link>
+            )}
+            {promoteFeedback && (
+              <div
+                role={promoteFeedback.kind === "err" ? "alert" : undefined}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 6,
+                  fontSize: 11.5,
+                  background:
+                    promoteFeedback.kind === "ok"
+                      ? "rgba(16, 185, 129, 0.08)"
+                      : "rgba(220, 38, 38, 0.08)",
+                  color:
+                    promoteFeedback.kind === "ok"
+                      ? "var(--dt-success)"
+                      : "var(--dt-danger)",
+                }}
+              >
+                {promoteFeedback.message}
+                {promoteFeedback.kind === "ok" && (
+                  <>
+                    {" "}
+                    <Link
+                      href={`/candidates/${promoteFeedback.candidateId}`}
+                      style={{ color: "var(--dt-success)", fontWeight: 500, textDecoration: "underline" }}
+                    >
+                      Open candidate →
+                    </Link>
+                  </>
+                )}
               </div>
             )}
             {!activeConv.contact?.client_id && (

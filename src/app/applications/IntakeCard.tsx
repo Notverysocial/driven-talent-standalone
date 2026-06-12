@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
@@ -13,8 +14,31 @@ export function IntakeCard({
   intake: ApplicationIntake;
   createdLabel: string;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [feedback, setFeedback] = useState<
+    | { kind: "ok"; message: string }
+    | { kind: "err"; message: string }
+    | null
+  >(null);
+
+  function handlePromote() {
+    setFeedback(null);
+    startTransition(async () => {
+      const result = await promoteIntakeToCandidate(intake.id);
+      if (result.ok) {
+        setFeedback({
+          kind: "ok",
+          message: "Promoted to pipeline. Opening candidate…",
+        });
+        // Brief delay so the banner is visible before navigating.
+        setTimeout(() => router.push(`/candidates/${result.candidateId}`), 600);
+      } else {
+        setFeedback({ kind: "err", message: result.error });
+      }
+    });
+  }
 
   const tone =
     INTAKE_STATUSES.find((s) => s.id === intake.status)?.tone ?? "warm";
@@ -76,11 +100,11 @@ export function IntakeCard({
             <button
               type="button"
               disabled={pending}
-              onClick={() => startTransition(async () => { await promoteIntakeToCandidate(intake.id); })}
+              onClick={handlePromote}
               className="dt-btn dt-btn-gold"
               style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center" }}
             >
-              <span>→ Promote to Pipeline</span>
+              <span>{pending ? "Promoting…" : "→ Promote to Pipeline"}</span>
             </button>
           )}
 
@@ -117,6 +141,28 @@ export function IntakeCard({
           )}
         </div>
       </div>
+
+      {feedback && (
+        <div
+          role={feedback.kind === "err" ? "alert" : undefined}
+          style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            borderRadius: 6,
+            fontSize: 12,
+            background:
+              feedback.kind === "ok"
+                ? "rgba(16, 185, 129, 0.08)"
+                : "rgba(220, 38, 38, 0.08)",
+            color:
+              feedback.kind === "ok"
+                ? "var(--dt-success)"
+                : "var(--dt-danger)",
+          }}
+        >
+          {feedback.message}
+        </div>
+      )}
 
       <button
         type="button"

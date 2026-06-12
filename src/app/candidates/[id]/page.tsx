@@ -15,6 +15,7 @@ import { CriterionRow } from "./CriterionRow";
 import { NotesEditor } from "./NotesEditor";
 import { StatusActions } from "./StatusActions";
 import { ResumeBlock } from "./ResumeBlock";
+import { SendOnboardingDoc } from "./SendOnboardingDoc";
 
 export default async function CandidateDetailPage({
   params,
@@ -275,6 +276,27 @@ export default async function CandidateDetailPage({
               <div className="tab-num">{cand.phone ?? "—"}</div>
             </div>
           </div>
+
+          {cand.status === "offer" && (
+            <div className="dt-card" style={{ padding: 18 }}>
+              <div
+                className="tiny muted"
+                style={{
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  fontWeight: 400,
+                  marginBottom: 10,
+                }}
+              >
+                Onboarding Offer
+              </div>
+              <SendOnboardingDoc
+                candidateId={cand.id}
+                hasEmail={Boolean(cand.email)}
+                alreadySentDocId={cand.pandadoc_document_id}
+              />
+            </div>
+          )}
         </div>
       </div>
     </Shell>

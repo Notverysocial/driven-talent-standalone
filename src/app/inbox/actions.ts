@@ -1,6 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
+import type { CandidateStatus } from "@/lib/supabase/types";
+
+export type PromoteConversationResult =
+  | { ok: true; candidateId: string }
+  | { ok: false; error: string };
 
 export type ConversationListItem = {
   id: string;
@@ -242,6 +249,121 @@ export async function createContactFromConversation(
       .eq("id", conv.contact_id);
   }
   return client;
+}
+
+/**
+ * Promote a chat-widget conversation into the hiring pipeline.
+ *
+ * Builds a candidates row from the conversation's contact + the full
+ * thread of visitor-side messages (concatenated into `notes`).  Links
+ * the contact's candidate_id so the conversation surfaces on the
+ * candidate detail page, and resolves the conversation thread so
+ * Inbox staff stop seeing it as actionable.
+ *
+ * Returns a discriminated result rather than redirecting — InboxClient
+ * surfaces the outcome inline (no full-page nav from the conversation
+ * detail panel).
+ */
+export async function promoteConversationToCandidate(
+  conversationId: string,
+): Promise<PromoteConversationResult> {
+  const sb = await createClient();
+
+  const { data: userResp } = await sb.auth.getUser();
+  const promoterEmail = userResp?.user?.email ?? null;
+
+  // Pull conversation + contact in one shot.
+  const { data: conv, error: convErr } = await sb
+    .from("conversations")
+    .select(
+      `id, subject, channel, contact_id,
+       contacts!contact_id (id, full_name, email, phone, company, candidate_id)`,
+    )
+    .eq("id", conversationId)
+    .single();
+  if (convErr) return { ok: false, error: `Couldn't load conversation: ${convErr.message}` };
+  if (!conv) return { ok: false, error: "Conversation not found." };
+
+  const contact = Array.isArray(conv.contacts) ? conv.contacts[0] : conv.contacts;
+  if (!contact) {
+    return { ok: false, error: "Conversation has no contact — cannot promote." };
+  }
+  if (contact.candidate_id) {
+    // Idempotent: contact is already linked to a candidate.
+    return { ok: true, candidateId: contact.candidate_id };
+  }
+
+  const fullName =
+    contact.full_name?.trim() ||
+    contact.email?.trim() ||
+    "Chat Visitor";
+
+  // Concatenate visitor-side message bodies into a single notes blob so
+  // the candidate detail page shows what the lead said in chat.
+  const { data: msgs } = await sb
+    .from("messages")
+    .select("sender_type, sender_name, body, created_at")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true });
+
+  const visitorMessages = (msgs ?? []).filter(
+    (m) => m.sender_type === "visitor",
+  );
+
+  const transcriptLines: string[] = [];
+  transcriptLines.push(`[Promoted from chat-widget conversation]`);
+  transcriptLines.push(`Conversation ID: ${conversationId}`);
+  if (conv.subject) transcriptLines.push(`Subject: ${conv.subject}`);
+  if (promoterEmail) transcriptLines.push(`Promoted by: ${promoterEmail}`);
+  transcriptLines.push(`Promoted at: ${new Date().toISOString()}`);
+  transcriptLines.push("");
+  if (visitorMessages.length > 0) {
+    transcriptLines.push("--- Visitor messages ---");
+    for (const m of visitorMessages) {
+      const ts = new Date(m.created_at).toISOString().replace("T", " ").slice(0, 16);
+      transcriptLines.push(`[${ts}] ${m.sender_name ?? "Visitor"}: ${m.body}`);
+    }
+  } else {
+    transcriptLines.push("(No visitor messages on record yet.)");
+  }
+
+  const { data: cand, error: candErr } = await sb
+    .from("candidates")
+    .insert({
+      full_name:    fullName,
+      email:        contact.email ?? null,
+      phone:        contact.phone ?? null,
+      source:       "promoted-from-chat",
+      status:       "applied" satisfies CandidateStatus,
+      criteria:     DEFAULT_CRITERIA,
+      score:        weightedScore(DEFAULT_CRITERIA),
+      notes:        transcriptLines.join("\n"),
+    })
+    .select("id")
+    .single();
+  if (candErr) return { ok: false, error: `Couldn't create candidate: ${candErr.message}` };
+
+  // Link contact → candidate so the conversation surfaces on the
+  // candidate's record (mirrors the form-intake path).
+  await sb
+    .from("contacts")
+    .update({ candidate_id: cand.id })
+    .eq("id", contact.id);
+
+  // Mark the thread resolved + record the assignee for audit.
+  await sb
+    .from("conversations")
+    .update({
+      status: "resolved",
+      assigned_to: promoterEmail ?? "agent",
+    })
+    .eq("id", conversationId);
+
+  revalidatePath("/inbox");
+  revalidatePath("/candidates");
+  revalidatePath("/applications");
+
+  return { ok: true, candidateId: cand.id };
 }
 
 export async function getInboxCounts() {

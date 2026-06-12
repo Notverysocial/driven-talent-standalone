@@ -52,10 +52,13 @@ export const en = {
     workflows: "Workflows",
     team: "Team Members",
     terminated: "Terminated / DNR",
+    access: "Access · Users",
+    integrations: "Integrations",
     bugReports: "Bug Reports",
 
     brandName: "Driven Talent",
     brandSub: "Operations · Dashboard",
+    account: "Account",
     signOut: "Sign out",
     signedOut: "Signed out",
     guest: "GUEST",
