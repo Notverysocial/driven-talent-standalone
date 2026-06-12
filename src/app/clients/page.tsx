@@ -94,11 +94,12 @@ export default async function ClientsPage() {
                     ? "var(--dt-danger)"
                     : "var(--dt-warm-700)";
                 return (
-                  <tr key={r.client.id}>
+                  <tr key={r.client.id} className="dt-row-link">
                     <td style={{ paddingLeft: 22 }}>
                       <Link
                         href={`/clients/${r.client.slug}`}
-                        className="dt-person-link"
+                        aria-label={`View ${r.client.name} details`}
+                        className="dt-person-link dt-row-link-anchor"
                         style={{ textDecoration: "none", color: "inherit" }}
                       >
                         <div
