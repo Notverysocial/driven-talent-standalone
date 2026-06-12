@@ -7,6 +7,7 @@ import type {
   CalendarEventKind,
 } from "@/lib/supabase/types";
 import type { ClientPick, EmployeePick } from "@/lib/calendar.server";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   createEvent,
   deleteEvent,
@@ -55,6 +56,7 @@ export function EventDialog({
   const [createdBy, setCreatedBy] = useState(event?.created_by ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   function onSave() {
     setError(null);
@@ -87,13 +89,19 @@ export function EventDialog({
 
   function onDelete() {
     if (mode !== "edit" || !event) return;
-    if (!confirm("Delete this event?")) return;
+    setDeleteOpen(true);
+  }
+
+  function confirmDelete() {
+    if (!event) return;
     startTransition(async () => {
       try {
         await deleteEvent(event.id);
+        setDeleteOpen(false);
         onClose();
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
+        setDeleteOpen(false);
       }
     });
   }
@@ -373,6 +381,17 @@ export function EventDialog({
           </button>
         </div>
       </div>
+      <ConfirmDialog
+        open={deleteOpen}
+        title="Delete this event?"
+        description="The event will be removed from the calendar."
+        confirmLabel="Delete event"
+        destructive
+        busy={pending}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={confirmDelete}
+        testId="calendar-event-delete-dialog"
+      />
     </div>
   );
 }

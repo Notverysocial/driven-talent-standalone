@@ -11,6 +11,7 @@ import {
   type EsignProvider as ProviderKey,
   type EsignatureRequest,
 } from "@/lib/team";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   cancelEsignatureRequest,
   markEsignatureSigned,
@@ -172,19 +173,11 @@ function RequestRow({
   isLast: boolean;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [signOpen, setSignOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
 
-  const onMarkSigned = () => {
-    if (!confirm("Mark this request as signed?")) return;
-    startTransition(async () => {
-      await markEsignatureSigned(request.id, employeeId);
-    });
-  };
-  const onCancel = () => {
-    if (!confirm("Cancel this request?")) return;
-    startTransition(async () => {
-      await cancelEsignatureRequest(request.id, employeeId);
-    });
-  };
+  const onMarkSigned = () => setSignOpen(true);
+  const onCancel = () => setCancelOpen(true);
 
   const isDone = request.status === "signed";
   const isCancelled = request.status === "cancelled";
@@ -252,6 +245,37 @@ function RequestRow({
           </>
         )}
       </div>
+      <ConfirmDialog
+        open={signOpen}
+        title="Mark this request as signed?"
+        description={`${request.document_title} → ${request.recipient_email}`}
+        confirmLabel="Mark signed"
+        busy={isPending}
+        onCancel={() => setSignOpen(false)}
+        onConfirm={() => {
+          startTransition(async () => {
+            await markEsignatureSigned(request.id, employeeId);
+            setSignOpen(false);
+          });
+        }}
+        testId={`esign-sign-dialog-${request.id}`}
+      />
+      <ConfirmDialog
+        open={cancelOpen}
+        title="Cancel this request?"
+        description={`${request.document_title} → ${request.recipient_email}`}
+        confirmLabel="Cancel request"
+        destructive
+        busy={isPending}
+        onCancel={() => setCancelOpen(false)}
+        onConfirm={() => {
+          startTransition(async () => {
+            await cancelEsignatureRequest(request.id, employeeId);
+            setCancelOpen(false);
+          });
+        }}
+        testId={`esign-cancel-dialog-${request.id}`}
+      />
     </div>
   );
 }

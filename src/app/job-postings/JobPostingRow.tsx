@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   JOB_POSTING_PLATFORMS,
   JOB_POSTING_STATUSES,
@@ -32,6 +33,7 @@ export function JobPostingRow({
 }) {
   const [pending, startTransition] = useTransition();
   const [count, setCount] = useState(posting.application_count);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const platform = JOB_POSTING_PLATFORMS.find((p) => p.id === posting.platform);
   const status = JOB_POSTING_STATUSES.find((s) => s.id === posting.status);
@@ -127,19 +129,31 @@ export function JobPostingRow({
           <button
             type="button"
             disabled={pending}
-            onClick={() => {
-              if (!confirm("Delete this posting? This cannot be undone.")) return;
-              startTransition(async () => {
-                await deleteJobPosting(posting.id);
-              });
-            }}
+            onClick={() => setConfirmOpen(true)}
             className="dt-btn"
             style={{ fontSize: 11.5, padding: "4px 10px" }}
             title="Delete posting"
+            data-testid={`job-posting-delete-${posting.id}`}
           >
             ×
           </button>
         </div>
+        <ConfirmDialog
+          open={confirmOpen}
+          title="Delete this posting?"
+          description="This cannot be undone."
+          confirmLabel="Delete posting"
+          destructive
+          busy={pending}
+          onCancel={() => setConfirmOpen(false)}
+          onConfirm={() => {
+            startTransition(async () => {
+              await deleteJobPosting(posting.id);
+              setConfirmOpen(false);
+            });
+          }}
+          testId={`job-posting-delete-dialog-${posting.id}`}
+        />
       </td>
     </tr>
   );

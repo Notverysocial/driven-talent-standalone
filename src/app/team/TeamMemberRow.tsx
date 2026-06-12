@@ -1,7 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   ROLE_LABEL,
   ROLE_TONE,
@@ -18,6 +19,8 @@ import {
 
 export function TeamMemberRow({ member }: { member: TeamMember }) {
   const [isPending, startTransition] = useTransition();
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const isActive = member.status === "active";
 
   const onRoleChange = (role: TeamMemberRole) => {
@@ -27,18 +30,17 @@ export function TeamMemberRow({ member }: { member: TeamMember }) {
   };
 
   const onToggleStatus = () => {
-    const next = isActive ? "inactive" : "active";
-    if (isActive && !confirm(`Mark ${member.full_name} as inactive?`)) return;
+    if (isActive) {
+      setDeactivateOpen(true);
+      return;
+    }
     startTransition(async () => {
-      await setTeamMemberStatus(member.id, next);
+      await setTeamMemberStatus(member.id, "active");
     });
   };
 
   const onDelete = () => {
-    if (!confirm(`Permanently delete ${member.full_name}? This cannot be undone.`)) return;
-    startTransition(async () => {
-      await deleteTeamMember(member.id);
-    });
+    setDeleteOpen(true);
   };
 
   const initials = member.initials ?? member.full_name.slice(0, 2).toUpperCase();
@@ -115,6 +117,37 @@ export function TeamMemberRow({ member }: { member: TeamMember }) {
             <span>Delete</span>
           </button>
         </div>
+        <ConfirmDialog
+          open={deactivateOpen}
+          title={`Mark ${member.full_name} as inactive?`}
+          description="They will lose access until reactivated."
+          confirmLabel="Deactivate"
+          busy={isPending}
+          onCancel={() => setDeactivateOpen(false)}
+          onConfirm={() => {
+            startTransition(async () => {
+              await setTeamMemberStatus(member.id, "inactive");
+              setDeactivateOpen(false);
+            });
+          }}
+          testId={`team-deactivate-dialog-${member.id}`}
+        />
+        <ConfirmDialog
+          open={deleteOpen}
+          title={`Permanently delete ${member.full_name}?`}
+          description="This cannot be undone."
+          confirmLabel="Delete member"
+          destructive
+          busy={isPending}
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            startTransition(async () => {
+              await deleteTeamMember(member.id);
+              setDeleteOpen(false);
+            });
+          }}
+          testId={`team-delete-dialog-${member.id}`}
+        />
       </td>
     </tr>
   );
