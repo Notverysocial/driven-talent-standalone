@@ -16,6 +16,10 @@
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+# saved Playwright login state (E2E_STORAGE_STATE) - never commit credentials
+auth.json
+*.storage-state.json
+/playwright/.auth/
 
 # next.js
 /.next/
