@@ -54,7 +54,16 @@ export function IntakeCard({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <Link
+          href={`/applications/${intake.id}`}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "block",
+            textDecoration: "none",
+            color: "inherit",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ fontWeight: 500, fontSize: 14 }}>
               {intake.full_name ?? "Unknown applicant"}
@@ -85,7 +94,7 @@ export function IntakeCard({
               {intake.cover_letter}
             </div>
           )}
-        </div>
+        </Link>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
           {intake.promoted_candidate_id ? (
