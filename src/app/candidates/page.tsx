@@ -7,6 +7,7 @@ import { CANDIDATE_STATUSES, scoreColor, tierLabel } from "@/lib/candidates";
 import { listCandidates } from "@/lib/candidates.server";
 import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { CandidateStageMenu } from "./CandidateStageMenu";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -95,6 +96,7 @@ export default async function CandidatesListPage() {
                     <th>Applied For</th>
                     <th>Source</th>
                     <th>Applied</th>
+                    <th style={{ textAlign: "center" }}>Move</th>
                     <th style={{ textAlign: "right", paddingRight: 22 }}>Score</th>
                   </tr>
                 </thead>
@@ -125,6 +127,12 @@ export default async function CandidatesListPage() {
                         </td>
                         <td className="tab-num" style={{ fontSize: 12 }}>
                           {fmtDate(c.applied_at)}
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <CandidateStageMenu
+                            candidateId={c.id}
+                            currentStatus={c.status}
+                          />
                         </td>
                         <td
                           className="tab-num"

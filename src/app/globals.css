@@ -1154,3 +1154,206 @@ select.dt-filter-input {
   border-color: var(--dt-black);
   color: var(--dt-black);
 }
+
+/* ====================================================================
+   MOBILE READABILITY PASS (Wave 3.4 — Stephanie/iPhone bump)
+   --------------------------------------------------------------------
+   At <=900px we systematically scale up tiny text. Many pages set
+   inline `style={{ fontSize: 10.5 }}` etc. via React, so we target
+   those values via attribute selectors and override at mobile width.
+   Desktop is untouched.
+
+   Targets (mobile):
+     - Body / paragraph defaults => 16px (was 13-14)
+     - Table cells => 15px (was 12-13)
+     - Eyebrow / label text => 12px floor (was 9-10.5)
+     - Inline 10/10.5/11/11.5/12/12.5/13 => bumped to 13-15px
+     - Form inputs => 16px (prevents iOS auto-zoom on focus)
+     - Touch targets => min 44px height on nav, buttons, chips
+   ==================================================================== */
+
+@media (max-width: 900px) {
+  html, body { font-size: 16px; }
+
+  /* Class-based sizes — bump from spec to readable floor */
+  .dt-table { font-size: 15px !important; }
+  .dt-table thead th { font-size: 11px !important; padding: 14px 12px !important; }
+  .dt-table tbody td { padding: 16px 12px !important; font-size: 15px; }
+
+  .dt-nav-section { font-size: 11px !important; letter-spacing: 0.32em; padding: 24px 8px 10px; }
+  .dt-nav-item {
+    font-size: 15px !important;
+    padding: 14px 12px !important;
+    min-height: 44px;
+    letter-spacing: 0.04em;
+  }
+  .dt-nav-item .ico { width: 18px; height: 18px; }
+  .dt-nav-foot .who { font-size: 14px !important; }
+  .dt-nav-foot .role { font-size: 10.5px !important; }
+  .dt-nav-foot .dt-logout {
+    font-size: 11.5px !important;
+    padding: 10px 12px !important;
+    min-height: 40px;
+  }
+
+  .dt-btn {
+    font-size: 12px !important;
+    padding: 12px 18px !important;
+    min-height: 44px;
+    letter-spacing: 0.14em;
+  }
+  .dt-chip {
+    font-size: 12px !important;
+    padding: 10px 14px !important;
+    min-height: 36px;
+  }
+  .dt-badge { font-size: 11px !important; padding: 6px 12px !important; }
+
+  .dt-card-head h3 { font-size: 15px !important; }
+  .dt-card-head .sub { font-size: 11.5px !important; }
+
+  .dt-topbar .crumb { font-size: 11px !important; letter-spacing: 0.28em; }
+
+  .dt-person .name { font-size: 15px !important; }
+  .dt-person .meta { font-size: 11px !important; }
+
+  .dt-filter-label { font-size: 11px !important; letter-spacing: 0.22em; }
+  .dt-filter-input {
+    font-size: 16px !important; /* iOS zoom prevention */
+    padding: 12px 14px !important;
+    min-height: 44px;
+  }
+
+  .dt-score .num { font-size: 12px !important; }
+  .dt-score .label { font-size: 11px !important; }
+
+  .tiny { font-size: 11px !important; letter-spacing: 0.22em; }
+
+  /* Form inputs everywhere — iOS zoom prevention + touch target */
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="search"],
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  textarea,
+  select {
+    font-size: 16px !important;
+    min-height: 44px;
+  }
+  textarea { min-height: 80px; }
+
+  /* Mobile-toggle hamburger — make it bigger / easier to tap */
+  .dt-mobile-toggle {
+    width: 44px !important;
+    height: 44px !important;
+    top: 12px;
+    left: 12px;
+  }
+
+  /* Calendar text */
+  .dt-cal-weekday { font-size: 11px !important; letter-spacing: 0.18em; }
+  .dt-cal-daynum { font-size: 13px !important; }
+  .dt-cal-chip { font-size: 12px !important; padding: 5px 6px 5px 5px !important; }
+  .dt-cal-chip-text { font-size: 12px !important; }
+
+  /* Attendance grid cells */
+  .dt-att-cell { width: 32px !important; height: 32px !important; font-size: 13px !important; }
+
+  /* Avatars text */
+  .dt-av { font-size: 12px !important; }
+
+  /* Login screen */
+  .dt-login-card { padding: 32px 22px; }
+  .dt-login-title { font-size: 15px !important; }
+  .dt-login-hint { font-size: 14px !important; }
+  .dt-login-form label span { font-size: 11.5px !important; letter-spacing: 0.16em; }
+  .dt-login-form input { font-size: 16px !important; min-height: 44px; padding: 12px 14px; }
+  .dt-login-error { font-size: 13px !important; padding: 10px 12px; }
+
+  /* Inline-style fontSize overrides — scales React inline styles up.
+     React renders `style={{fontSize: 10.5}}` as `style="font-size:10.5px"`
+     in the actual DOM. Selectors target the serialized form.
+     We bump everything below ~14 up: 9-9.5 -> 12, 10-10.5 -> 13,
+     11-11.5 -> 14, 12-12.5 -> 15, 13-13.5 -> 15. Larger values pass
+     through (already readable). */
+  .dt-main [style*="font-size:9px"],
+  .dt-main [style*="font-size:9.5px"],
+  .dt-main [style*="font-size: 9px"],
+  .dt-main [style*="font-size: 9.5px"] { font-size: 12px !important; }
+
+  .dt-main [style*="font-size:10px"],
+  .dt-main [style*="font-size:10.5px"],
+  .dt-main [style*="font-size: 10px"],
+  .dt-main [style*="font-size: 10.5px"] { font-size: 13px !important; }
+
+  .dt-main [style*="font-size:11px"],
+  .dt-main [style*="font-size:11.5px"],
+  .dt-main [style*="font-size: 11px"],
+  .dt-main [style*="font-size: 11.5px"] { font-size: 14px !important; }
+
+  .dt-main [style*="font-size:12px"],
+  .dt-main [style*="font-size:12.5px"],
+  .dt-main [style*="font-size: 12px"],
+  .dt-main [style*="font-size: 12.5px"] { font-size: 15px !important; }
+
+  .dt-main [style*="font-size:13px"],
+  .dt-main [style*="font-size:13.5px"],
+  .dt-main [style*="font-size: 13px"],
+  .dt-main [style*="font-size: 13.5px"] { font-size: 15px !important; }
+}
+
+/* Phone-specific (<=600) — slightly tighter padding but keep readable */
+@media (max-width: 600px) {
+  .dt-table { font-size: 14px !important; }
+  .dt-table thead th { font-size: 10.5px !important; padding: 12px 8px !important; }
+  .dt-table tbody td { padding: 14px 8px !important; }
+
+  .dt-topbar h1 { font-size: 24px !important; }
+  .dt-topbar { padding-bottom: 14px; margin-bottom: 18px; }
+}
+
+
+/* ---------- 2026-06-08 mobile font fix (round 2) ----------
+   The smoke-test caught that the 600px shrink block + un-overridden class
+   selectors still rendered <14px text. This block lives last so cascade
+   wins, and explicitly bumps the holdouts the QA found:
+   - .dt-btn was 9.5-10.5px
+   - .dt-table thead th was 10.5px (shrunk by the 600px block above)
+   - .dt-topbar .crumb was 8.5-12px
+   - .dt-cal-weekday was 9-11px
+   - nav anchors / spans shrunk below 14
+*/
+@media (max-width: 900px) {
+  /* Buttons */
+  .dt-btn { font-size: 14px !important; min-height: 44px; padding: 10px 14px !important; }
+  .dt-btn-sm { font-size: 13px !important; min-height: 40px; }
+
+  /* Table headers — bump from 10.5 → 13 */
+  .dt-table thead th { font-size: 13px !important; letter-spacing: 0.06em !important; }
+  .dt-table tbody td { font-size: 14px !important; }
+
+  /* Topbar breadcrumb + script word + title */
+  .dt-topbar .crumb { font-size: 13px !important; }
+  .dt-topbar .script { font-size: 22px !important; }
+  .dt-topbar h1 { font-size: 26px !important; }
+
+  /* Calendar weekday row */
+  .dt-cal-weekday { font-size: 12px !important; }
+  .dt-cal-daynum { font-size: 14px !important; }
+
+  /* Sidebar nav items */
+  .dt-nav a, .dt-nav-item, .dt-nav-section span { font-size: 15px !important; }
+  .dt-nav-section .label { font-size: 12px !important; }
+}
+
+/* Phone (<=600) — keep table cells tappable; don't shrink fonts */
+@media (max-width: 600px) {
+  .dt-table thead th { font-size: 13px !important; padding: 12px 8px !important; }
+  .dt-btn { font-size: 14px !important; }
+  .dt-topbar h1 { font-size: 24px !important; }
+}

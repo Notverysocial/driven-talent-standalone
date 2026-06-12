@@ -26,6 +26,14 @@ export type InboundCall = {
   converted_candidate_id: string | null;
   created_at: string;
   updated_at: string;
+  // RingCentral integration fields — populated by sync() / webhooks.
+  // Nullable on all CSV-imported rows; only the RingCentral path writes.
+  ringcentral_id?: string | null;
+  call_duration_seconds?: number | null;
+  recording_url?: string | null;
+  voicemail_transcription?: string | null;
+  call_direction?: string | null;
+  call_status?: string | null;
 };
 
 export const CALL_STATUSES: {

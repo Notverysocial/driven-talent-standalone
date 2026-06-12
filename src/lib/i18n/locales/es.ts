@@ -50,10 +50,13 @@ export const es: Dictionary = {
     workflows: "Flujos de trabajo",
     team: "Equipo interno",
     terminated: "Terminados / No recontratar",
+    access: "Acceso · Usuarios",
+    integrations: "Integraciones",
     bugReports: "Reportes de errores",
 
     brandName: "Driven Talent",
     brandSub: "Operaciones · Panel",
+    account: "Cuenta",
     signOut: "Cerrar sesión",
     signedOut: "Sesión cerrada",
     guest: "INVITADO",
