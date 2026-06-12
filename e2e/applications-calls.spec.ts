@@ -24,7 +24,19 @@ import { expect, test } from "@playwright/test";
 //
 // On the fix all four assertions hold.
 
+// These drill-ins read recruiting data from Supabase, so the index pages need
+// a writable, seeded backend. CI boots the app with placeholder credentials
+// (the index would 5xx), so skip unless E2E_BASE_URL points at a seeded Driven
+// Talent deployment. Same signal the Playwright config and the other e2e specs
+// use to decide whether to run against a real app.
+const REQUIRES_SEEDED_APP = !process.env.E2E_BASE_URL;
+
 test.describe("Applications · drill-in", () => {
+  test.skip(
+    REQUIRES_SEEDED_APP,
+    "Set E2E_BASE_URL to a seeded Driven Talent deployment to run this drill-in flow.",
+  );
+
   test("list page, row anchor, detail renders", async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(String(err)));
@@ -85,6 +97,11 @@ test.describe("Applications · drill-in", () => {
 });
 
 test.describe("Calls · drill-in", () => {
+  test.skip(
+    REQUIRES_SEEDED_APP,
+    "Set E2E_BASE_URL to a seeded Driven Talent deployment to run this drill-in flow.",
+  );
+
   test("list page, row anchor, detail renders", async ({ page }) => {
     const pageErrors: string[] = [];
     page.on("pageerror", (err) => pageErrors.push(String(err)));
