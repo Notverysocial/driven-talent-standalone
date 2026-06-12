@@ -35,13 +35,18 @@ export default async function BonusesPage({
   const view: View =
     sp.view === "recruiter" || sp.view === "referral" ? (sp.view as BonusKind) : "all";
 
-  const [bonuses, employees, clients, positions, candidates] = await Promise.all([
-    listBonuses(),
-    listEmployeesForPicker(),
-    listClientsForPicker(),
-    listPositionsForPicker(),
-    listCandidatesForPicker(),
+  // Degrade gracefully: a transient read failure should not 500 the whole
+  // page and block logging a new bonus. Fall back to empty data and surface a
+  // non-blocking notice instead of throwing.
+  const [loadedBonuses, employees, clients, positions, candidates] = await Promise.all([
+    listBonuses().catch(() => null),
+    listEmployeesForPicker().catch(() => []),
+    listClientsForPicker().catch(() => []),
+    listPositionsForPicker().catch(() => []),
+    listCandidatesForPicker().catch(() => []),
   ]);
+  const loadFailed = loadedBonuses === null;
+  const bonuses = loadedBonuses ?? [];
 
   const filtered = view === "all" ? bonuses : bonuses.filter((b) => b.kind === view);
 
@@ -66,6 +71,24 @@ export default async function BonusesPage({
   return (
     <Shell>
       <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
+
+      {loadFailed && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "var(--dt-warm-50, #fafafa)",
+            border: "1px solid var(--dt-warning, #e0a800)",
+            color: "var(--dt-black, #111)",
+            fontSize: 13,
+          }}
+        >
+          Couldn&apos;t load existing bonuses right now. You can still log a new
+          bonus below; the list will refresh once the connection recovers.
+        </div>
+      )}
 
       <div
         style={{
