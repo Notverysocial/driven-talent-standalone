@@ -34,6 +34,16 @@ async function seedPostingIfMissing(page: Page): Promise<void> {
 }
 
 test.describe("Job Postings — delete confirmation", () => {
+  // This test seeds and deletes a real posting through the live UI, so it needs
+  // a running, data-backed deployment. CI boots the app with placeholder
+  // Supabase credentials (no writable backend), so skip unless E2E_BASE_URL
+  // points at a seeded Driven Talent deployment. Same signal the Playwright
+  // config uses to decide whether to start its own dev server.
+  test.skip(
+    !process.env.E2E_BASE_URL,
+    "Set E2E_BASE_URL to a seeded Driven Talent deployment to run this UI seed/delete flow.",
+  );
+
   test("clicking row delete shows in-app dialog (not native confirm) and removes row", async ({
     page,
   }) => {
