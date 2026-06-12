@@ -40,6 +40,7 @@ export const es: Dictionary = {
     timecards: "Tarjetas de tiempo",
     payroll: "Nómina",
     invoices: "Facturas",
+    clients: "Clientes",
     bonuses: "Bonificaciones",
     expenses: "Gastos",
     pipeline: "Embudo de ventas",
