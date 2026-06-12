@@ -260,7 +260,7 @@ export function InboxClient({
         </div>
 
         {/* Conversation list */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
+        <div data-testid="inbox-conversation-list" style={{ flex: 1, overflowY: "auto" }}>
           {filtered.length === 0 && (
             <div style={{ padding: "32px 16px", textAlign: "center", color: "var(--dt-warm-500, #999)", fontSize: 13 }}>
               No conversations found.
@@ -272,6 +272,8 @@ export function InboxClient({
             return (
               <button
                 key={c.id}
+                data-testid="inbox-conversation"
+                data-conversation-id={c.id}
                 onClick={() => selectConversation(c.id)}
                 style={{
                   display: "block",
@@ -350,7 +352,11 @@ export function InboxClient({
 
       {/* Middle panel: Message thread */}
       {selected ? (
-        <div data-pane="thread" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div
+          data-pane="thread"
+          data-testid="inbox-thread-pane"
+          style={{ display: "flex", flexDirection: "column", minWidth: 0 }}
+        >
           {/* Thread header */}
           <div
             style={{
@@ -414,49 +420,86 @@ export function InboxClient({
           </div>
 
           {/* Messages */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
-            {messages.map((m) => {
-              const isAgent = m.sender_type === "agent";
-              const isBot = m.sender_type === "bot";
-              return (
-                <div
-                  key={m.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: isAgent ? "flex-end" : "flex-start",
-                  }}
-                >
+          <div
+            data-testid="inbox-messages"
+            style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}
+          >
+            {messages.length === 0 ? (
+              <div
+                data-testid="inbox-empty-thread"
+                style={{
+                  margin: "auto",
+                  textAlign: "center",
+                  color: "var(--dt-warm-500, #999)",
+                  fontSize: 13,
+                }}
+              >
+                No messages in this conversation yet.
+              </div>
+            ) : (
+              messages.map((m) => {
+                const isAgent = m.sender_type === "agent";
+                const isBot = m.sender_type === "bot";
+                return (
                   <div
+                    key={m.id}
+                    data-testid="inbox-message"
+                    data-sender-type={m.sender_type}
                     style={{
-                      maxWidth: "70%",
-                      padding: "8px 12px",
-                      borderRadius: isAgent ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
-                      background: isAgent
-                        ? "var(--dt-gold, #F5C518)"
-                        : isBot
-                        ? "var(--dt-warm-100, #f0f0f0)"
-                        : "var(--dt-warm-50, #fafafa)",
-                      border: isAgent ? "none" : "1px solid var(--dt-warm-100, #e5e5e5)",
-                      color: isAgent ? "#111" : "var(--dt-black, #111)",
+                      display: "flex",
+                      justifyContent: isAgent ? "flex-end" : "flex-start",
                     }}
                   >
-                    <div style={{ fontSize: 10, color: isAgent ? "#333" : "var(--dt-warm-500, #999)", marginBottom: 2, fontWeight: 500 }}>
-                      {m.sender_name || m.sender_type}
-                    </div>
-                    <div style={{ fontSize: 13, lineHeight: 1.5 }}>{m.body}</div>
-                    <div style={{ fontSize: 9.5, color: isAgent ? "#555" : "var(--dt-warm-400, #bbb)", marginTop: 4, textAlign: "right" }}>
-                      {new Date(m.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    <div
+                      style={{
+                        maxWidth: "70%",
+                        padding: "8px 12px",
+                        borderRadius: isAgent ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+                        background: isAgent
+                          ? "var(--dt-gold, #F5C518)"
+                          : isBot
+                          ? "var(--dt-warm-100, #f0f0f0)"
+                          : "var(--dt-warm-100, #f0f0f0)",
+                        border: isAgent ? "none" : "1px solid var(--dt-warm-200, #ddd)",
+                        color: isAgent ? "#111" : "var(--dt-black, #111)",
+                      }}
+                    >
+                      <div style={{ fontSize: 10, color: isAgent ? "#333" : "var(--dt-warm-600, #666)", marginBottom: 2, fontWeight: 600 }}>
+                        {m.sender_name || m.sender_type}
+                      </div>
+                      <div style={{ fontSize: 13, lineHeight: 1.5 }}>{m.body}</div>
+                      <div style={{ fontSize: 9.5, color: isAgent ? "#555" : "var(--dt-warm-500, #999)", marginTop: 4, textAlign: "right" }}>
+                        {new Date(m.created_at).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
+            {messages.length > 0 && !messages.some((m) => m.sender_type === "agent") && (
+              <div
+                data-testid="inbox-awaiting-reply"
+                style={{
+                  alignSelf: "center",
+                  marginTop: 12,
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  background: "var(--dt-warm-50, #fafafa)",
+                  border: "1px dashed var(--dt-warm-200, #ddd)",
+                  fontSize: 11,
+                  color: "var(--dt-warm-600, #666)",
+                }}
+              >
+                No replies yet — send your first reply below.
+              </div>
+            )}
             <div ref={bottomRef} />
           </div>
 
           {/* Compose */}
           <form
             onSubmit={handleSend}
+            data-testid="inbox-reply-composer"
             style={{
               borderTop: "1px solid var(--dt-warm-100, #e5e5e5)",
               display: "flex",
