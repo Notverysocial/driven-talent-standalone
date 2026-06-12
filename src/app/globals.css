@@ -383,6 +383,17 @@ button { font-family: inherit; }
 .dt-table tbody tr:last-child td { border-bottom: none; }
 .dt-table tbody tr:hover td { background: #FBF6EC; }
 
+/* CLICKABLE ROW: a single anchor stretches to cover the whole row so a
+   click anywhere navigates to the detail page, while keeping a real,
+   focusable link for keyboard and screen-reader users. */
+.dt-table tbody tr.dt-row-link { position: relative; }
+.dt-table tbody tr.dt-row-link:hover td { cursor: pointer; }
+.dt-row-link-anchor::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
 .dt-av {
   width: 32px; height: 32px;
   border-radius: 50%;
