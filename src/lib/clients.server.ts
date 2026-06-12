@@ -256,10 +256,15 @@ export async function getClientMarginDetail(
   const client = clientRow as Client;
 
   const [invoicesRes, assignmentsRes] = await Promise.all([
+    // Query the base `invoices` table, not the `invoices_with_overdue` view.
+    // That view is `select i.*` and was last rebuilt in migration 0001, so it
+    // never picked up the `department` column added to `invoices` in 0006 —
+    // selecting `department` from the view errors and 500s the drill-in.
+    // We fetch `due_at` instead and derive `is_overdue` in JS below.
     supabase
-      .from("invoices_with_overdue")
+      .from("invoices")
       .select(
-        "id, number, status, issued_at, period_start, period_end, department, total, subtotal, is_overdue",
+        "id, number, status, issued_at, period_start, period_end, department, total, subtotal, due_at",
       )
       .eq("client_id", client.id)
       .order("issued_at", { ascending: false }),
@@ -286,9 +291,12 @@ export async function getClientMarginDetail(
     department: string | null;
     total: number;
     subtotal: number;
-    is_overdue: boolean;
+    due_at: string;
   };
   const invoiceRows = (invoicesRes.data ?? []) as InvRow[];
+  // Matches the dropped view's logic: an invoice is overdue when it's been
+  // sent and its due date is in the past.
+  const todayISO = new Date().toISOString().slice(0, 10);
   const invoiceIds = invoiceRows.map((r) => r.id);
 
   let lineItems: Pick<InvoiceLineItem, "invoice_id" | "amount" | "employee_cost">[] = [];
@@ -330,7 +338,7 @@ export async function getClientMarginDetail(
       gross,
       marginPct: revenue > 0 ? (gross / revenue) * 100 : null,
       total: Number(inv.total ?? 0),
-      is_overdue: inv.is_overdue,
+      is_overdue: inv.status === "sent" && inv.due_at < todayISO,
     };
   });
 

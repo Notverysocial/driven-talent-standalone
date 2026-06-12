@@ -42,6 +42,7 @@ export const en = {
     timecards: "Timecards",
     payroll: "Payroll",
     invoices: "Invoices",
+    clients: "Clients",
     bonuses: "Bonuses",
     expenses: "Expenses",
     pipeline: "Sales Pipeline",
