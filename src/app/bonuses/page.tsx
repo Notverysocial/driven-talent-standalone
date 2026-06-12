@@ -20,7 +20,8 @@ import {
   type BonusKind,
   type BonusStatus,
 } from "@/lib/bonuses";
-import { createBonus, markBonusPaid, setBonusStatus } from "./actions";
+import { markBonusPaid, setBonusStatus } from "./actions";
+import { BonusForm } from "./BonusForm";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 type View = "all" | BonusKind;
@@ -34,13 +35,18 @@ export default async function BonusesPage({
   const view: View =
     sp.view === "recruiter" || sp.view === "referral" ? (sp.view as BonusKind) : "all";
 
-  const [bonuses, employees, clients, positions, candidates] = await Promise.all([
-    listBonuses(),
-    listEmployeesForPicker(),
-    listClientsForPicker(),
-    listPositionsForPicker(),
-    listCandidatesForPicker(),
+  // Degrade gracefully: a transient read failure should not 500 the whole
+  // page and block logging a new bonus. Fall back to empty data and surface a
+  // non-blocking notice instead of throwing.
+  const [loadedBonuses, employees, clients, positions, candidates] = await Promise.all([
+    listBonuses().catch(() => null),
+    listEmployeesForPicker().catch(() => []),
+    listClientsForPicker().catch(() => []),
+    listPositionsForPicker().catch(() => []),
+    listCandidatesForPicker().catch(() => []),
   ]);
+  const loadFailed = loadedBonuses === null;
+  const bonuses = loadedBonuses ?? [];
 
   const filtered = view === "all" ? bonuses : bonuses.filter((b) => b.kind === view);
 
@@ -65,6 +71,24 @@ export default async function BonusesPage({
   return (
     <Shell>
       <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
+
+      {loadFailed && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: "10px 14px",
+            borderRadius: 8,
+            background: "var(--dt-warm-50, #fafafa)",
+            border: "1px solid var(--dt-warning, #e0a800)",
+            color: "var(--dt-black, #111)",
+            fontSize: 13,
+          }}
+        >
+          Couldn&apos;t load existing bonuses right now. You can still log a new
+          bonus below; the list will refresh once the connection recovers.
+        </div>
+      )}
 
       <div
         style={{
@@ -168,128 +192,12 @@ export default async function BonusesPage({
               <div className="sub">Recruiter or referral</div>
             </div>
           </div>
-          <form
-            action={createBonus}
-            style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 12 }}
-          >
-            <Field label="Kind">
-              <select name="kind" required defaultValue="recruiter" className="dt-filter-input">
-                <option value="recruiter">Recruiter</option>
-                <option value="referral">Referral</option>
-              </select>
-            </Field>
-
-            <Field label="Amount ($)">
-              <input
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-                placeholder="250.00"
-                className="dt-filter-input"
-              />
-            </Field>
-
-            <Field label="Earned date">
-              <input
-                name="earned_date"
-                type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
-                className="dt-filter-input"
-              />
-            </Field>
-
-            <Field label="Recruiter name (recruiter bonus)">
-              <input
-                name="recruiter_name"
-                type="text"
-                placeholder="Leangel · Estefany · …"
-                className="dt-filter-input"
-              />
-            </Field>
-
-            <Field label="Referring employee (referral bonus)">
-              <select name="referrer_employee_id" defaultValue="" className="dt-filter-input">
-                <option value="">—</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>{e.full_name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <div
-              style={{
-                marginTop: 4,
-                paddingTop: 12,
-                borderTop: "1px solid var(--dt-warm-100)",
-                fontSize: 10.5,
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                color: "var(--dt-warm-500)",
-              }}
-            >
-              About the hire
-            </div>
-
-            <Field label="Placed employee">
-              <select name="employee_id" defaultValue="" className="dt-filter-input">
-                <option value="">—</option>
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>{e.full_name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="…or candidate (pre-hire)">
-              <select name="candidate_id" defaultValue="" className="dt-filter-input">
-                <option value="">—</option>
-                {candidates.map((c) => (
-                  <option key={c.id} value={c.id}>{c.full_name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="…or just a name">
-              <input
-                name="subject_name"
-                type="text"
-                placeholder="Name (if no employee / candidate record yet)"
-                className="dt-filter-input"
-              />
-            </Field>
-
-            <Field label="Position (optional)">
-              <select name="position_id" defaultValue="" className="dt-filter-input">
-                <option value="">—</option>
-                {positions.map((p) => (
-                  <option key={p.id} value={p.id}>{p.role_title}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Client (optional)">
-              <select name="client_id" defaultValue="" className="dt-filter-input">
-                <option value="">—</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </Field>
-
-            <Field label="Notes">
-              <textarea
-                name="notes"
-                rows={2}
-                className="dt-filter-input"
-                style={{ resize: "vertical", minHeight: 50 }}
-              />
-            </Field>
-
-            <button type="submit" className="dt-btn dt-btn-primary" style={{ marginTop: 4 }}>
-              <span>Log Bonus</span>
-            </button>
-          </form>
+          <BonusForm
+            employees={employees.map((e) => ({ id: e.id, label: e.full_name }))}
+            candidates={candidates.map((c) => ({ id: c.id, label: c.full_name }))}
+            positions={positions.map((p) => ({ id: p.id, label: p.role_title }))}
+            clients={clients.map((c) => ({ id: c.id, label: c.name }))}
+          />
         </aside>
       </div>
     </Shell>
@@ -484,15 +392,6 @@ function MarkPaidForm({ id }: { id: string }) {
         <span>Mark Paid</span>
       </button>
     </form>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="dt-filter">
-      <span className="dt-filter-label">{label}</span>
-      {children}
-    </label>
   );
 }
 
