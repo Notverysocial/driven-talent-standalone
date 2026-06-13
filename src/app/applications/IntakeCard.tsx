@@ -45,6 +45,12 @@ export function IntakeCard({
   const label =
     INTAKE_STATUSES.find((s) => s.id === intake.status)?.label ?? intake.status;
   const payloadEntries = Object.entries(intake.intake_payload ?? {});
+  // Yellow NEW badge for any intake created within the last 24 hours,
+  // regardless of status (per ticket 86e1vw2bm).
+  const isRecent = Boolean(
+    intake.created_at &&
+      Date.now() - new Date(intake.created_at).getTime() < 24 * 60 * 60 * 1000,
+  );
 
   return (
     <div
@@ -64,11 +70,28 @@ export function IntakeCard({
             color: "inherit",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 500, fontSize: 14 }}>
               {intake.full_name ?? "Unknown applicant"}
             </div>
             <Badge tone={tone}>{label}</Badge>
+            {isRecent && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  color: "#0a0a0a",
+                  background: "#F5C518",
+                  padding: "2px 7px",
+                  borderRadius: 3,
+                  textTransform: "uppercase",
+                }}
+                title="Submitted within the last 24 hours"
+              >
+                NEW
+              </span>
+            )}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             {intake.position_of_interest ?? "No position specified"} ·{" "}

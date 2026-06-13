@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Sidebar, type SidebarViewer } from "./Sidebar";
 import { AUTH_ENABLED, getCurrentUser } from "@/lib/auth.server";
+import { countRecentNewApplications } from "@/lib/recruiting.server";
 
 export async function Shell({ children }: { children: ReactNode }) {
   const me = await getCurrentUser();
@@ -12,9 +13,16 @@ export async function Shell({ children }: { children: ReactNode }) {
         initials: initialsFor(me.profile.full_name ?? me.email ?? "DT"),
       }
     : null;
+  // Sidebar badge: number of "new" application intakes from the last 24h.
+  // Safe to call without a signed-in viewer; helper returns 0 on any error.
+  const newApplicationsCount = viewer ? await countRecentNewApplications() : 0;
   return (
     <div className="dt-screen">
-      <Sidebar viewer={viewer} authEnabled={AUTH_ENABLED} />
+      <Sidebar
+        viewer={viewer}
+        authEnabled={AUTH_ENABLED}
+        newApplicationsCount={newApplicationsCount}
+      />
       <div className="dt-main">{children}</div>
     </div>
   );

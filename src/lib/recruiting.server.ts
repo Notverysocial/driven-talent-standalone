@@ -97,6 +97,25 @@ export async function listApplicationIntakes(): Promise<ApplicationIntake[]> {
   return (data ?? []) as ApplicationIntake[];
 }
 
+// Count of "new" status intakes created within the last 24 hours.
+// Used by the Sidebar to show "Applications (N new)".
+// Returns 0 on error so a transient DB blip never breaks navigation.
+export async function countRecentNewApplications(): Promise<number> {
+  try {
+    const sb = await createClient();
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { count, error } = await sb
+      .from("application_intakes")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "new")
+      .gte("created_at", since);
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
 export async function getApplicationIntake(
   id: string,
 ): Promise<ApplicationIntake | null> {

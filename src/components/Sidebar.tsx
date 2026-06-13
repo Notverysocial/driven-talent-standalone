@@ -88,11 +88,15 @@ function roleAtLeast(role: AppRole | undefined, minimum: AppRole | undefined): b
 export function Sidebar({
   viewer,
   authEnabled = true,
+  newApplicationsCount = 0,
 }: {
   viewer: SidebarViewer | null;
   // When false, the global AUTH_ENABLED flag is off — hide the Sign out
   // button so the user is never sent to /login.
   authEnabled?: boolean;
+  // Number of application intakes with status "new" from the last 24h.
+  // Rendered as "Applications (N new)" inline on the nav row.
+  newApplicationsCount?: number;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -183,7 +187,26 @@ export function Sidebar({
               <span className="ico">
                 <NavIcon name={entry.icon} />
               </span>
-              <span>{t(`nav.${entry.labelKey}`)}</span>
+              <span>
+                {t(`nav.${entry.labelKey}`)}
+                {entry.id === "applications" && newApplicationsCount > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      color: "#0a0a0a",
+                      background: "#F5C518",
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    {newApplicationsCount} new
+                  </span>
+                )}
+              </span>
             </Link>
           )
         )}
