@@ -152,6 +152,7 @@ export const en = {
     greetingPrefix: "Good ",
     timecards: "Timecards",
     pipeline: "Pipeline",
+    buildDirect: "+ Build Direct",
     viewRoster: "+ View Roster",
 
     kpiActiveEmployees: "Active Employees",
