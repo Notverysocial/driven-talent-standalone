@@ -115,7 +115,7 @@ export default function BuildDirect() {
         style={{
           position: "fixed",
           bottom: 24,
-          right: 96,
+          right: 24,
           zIndex: 9000,
           display: "inline-flex",
           alignItems: "center",

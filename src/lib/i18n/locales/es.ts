@@ -146,7 +146,6 @@ export const es: Dictionary = {
     greetingPrefix: "Buenos ",
     timecards: "Tarjetas de tiempo",
     pipeline: "Embudo",
-    buildDirect: "+ Build Direct",
     viewRoster: "+ Ver lista",
 
     kpiActiveEmployees: "Empleados activos",

@@ -13,7 +13,6 @@ import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
 import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
 import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
 import { SiteTrafficCard } from "@/components/dashboard/SiteTrafficCard";
-import BuildDirectButton from "@/components/BuildDirectButton";
 import { getServerDictionary, getLocale } from "@/lib/i18n/server";
 
 function fmt$(n: number, locale: string) {
@@ -60,7 +59,6 @@ export default async function DashboardPage() {
             <Link href="/candidates" className="dt-btn">
               {dd.pipeline}
             </Link>
-            <BuildDirectButton label={dd.buildDirect} />
             <Link href="/roster" className="dt-btn dt-btn-gold">
               <span>{dd.viewRoster}</span>
             </Link>

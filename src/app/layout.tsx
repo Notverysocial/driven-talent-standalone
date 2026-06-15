@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { getLocale } from "@/lib/i18n/server";
 import { LocaleProvider } from "@/lib/i18n/client";
+import BuildDirect from "@/components/BuildDirect";
 
 const jost = Jost({
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default async function RootLayout({
     <html lang={locale} className={jost.variable}>
       <body>
         <LocaleProvider locale={locale}>{children}</LocaleProvider>
+        <BuildDirect />
         <Analytics />
       </body>
     </html>
