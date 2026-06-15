@@ -85,17 +85,22 @@ export async function listAssignmentsForTimecards(): Promise<AssignmentOption[]>
     client_id: string;
     position: string;
     hourly_rate: number;
-    employees: { full_name: string };
-    clients:   { name: string };
+    employees: { full_name: string } | null;
+    clients:   { name: string } | null;
   };
 
-  return ((data as unknown as Row[]) ?? []).map((r) => ({
-    id: r.id,
-    employee_id: r.employee_id,
-    employee_name: r.employees.full_name,
-    client_id: r.client_id,
-    client_name: r.clients.name,
-    position: r.position,
-    hourly_rate: r.hourly_rate,
-  }));
+  // Skip rows whose employee/client join came back null (orphaned FK or
+  // RLS-hidden parent row). Accessing .full_name / .name on those would throw
+  // during the server render and 500 the whole page.
+  return ((data as unknown as Row[]) ?? [])
+    .filter((r) => r.employees && r.clients)
+    .map((r) => ({
+      id: r.id,
+      employee_id: r.employee_id,
+      employee_name: r.employees!.full_name,
+      client_id: r.client_id,
+      client_name: r.clients!.name,
+      position: r.position,
+      hourly_rate: r.hourly_rate,
+    }));
 }
