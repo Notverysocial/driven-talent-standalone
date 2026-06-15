@@ -4,13 +4,19 @@ import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import { listTimecards } from "@/lib/timecards.server";
+import type { ResolvedTimecard } from "@/lib/timecards.server";
 import { TIMECARD_STATUSES, fmtWeekRange } from "@/lib/timecards";
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { getIntegration } from "@/lib/integrations/db";
 
 export default async function TimecardsListPage() {
-  const all = await listTimecards();
+  // Skip timecards whose employee or client join came back null (orphaned FK
+  // or RLS-hidden parent). Accessing .full_name / .name on those throws during
+  // render. Filtering here keeps the KPI counts and the tables consistent.
+  const all = (await listTimecards()).filter(
+    (t): t is ResolvedTimecard => Boolean(t.employees && t.clients),
+  );
 
   // uAttend connection status — shown as a thin banner so payroll
   // sees at a glance whether punches are flowing.  We swallow errors

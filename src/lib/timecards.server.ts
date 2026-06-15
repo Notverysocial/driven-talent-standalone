@@ -8,7 +8,17 @@ import type {
   TimecardStatus,
 } from "./supabase/types";
 
+// Raw shape as returned by Supabase: the embedded employee/client joins can
+// resolve to null when the parent row was deleted (orphaned FK) or is hidden
+// by RLS. Callers must guard before accessing .full_name / .name.
 export type TimecardWithJoins = Timecard & {
+  employees: Employee | null;
+  clients: Client | null;
+};
+
+// A timecard whose joins are both present. Helpers that filter/guard out the
+// orphaned cases return this so consumers can render the happy path directly.
+export type ResolvedTimecard = Timecard & {
   employees: Employee;
   clients: Client;
 };
@@ -31,7 +41,7 @@ export async function listTimecards(filters?: {
 }
 
 export async function getTimecard(id: string): Promise<
-  | (TimecardWithJoins & { assignment: EmployeeAssignment | null })
+  | (ResolvedTimecard & { assignment: EmployeeAssignment | null })
   | null
 > {
   const supabase = await createClient();
@@ -42,7 +52,12 @@ export async function getTimecard(id: string): Promise<
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const tc = data as unknown as TimecardWithJoins;
+  const raw = data as unknown as TimecardWithJoins;
+  // Orphaned FK or RLS-hidden employee/client: treat the timecard as not
+  // found rather than throwing during the detail-page render. Mirrors the
+  // skip behavior of the list helpers (precedent 06483c8).
+  if (!raw.employees || !raw.clients) return null;
+  const tc = raw as ResolvedTimecard;
 
   const { data: assignment } = await supabase
     .from("employee_assignments")

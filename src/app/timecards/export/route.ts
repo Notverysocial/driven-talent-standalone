@@ -44,8 +44,10 @@ export async function GET(request: Request) {
     const gross = Number(t.reg_hours) * Number(t.hourly_rate) + Number(t.ot_hours) * Number(t.hourly_rate) * 1.5;
     lines.push(
       [
-        csvEscape(t.employees.full_name),
-        csvEscape(t.clients.name),
+        // Orphaned FK / RLS-hidden parent: emit a placeholder rather than
+        // throwing mid-stream, so payroll still sees the timecard exists.
+        csvEscape(t.employees?.full_name ?? "<deleted>"),
+        csvEscape(t.clients?.name ?? "<deleted>"),
         csvEscape(fmtWeekRange(t.week_start)),
         csvEscape(t.status),
         csvEscape(Number(t.reg_hours).toFixed(2)),
