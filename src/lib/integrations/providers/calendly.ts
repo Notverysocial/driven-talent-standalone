@@ -1,0 +1,715 @@
+// Calendly integration — OAuth 2.0 + scheduled-event webhook + embedded
+// public-site InlineWidget on /contact.
+//
+// Flow:
+//
+//   1. OAuth     — admin clicks Connect on /integrations → /calendly card.
+//                  We bounce through Calendly's authorize URL, exchange the
+//                  returned code for an access + refresh token, store both
+//                  on the integrations row via storeOAuthTokens(). We also
+//                  pull `/users/me` to discover the connected user's
+//                  scheduling_url and stash it in integration.config so the
+//                  public site can render the InlineWidget against it.
+//   2. Webhook   — Calendly POSTs scheduled-event lifecycle events to
+//                  /api/integrations/webhook/calendly. We verify the
+//                  HMAC-SHA256 Calendly-Webhook-Signature header against
+//                  integrations.webhook_secret (the per-subscription
+//                  signing_key returned by /webhook_subscriptions) and on
+//                  `invitee.created` look up a candidate or contact by
+//                  invitee email — if found, log the booking in /inbox; if
+//                  not, create a fresh contact + conversation. On
+//                  `invitee.canceled` we surface the cancellation in the
+//                  same conversation.
+//   3. sync()    — best-effort 24h delta pull of scheduled events to catch
+//                  any webhook drops. Same email-keyed reconciliation as
+//                  the webhook path.
+//
+// Embedded widget — the PUBLIC site (driven-talent-site) renders Calendly's
+// InlineWidget on /contact pointing at integration.config.scheduling_url.
+// The widget itself is plain markup:
+//
+//   <div className="calendly-inline-widget" data-url={url} style={{minWidth:320, height:700}} />
+//   <Script src="https://assets.calendly.com/assets/external/widget.js" strategy="afterInteractive" />
+//
+// The booking happens on Calendly's side and we receive a webhook.
+//
+// Auth mode is "oauth" in types.ts.  CALENDLY_CLIENT_ID + CALENDLY_CLIENT_SECRET
+// must be set in Vercel (see dashboard setup checklist in the report).
+
+import "server-only";
+import { createHmac, timingSafeEqual } from "node:crypto";
+import { createServiceClient } from "@/lib/supabase/server";
+import {
+  getIntegration,
+  storeOAuthTokens,
+  updateIntegrationStatus,
+  clearIntegrationTokens,
+} from "../db";
+import type { IntegrationClient, IntegrationRow } from "../types";
+
+const PROVIDER = "calendly" as const;
+
+const AUTHORIZE_URL = "https://auth.calendly.com/oauth/authorize";
+const TOKEN_URL = "https://auth.calendly.com/oauth/token";
+const API_BASE = "https://api.calendly.com";
+
+const REDIRECT_URI =
+  "https://driven-talent-standalone.vercel.app/api/integrations/oauth/calendly/callback";
+const WEBHOOK_URL =
+  "https://driven-talent-standalone.vercel.app/api/integrations/webhook/calendly";
+
+class CalendlyClient implements IntegrationClient {
+  // ---------------- OAuth ----------------
+  getOAuthAuthorizeUrl(state: string): string {
+    const clientId = process.env.CALENDLY_CLIENT_ID ?? "";
+    const params = new URLSearchParams({
+      client_id: clientId,
+      response_type: "code",
+      redirect_uri: REDIRECT_URI,
+      state,
+    });
+    return `${AUTHORIZE_URL}?${params.toString()}`;
+  }
+
+  async exchangeOAuthCode(
+    code: string,
+    _state: string,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const clientId = process.env.CALENDLY_CLIENT_ID;
+    const clientSecret = process.env.CALENDLY_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return { ok: false, error: "missing_client_credentials" };
+    }
+
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: REDIRECT_URI,
+    });
+
+    try {
+      const res = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body,
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return {
+          ok: false,
+          error: `calendly_token_${res.status}: ${text.slice(0, 200)}`,
+        };
+      }
+
+      const json = (await res.json()) as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+        token_type?: string;
+        owner?: string;
+        organization?: string;
+      };
+
+      if (!json.access_token) {
+        return { ok: false, error: "no_access_token_in_response" };
+      }
+
+      const me = await fetchCurrentUser(json.access_token).catch(() => null);
+
+      await storeOAuthTokens(PROVIDER, {
+        access_token: json.access_token,
+        refresh_token: json.refresh_token ?? null,
+        expires_in_seconds: json.expires_in ?? null,
+        account_email: me?.email ?? null,
+        config_patch: {
+          webhook_url: WEBHOOK_URL,
+          redirect_uri: REDIRECT_URI,
+          scheduling_url: me?.scheduling_url ?? null,
+          user_uri: json.owner ?? me?.uri ?? null,
+          organization_uri:
+            json.organization ?? me?.current_organization ?? null,
+        },
+      });
+
+      // Best-effort: create the webhook subscription if we don't already
+      // have one. Calendly returns a `signing_key` once per subscription;
+      // we stash it on integrations.webhook_secret. Failures non-fatal.
+      await ensureWebhookSubscription(
+        json.access_token,
+        json.organization ?? me?.current_organization ?? null,
+        json.owner ?? me?.uri ?? null,
+      ).catch(() => null);
+
+      return { ok: true };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "exchange_threw",
+      };
+    }
+  }
+
+  async refreshToken(
+    integration: IntegrationRow,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const refresh = integration.refresh_token;
+    if (!refresh) return { ok: false, error: "no_refresh_token" };
+    const clientId = process.env.CALENDLY_CLIENT_ID;
+    const clientSecret = process.env.CALENDLY_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return { ok: false, error: "missing_client_credentials" };
+    }
+
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refresh,
+    });
+
+    try {
+      const res = await fetch(TOKEN_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        await updateIntegrationStatus(PROVIDER, {
+          status: "expired",
+          last_error: `calendly_refresh_${res.status}: ${text.slice(0, 200)}`,
+        });
+        return { ok: false, error: `refresh_${res.status}` };
+      }
+      const json = (await res.json()) as {
+        access_token?: string;
+        refresh_token?: string;
+        expires_in?: number;
+      };
+      if (!json.access_token) {
+        return { ok: false, error: "no_access_token_in_refresh" };
+      }
+      await storeOAuthTokens(PROVIDER, {
+        access_token: json.access_token,
+        refresh_token: json.refresh_token ?? refresh,
+        expires_in_seconds: json.expires_in ?? null,
+      });
+      return { ok: true };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "refresh_threw",
+      };
+    }
+  }
+
+  // ---------------- sync ----------------
+  async sync(
+    integration: IntegrationRow,
+  ): Promise<{ ok: boolean; count?: number; error?: string }> {
+    const token = await this.ensureFreshToken(integration);
+    if (!token.ok || !token.access_token) {
+      return { ok: false, count: 0, error: token.error ?? "no_token" };
+    }
+
+    const cfg = (integration.config ?? {}) as Record<string, unknown>;
+    let userUri = typeof cfg.user_uri === "string" ? cfg.user_uri : null;
+    if (!userUri) {
+      const me = await fetchCurrentUser(token.access_token).catch(() => null);
+      if (me?.uri) {
+        userUri = me.uri;
+        await updateIntegrationStatus(PROVIDER, {
+          config: {
+            ...cfg,
+            webhook_url: WEBHOOK_URL,
+            user_uri: me.uri,
+            organization_uri: me.current_organization,
+            scheduling_url: me.scheduling_url ?? cfg.scheduling_url ?? null,
+          },
+        });
+      } else {
+        return { ok: false, count: 0, error: "missing_user_uri" };
+      }
+    }
+
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      const url =
+        `${API_BASE}/scheduled_events?` +
+        new URLSearchParams({
+          user: userUri,
+          min_start_time: since,
+          count: "100",
+        }).toString();
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+          Accept: "application/json",
+        },
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        return {
+          ok: false,
+          count: 0,
+          error: `calendly_list_${res.status}: ${text.slice(0, 200)}`,
+        };
+      }
+
+      const json = (await res.json()) as {
+        collection?: Array<{
+          uri?: string;
+          name?: string;
+          status?: string;
+          start_time?: string;
+          end_time?: string;
+        }>;
+      };
+      const events = json.collection ?? [];
+      let reconciled = 0;
+
+      const sb = createServiceClient();
+      for (const evt of events) {
+        if (!evt.uri) continue;
+        const invRes = await fetch(`${evt.uri}/invitees?count=10`, {
+          headers: {
+            Authorization: `Bearer ${token.access_token}`,
+            Accept: "application/json",
+          },
+        });
+        if (!invRes.ok) continue;
+        const invJson = (await invRes.json()) as {
+          collection?: Array<{
+            email?: string;
+            name?: string;
+            status?: string;
+          }>;
+        };
+        const invitees = invJson.collection ?? [];
+        for (const inv of invitees) {
+          if (!inv.email) continue;
+          const logged = await reconcileBooking(sb, {
+            email: inv.email,
+            inviteeName: inv.name ?? inv.email,
+            eventName: evt.name ?? "Calendly booking",
+            startTime: evt.start_time ?? null,
+            endTime: evt.end_time ?? null,
+            status: inv.status ?? evt.status ?? "active",
+            source: "sync",
+          });
+          if (logged) reconciled++;
+        }
+      }
+
+      await updateIntegrationStatus(PROVIDER, {
+        config: {
+          ...(integration.config ?? {}),
+          webhook_url: WEBHOOK_URL,
+          last_sync_window_start: since,
+          last_sync_events_seen: events.length,
+        },
+      });
+
+      return { ok: true, count: reconciled };
+    } catch (e) {
+      return {
+        ok: false,
+        count: 0,
+        error: e instanceof Error ? e.message : "calendly_sync_threw",
+      };
+    }
+  }
+
+  // ---------------- webhook ----------------
+  async handleWebhook(
+    request: Request,
+  ): Promise<{ ok: boolean; error?: string }> {
+    const raw = await request.text();
+
+    const integration = await getIntegration(PROVIDER);
+    const secret = integration?.webhook_secret ?? null;
+
+    if (secret) {
+      const sigHeader =
+        request.headers.get("calendly-webhook-signature") ??
+        request.headers.get("Calendly-Webhook-Signature") ??
+        "";
+      if (!sigHeader) {
+        return { ok: false, error: "missing_signature" };
+      }
+      const parts: Record<string, string> = {};
+      for (const p of sigHeader.split(",")) {
+        const eq = p.indexOf("=");
+        if (eq === -1) continue;
+        const k = p.slice(0, eq).trim();
+        const v = p.slice(eq + 1).trim();
+        if (k) parts[k] = v;
+      }
+      const t = parts["t"];
+      const v1 = parts["v1"];
+      if (!t || !v1) {
+        return { ok: false, error: "malformed_signature" };
+      }
+      const expected = createHmac("sha256", secret)
+        .update(`${t}.${raw}`)
+        .digest("hex");
+      const a = Buffer.from(expected, "hex");
+      const b = Buffer.from(v1, "hex");
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        return { ok: false, error: "invalid_signature" };
+      }
+    }
+
+    let payload: Record<string, unknown>;
+    try {
+      payload = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return { ok: false, error: "invalid_json" };
+    }
+
+    const event = str(payload.event);
+    const data = (payload.payload ?? {}) as Record<string, unknown>;
+    if (!event) return { ok: true };
+
+    const inviteeEmail = str(data.email);
+    const inviteeName = str(data.name) ?? inviteeEmail ?? "Unknown invitee";
+    const status = str(data.status);
+    const scheduledEvent = (data.scheduled_event ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const eventName = str(scheduledEvent.name) ?? "Calendly booking";
+    const startTime = str(scheduledEvent.start_time);
+    const endTime = str(scheduledEvent.end_time);
+    const cancelReason = str(
+      (data.cancellation as Record<string, unknown> | undefined)?.reason,
+    );
+
+    if (!inviteeEmail) return { ok: true };
+
+    const sb = createServiceClient();
+
+    if (event === "invitee.created") {
+      await reconcileBooking(sb, {
+        email: inviteeEmail,
+        inviteeName,
+        eventName,
+        startTime,
+        endTime,
+        status: status ?? "active",
+        source: "webhook",
+      });
+    } else if (event === "invitee.canceled") {
+      await reconcileCancellation(sb, {
+        email: inviteeEmail,
+        inviteeName,
+        eventName,
+        startTime,
+        reason: cancelReason,
+      });
+    }
+
+    return { ok: true };
+  }
+
+  // ---------------- disconnect ----------------
+  async disconnect(
+    _integration: IntegrationRow,
+  ): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await clearIntegrationTokens(PROVIDER);
+      const row = await getIntegration(PROVIDER);
+      if (row) {
+        const cfg = (row.config ?? {}) as Record<string, unknown>;
+        await updateIntegrationStatus(PROVIDER, {
+          config: {
+            ...cfg,
+            webhook_url: WEBHOOK_URL,
+            redirect_uri: REDIRECT_URI,
+            user_uri: null,
+            organization_uri: null,
+          },
+        });
+      }
+      return { ok: true };
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "disconnect_failed",
+      };
+    }
+  }
+
+  // ---------------- helpers ----------------
+  async ensureFreshToken(
+    integration: IntegrationRow,
+  ): Promise<{ ok: boolean; access_token?: string; error?: string }> {
+    const now = Date.now();
+    const exp = integration.token_expires_at
+      ? new Date(integration.token_expires_at).getTime()
+      : null;
+    const needsRefresh =
+      !integration.access_token || (exp !== null && exp - now < 60 * 1000);
+
+    if (!needsRefresh && integration.access_token) {
+      return { ok: true, access_token: integration.access_token };
+    }
+
+    const r = await this.refreshToken(integration);
+    if (!r.ok) return { ok: false, error: r.error };
+    const fresh = await getIntegration(PROVIDER);
+    if (!fresh?.access_token) {
+      return { ok: false, error: "post_refresh_no_token" };
+    }
+    return { ok: true, access_token: fresh.access_token };
+  }
+}
+
+// ---------------- module-private helpers ----------------
+
+function str(v: unknown): string | null {
+  if (typeof v === "string" && v.trim()) return v.trim();
+  return null;
+}
+
+async function fetchCurrentUser(
+  accessToken: string,
+): Promise<{
+  uri: string;
+  email: string;
+  scheduling_url: string;
+  current_organization: string;
+} | null> {
+  try {
+    const res = await fetch(`${API_BASE}/users/me`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      resource?: {
+        uri?: string;
+        email?: string;
+        scheduling_url?: string;
+        current_organization?: string;
+      };
+    };
+    const r = json.resource;
+    if (!r?.uri || !r.email) return null;
+    return {
+      uri: r.uri,
+      email: r.email,
+      scheduling_url: r.scheduling_url ?? "",
+      current_organization: r.current_organization ?? "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function ensureWebhookSubscription(
+  accessToken: string,
+  organization: string | null,
+  user: string | null,
+): Promise<void> {
+  if (!organization) return;
+  const listUrl =
+    `${API_BASE}/webhook_subscriptions?` +
+    new URLSearchParams({
+      organization,
+      scope: "organization",
+      count: "100",
+    }).toString();
+  const existing = await fetch(listUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      Accept: "application/json",
+    },
+  }).catch(() => null);
+  if (existing && existing.ok) {
+    const json = (await existing.json()) as {
+      collection?: Array<{ callback_url?: string; uri?: string }>;
+    };
+    const already = (json.collection ?? []).some(
+      (s) => s.callback_url === WEBHOOK_URL,
+    );
+    if (already) return;
+  }
+
+  const body: Record<string, unknown> = {
+    url: WEBHOOK_URL,
+    events: ["invitee.created", "invitee.canceled"],
+    organization,
+    scope: "organization",
+  };
+  if (user) body.user = user;
+
+  const res = await fetch(`${API_BASE}/webhook_subscriptions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return;
+  const json = (await res.json()) as {
+    resource?: { signing_key?: string; uri?: string };
+  };
+  const signingKey = json.resource?.signing_key;
+  if (signingKey) {
+    await updateIntegrationStatus(PROVIDER, {
+      webhook_secret: signingKey,
+    });
+  }
+}
+
+async function reconcileBooking(
+  sb: ReturnType<typeof createServiceClient>,
+  args: {
+    email: string;
+    inviteeName: string;
+    eventName: string;
+    startTime: string | null;
+    endTime: string | null;
+    status: string;
+    source: "webhook" | "sync";
+  },
+): Promise<boolean> {
+  const { data: candidate } = await sb
+    .from("candidates")
+    .select("id, full_name, email, status")
+    .eq("email", args.email)
+    .maybeSingle();
+
+  let contactId: string | null = null;
+  if (!candidate) {
+    const { data: contact } = await sb
+      .from("contacts")
+      .select("id")
+      .eq("email", args.email)
+      .maybeSingle();
+    if (contact) {
+      contactId = contact.id as string;
+    } else {
+      const { data: created } = await sb
+        .from("contacts")
+        .insert({
+          full_name: args.inviteeName,
+          email: args.email,
+          phone: null,
+          type: "lead",
+          source: "Calendly",
+          notes: `Booked via Calendly: ${args.eventName}`,
+        })
+        .select("id")
+        .single();
+      contactId = (created?.id as string | undefined) ?? null;
+    }
+  }
+
+  const subject = `Meeting Scheduled: ${args.eventName}`;
+  const startStr = args.startTime
+    ? new Date(args.startTime).toUTCString()
+    : "TBD";
+  const body =
+    `${args.inviteeName} booked "${args.eventName}" via Calendly.\n` +
+    `Start: ${startStr}` +
+    (args.endTime ? `\nEnd: ${new Date(args.endTime).toUTCString()}` : "") +
+    (candidate ? `\nMatched candidate: ${candidate.full_name}` : "") +
+    `\nStatus: ${args.status}` +
+    `\nSource: ${args.source}`;
+
+  let convoQuery = sb
+    .from("conversations")
+    .select("id")
+    .eq("subject", subject)
+    .limit(1);
+  if (candidate) {
+    convoQuery = convoQuery.eq("candidate_id", candidate.id);
+  } else if (contactId) {
+    convoQuery = convoQuery.eq("contact_id", contactId);
+  }
+  const { data: existingConvo } = await convoQuery.maybeSingle();
+
+  let convoId: string | null = (existingConvo?.id as string | undefined) ?? null;
+  if (!convoId) {
+    const insertBody: Record<string, unknown> = {
+      subject,
+      status: "open",
+      channel: "application",
+    };
+    if (candidate) insertBody.candidate_id = candidate.id;
+    if (contactId) insertBody.contact_id = contactId;
+    const { data: created } = await sb
+      .from("conversations")
+      .insert(insertBody)
+      .select("id")
+      .single();
+    convoId = (created?.id as string | undefined) ?? null;
+  }
+
+  if (!convoId) return false;
+
+  await sb.from("messages").insert({
+    conversation_id: convoId,
+    sender_type: "system",
+    sender_name: "Calendly",
+    body,
+    read: false,
+  });
+
+  return true;
+}
+
+async function reconcileCancellation(
+  sb: ReturnType<typeof createServiceClient>,
+  args: {
+    email: string;
+    inviteeName: string;
+    eventName: string;
+    startTime: string | null;
+    reason: string | null;
+  },
+): Promise<void> {
+  const subject = `Meeting Scheduled: ${args.eventName}`;
+  const { data: convo } = await sb
+    .from("conversations")
+    .select("id")
+    .eq("subject", subject)
+    .limit(1)
+    .maybeSingle();
+  if (!convo) return;
+  await sb.from("messages").insert({
+    conversation_id: convo.id,
+    sender_type: "system",
+    sender_name: "Calendly",
+    body:
+      `${args.inviteeName} CANCELED "${args.eventName}".` +
+      (args.reason ? `\nReason: ${args.reason}` : "") +
+      (args.startTime
+        ? `\nOriginally scheduled: ${new Date(args.startTime).toUTCString()}`
+        : ""),
+    read: false,
+  });
+}
+
+export const calendlyClient = new CalendlyClient();
+
+export { CalendlyClient, REDIRECT_URI, WEBHOOK_URL };

@@ -12,6 +12,10 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # next.js
 /.next/
@@ -37,9 +41,14 @@ yarn-error.log*
 # vercel
 .vercel
 
+# sentry
+.sentryclirc
+.env.sentry-build-plugin
+
 # claude code
 .claude/
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+test-results/

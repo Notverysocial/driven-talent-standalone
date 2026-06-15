@@ -113,6 +113,8 @@ export type Candidate = {
   promoted_employee_id: string | null;
   client_id: string | null;
   recruiter: string | null;
+  pandadoc_document_id: string | null;
+  pandadoc_document_status: string | null;
   created_at: string;
   updated_at: string;
 };

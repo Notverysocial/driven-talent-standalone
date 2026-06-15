@@ -1,7 +1,8 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { PayrollPeriodStatus } from "@/lib/supabase/types";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   auditPeriod,
   generateInvoicesForPeriod,
@@ -16,6 +17,8 @@ export function PeriodActions({
   status: PayrollPeriodStatus;
 }) {
   const [isPending, startTransition] = useTransition();
+  const [generateOpen, setGenerateOpen] = useState<string | null>(null);
+  const [regenOpen, setRegenOpen] = useState<string | null>(null);
 
   return (
     <>
@@ -69,15 +72,7 @@ export function PeriodActions({
               "Who is generating these invoices? (for audit trail)",
               "Roxanna",
             ) ?? "";
-            if (
-              !confirm(
-                "Generate one invoice per (client × department) from approved timecards? Each employee gets a Reg + OT line at independent bill rates (per SOP).",
-              )
-            )
-              return;
-            startTransition(async () => {
-              await generateInvoicesForPeriod(periodId, who || undefined);
-            });
+            setGenerateOpen(who);
           }}
         >
           <span>{isPending ? "Generating…" : "Generate Invoices + Close"}</span>
@@ -93,15 +88,7 @@ export function PeriodActions({
               "Roxanna",
             ) ?? "";
             if (!who) return;
-            if (
-              !confirm(
-                "Re-run will create ADDITIONAL invoices for this period. Continue?",
-              )
-            )
-              return;
-            startTransition(async () => {
-              await generateInvoicesForPeriod(periodId, who);
-            });
+            setRegenOpen(who);
           }}
         >
           Re-generate Invoices
@@ -120,6 +107,39 @@ export function PeriodActions({
           Re-Audit
         </button>
       )}
+      <ConfirmDialog
+        open={generateOpen !== null}
+        title="Generate invoices for this period?"
+        description="One invoice per (client × department) from approved timecards. Each employee gets a Reg + OT line at independent bill rates (per SOP)."
+        confirmLabel="Generate + Close"
+        busy={isPending}
+        onCancel={() => setGenerateOpen(null)}
+        onConfirm={() => {
+          const who = generateOpen ?? "";
+          startTransition(async () => {
+            await generateInvoicesForPeriod(periodId, who || undefined);
+            setGenerateOpen(null);
+          });
+        }}
+        testId="payroll-generate-dialog"
+      />
+      <ConfirmDialog
+        open={regenOpen !== null}
+        title="Re-generate invoices?"
+        description="Re-run will create ADDITIONAL invoices for this period."
+        confirmLabel="Re-generate"
+        destructive
+        busy={isPending}
+        onCancel={() => setRegenOpen(null)}
+        onConfirm={() => {
+          const who = regenOpen ?? "";
+          startTransition(async () => {
+            await generateInvoicesForPeriod(periodId, who);
+            setRegenOpen(null);
+          });
+        }}
+        testId="payroll-regen-dialog"
+      />
     </>
   );
 }

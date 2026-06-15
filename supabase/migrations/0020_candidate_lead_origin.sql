@@ -1,0 +1,4 @@
+-- (intentionally empty) — placeholder for future candidate lead-origin
+-- tracking. Current implementation reuses existing columns
+-- (application_intakes.promoted_candidate_id, contacts.candidate_id,
+-- candidates.source, candidates.notes) so no schema change is needed.

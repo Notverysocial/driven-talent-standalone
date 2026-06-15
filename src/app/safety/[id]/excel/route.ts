@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import ExcelJS from "exceljs";
 import { getIncidentDetail, logIncidentEvent } from "@/lib/incidents.server";
 import {
   INCIDENT_SEVERITY_LABEL,
@@ -7,14 +8,7 @@ import {
   fmtDate,
 } from "@/lib/hr";
 
-function csvEscape(s: string | number | null | undefined): string {
-  if (s === null || s === undefined) return "";
-  const str = String(s);
-  if (str.includes(",") || str.includes("\"") || str.includes("\n")) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
+export const runtime = "nodejs";
 
 export async function GET(
   _request: Request,
@@ -61,30 +55,43 @@ export async function GET(
     ["Follow-up", detail.follow_up],
   ];
 
-  const lines = ["Field,Value"];
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Driven Talent";
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet("Incident");
+
+  sheet.columns = [
+    { header: "Field", key: "field", width: 28 },
+    { header: "Value", key: "value", width: 80 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+
   for (const [k, v] of rows) {
-    lines.push(`${csvEscape(k)},${csvEscape(v)}`);
+    sheet.addRow({ field: k, value: v ?? "" });
   }
-  const body = lines.join("\n") + "\n";
+
+  const buf = await workbook.xlsx.writeBuffer();
+
   const safeName =
     detail.employee.full_name.toLowerCase().replace(/\s+/g, "-") || "incident";
-  const filename = `incident-${safeName}-${detail.incident_date}.csv`;
+  const filename = `incident-${safeName}-${detail.incident_date}.xlsx`;
 
   // Best-effort audit log — don't block the download if it fails.
   try {
     await logIncidentEvent({
       incidentId: id,
       eventType: "export_excel",
-      summary: "Case exported to Excel (CSV)",
+      summary: "Case exported to Excel",
     });
   } catch {
     // swallow
   }
 
-  return new NextResponse(body, {
+  return new NextResponse(buf as unknown as BodyInit, {
     status: 200,
     headers: {
-      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Type":
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });

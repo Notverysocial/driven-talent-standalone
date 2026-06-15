@@ -136,6 +136,7 @@ export default async function LegalDocsPage({
                   <th>Issuer · Jurisdiction</th>
                   <th>Effective</th>
                   <th>Expiry</th>
+                  <th>File</th>
                   <th style={{ paddingRight: 22 }}>Status</th>
                 </tr>
               </thead>
@@ -179,6 +180,31 @@ export default async function LegalDocsPage({
                         </div>
                       )}
                     </td>
+                    <td style={{ fontSize: 12 }}>
+                      {(() => {
+                        const url = (d.file_path && /^https?:\/\//.test(d.file_path))
+                          ? d.file_path
+                          : d.external_url ?? null;
+                        if (!url) return <span className="muted">—</span>;
+                        return (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="dt-btn dt-btn-ghost"
+                            style={{
+                              padding: "2px 10px",
+                              fontSize: 10,
+                              letterSpacing: "0.14em",
+                              textDecoration: "none",
+                              display: "inline-block",
+                            }}
+                          >
+                            <span>View ↗</span>
+                          </a>
+                        );
+                      })()}
+                    </td>
                     <td style={{ paddingRight: 22 }}>
                       <Badge tone={LEGAL_STATUS_TONE[d.derivedStatus]}>
                         {LEGAL_STATUS_LABEL[d.derivedStatus]}
@@ -216,7 +242,7 @@ export default async function LegalDocsPage({
                 {decorated.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       style={{
                         textAlign: "center",
                         padding: "48px 22px",
@@ -242,6 +268,7 @@ export default async function LegalDocsPage({
           </div>
           <form
             action={createLegalDocument}
+            encType="multipart/form-data"
             style={{ padding: "18px 22px", display: "flex", flexDirection: "column", gap: 12 }}
           >
             <Field label="Title">
@@ -281,12 +308,42 @@ export default async function LegalDocsPage({
             <Field label="Reminder window (days before expiry)">
               <input name="reminder_days_before" type="number" defaultValue={30} min={0} className="dt-filter-input" />
             </Field>
-            <Field label="External URL (Drive / DocuSign / …)">
+            <Field label="Upload document (PDF, image, DOCX, TXT — max 25 MB)">
+              <input
+                name="file"
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/gif,image/webp,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,text/plain"
+                className="dt-filter-input"
+                style={{ padding: 6, fontSize: 12 }}
+              />
+            </Field>
+            <Field label="External URL (Drive / DocuSign / …) — optional">
               <input name="external_url" type="url" className="dt-filter-input" placeholder="https://…" />
             </Field>
-            <Field label="Storage path (if uploaded to Supabase)">
-              <input name="file_path" type="text" className="dt-filter-input" placeholder="legal/2026/handbook.pdf" />
-            </Field>
+            <details style={{ marginTop: -4 }}>
+              <summary
+                style={{
+                  fontSize: 10.5,
+                  letterSpacing: "0.14em",
+                  textTransform: "uppercase",
+                  color: "var(--dt-warm-500)",
+                  cursor: "pointer",
+                  padding: "4px 0",
+                }}
+              >
+                Advanced: paste storage URL instead
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <Field label="Storage path / URL">
+                  <input
+                    name="file_path"
+                    type="text"
+                    className="dt-filter-input"
+                    placeholder="https://… or legal/2026/handbook.pdf"
+                  />
+                </Field>
+              </div>
+            </details>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Client (optional)">
                 <select name="client_id" className="dt-filter-input" defaultValue="">

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
@@ -13,14 +14,43 @@ export function IntakeCard({
   intake: ApplicationIntake;
   createdLabel: string;
 }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [feedback, setFeedback] = useState<
+    | { kind: "ok"; message: string }
+    | { kind: "err"; message: string }
+    | null
+  >(null);
+
+  function handlePromote() {
+    setFeedback(null);
+    startTransition(async () => {
+      const result = await promoteIntakeToCandidate(intake.id);
+      if (result.ok) {
+        setFeedback({
+          kind: "ok",
+          message: "Promoted to pipeline. Opening candidate…",
+        });
+        // Brief delay so the banner is visible before navigating.
+        setTimeout(() => router.push(`/candidates/${result.candidateId}`), 600);
+      } else {
+        setFeedback({ kind: "err", message: result.error });
+      }
+    });
+  }
 
   const tone =
     INTAKE_STATUSES.find((s) => s.id === intake.status)?.tone ?? "warm";
   const label =
     INTAKE_STATUSES.find((s) => s.id === intake.status)?.label ?? intake.status;
   const payloadEntries = Object.entries(intake.intake_payload ?? {});
+  // Yellow NEW badge for any intake created within the last 24 hours,
+  // regardless of status (per ticket 86e1vw2bm).
+  const isRecent = Boolean(
+    intake.created_at &&
+      Date.now() - new Date(intake.created_at).getTime() < 24 * 60 * 60 * 1000,
+  );
 
   return (
     <div
@@ -30,12 +60,38 @@ export function IntakeCard({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Link
+          href={`/applications/${intake.id}`}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            display: "block",
+            textDecoration: "none",
+            color: "inherit",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <div style={{ fontWeight: 500, fontSize: 14 }}>
               {intake.full_name ?? "Unknown applicant"}
             </div>
             <Badge tone={tone}>{label}</Badge>
+            {isRecent && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: "0.08em",
+                  color: "#0a0a0a",
+                  background: "#F5C518",
+                  padding: "2px 7px",
+                  borderRadius: 3,
+                  textTransform: "uppercase",
+                }}
+                title="Submitted within the last 24 hours"
+              >
+                NEW
+              </span>
+            )}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             {intake.position_of_interest ?? "No position specified"} ·{" "}
@@ -61,7 +117,7 @@ export function IntakeCard({
               {intake.cover_letter}
             </div>
           )}
-        </div>
+        </Link>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
           {intake.promoted_candidate_id ? (
@@ -76,11 +132,11 @@ export function IntakeCard({
             <button
               type="button"
               disabled={pending}
-              onClick={() => startTransition(async () => { await promoteIntakeToCandidate(intake.id); })}
+              onClick={handlePromote}
               className="dt-btn dt-btn-gold"
               style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center" }}
             >
-              <span>→ Promote to Pipeline</span>
+              <span>{pending ? "Promoting…" : "→ Promote to Pipeline"}</span>
             </button>
           )}
 
@@ -117,6 +173,28 @@ export function IntakeCard({
           )}
         </div>
       </div>
+
+      {feedback && (
+        <div
+          role={feedback.kind === "err" ? "alert" : undefined}
+          style={{
+            marginTop: 10,
+            padding: "8px 10px",
+            borderRadius: 6,
+            fontSize: 12,
+            background:
+              feedback.kind === "ok"
+                ? "rgba(16, 185, 129, 0.08)"
+                : "rgba(220, 38, 38, 0.08)",
+            color:
+              feedback.kind === "ok"
+                ? "var(--dt-success)"
+                : "var(--dt-danger)",
+          }}
+        >
+          {feedback.message}
+        </div>
+      )}
 
       <button
         type="button"

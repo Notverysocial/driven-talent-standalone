@@ -12,6 +12,7 @@ import {
 } from "@/lib/timecards";
 import { TimecardGrid } from "./TimecardGrid";
 import { StatusActions } from "./StatusActions";
+import { PunchHistory } from "./PunchHistory";
 
 export default async function TimecardEditorPage({
   params,
@@ -145,6 +146,9 @@ export default async function TimecardEditorPage({
           </div>
         </div>
       </div>
+
+      {/* uAttend punch history for this week (read-only) */}
+      <PunchHistory employeeId={tc.employees.id} weekStart={tc.week_start} />
 
       {tc.status === "approved" && tc.approved_by && (
         <div

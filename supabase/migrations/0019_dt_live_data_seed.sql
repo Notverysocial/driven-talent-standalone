@@ -1,0 +1,37 @@
+-- Driven Talent — DO NOT RETURN seed from DT-LIVE-DATA-2026-06-08.xlsx
+-- Run AFTER 0018_dt_live_data_columns.sql (which creates do_not_return).
+-- Loaded as part of the 2026-06-08 live-data migration.
+
+insert into do_not_return (full_name, phone, last_company, reason, severity, date_logged, reported_by) values
+  ('Anthony Cortez', null, 'FASHION NOVA', 'he in the past year has worked here and in that time, he was involved in a physical altercation/ fight. Anthony is no longer allowed to work for FNL', 'High', null, null),
+  ('Joshua Lurssen', null, 'FASHION NOVA', 'I was asked to cancel his assignment since he was not performing at their expectations and he was wondering around last night.', 'High', null, null),
+  ('Bryan Ferman', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Darthaniel Salone', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Keane Sauls', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Dakota Ackerman', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Zoei Collier', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Gloria Rangel', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Christian Perez', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Jessica Cruz', null, 'FASHION NOVA', null, 'High', null, null),
+  ('Trayvon Wince', null, 'FASHION NOVA', 'Nos quedó mal 3 veces en su primer dia de trabajo en FNL', 'High', null, null),
+  ('Armando Mendoza', null, 'FASHION NOVA', 'Fue tomado a trabajar', 'High', null, null),
+  ('William Vivas', null, 'FASHION NOVA', 'Perdida de tiempo en el work', 'High', null, null),
+  ('Santiago Cruz', null, 'FASHION NOVA', 'INJURED', 'High', null, null),
+  ('Maria Garcia', null, 'FASHION NOVA', 'Es fumadora y toma mucho alcohol y otras sustancias ilicitas', 'High', null, null),
+  ('Bruce Patino', null, 'FASHION NOVA', 'Mad', 'High', null, null),
+  ('DAMON COOK', '(909) 361-4629', 'VIDEO INTERVIEW FOR GENERAL LABOR', 'Mad', 'High', null, null),
+  ('Alina Xochitiotzi', '(909) 573-4882', 'FFF', 'misbehavior in the warehouse, working under the influence of alcohol', 'High', null, null),
+  ('Elvin Urbina', '(840) 243-7117', 'FFF', 'Abandono de trabajo', 'High', '2026-02-05'::date, 'Estefany'),
+  ('Nicolás Castillo', '(714) 873-0942', 'FFF', 'Abandono de trabajo', 'High', '2026-03-30'::date, 'Estefany'),
+  ('Jhon Vanegas', '9095884504.0', 'FFF', 'Abandono de trabajo', 'High', '2026-04-02'::date, 'Estefany'),
+  ('Ruben Arangure', '(951) 758-9533', 'FFF', 'Abandono de trabajo', 'High', '2026-04-08'::date, 'Estefany'),
+  ('Alfredo Palma', '(909) 972-4355', 'FFF', 'Abandono de trabajo', 'High', null, 'Estefany'),
+  ('Ignacio Liborio', '(626) 498-4991', 'FFF', 'Robo de tiempo', 'High', '2026-05-07'::date, 'Estefany'),
+  ('Lucia Orejuela', '(626) 680-9817', 'FFF', 'Robo de tiempo', 'High', '2026-05-07'::date, 'Estefany'),
+  ('Siclali Mendoza', '(909) 450-7375', 'FFF', 'Abandono de trabajo', 'High', null, 'Estefany'),
+  ('Juan Ortega', '(562) 351-7894', 'FFF', 'Abandono de trabajo', 'High', '2026-05-26'::date, 'Estefany'),
+  ('Noelia Juarez', '(840) 238-2857', 'FFF', 'Abandono de trabajo', 'High', '2026-05-28'::date, 'Estefany'),
+  ('Anthony Perez', '(626) 654-7959', 'FFF', 'Abandono de trabajo', 'High', '2026-05-29'::date, 'Estefany'),
+  ('Ivan Paniagua', '(909) 997-6372', 'FFF', 'Mala experiencia / Limitada', 'High', null, 'Rodrigo'),
+  ('Michael Leon', '(909) 832-8799', 'FFF', 'Mala experiencia / Limitada', 'High', null, 'Rodrigo'),
+  ('Fernanda Gomez', '(626) 497-8026', 'ONSITE', 'Sin experience / le hice preguntas acerca de ella y me colgo sin darme explicacion', 'Medium', '2026-06-04'::date, 'Leangel');

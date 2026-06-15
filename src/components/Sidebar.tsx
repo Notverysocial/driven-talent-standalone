@@ -55,7 +55,8 @@ const NAV: NavEntry[] = [
   { sectionKey: "payrollFinance" },
   { id: "timecards",  labelKey: "timecards", icon: "clock", href: "/timecards" },
   { id: "payroll",    labelKey: "payroll",   icon: "chart", href: "/payroll" },
-  { id: "invoices",   labelKey: "invoices",  icon: "file",  href: "/invoices" },
+  { id: "invoices",   labelKey: "invoices",  icon: "file",     href: "/invoices" },
+  { id: "clients",    labelKey: "clients",   icon: "building", href: "/clients" },
   { id: "bonuses",    labelKey: "bonuses",   icon: "star",  href: "/bonuses" },
   { id: "expenses",   labelKey: "expenses",  icon: "file",  href: "/expenses" },
 
@@ -72,6 +73,8 @@ const NAV: NavEntry[] = [
   { sectionKey: "admin", minRole: "admin" },
   { id: "team",        labelKey: "team",       icon: "users", href: "/team",            minRole: "admin" },
   { id: "terminated",  labelKey: "terminated", icon: "users", href: "/team/terminated", minRole: "admin" },
+  { id: "access",      labelKey: "access",     icon: "users", href: "/access",          minRole: "admin" },
+  { id: "integrations",labelKey: "integrations",icon: "chart", href: "/integrations",    minRole: "admin" },
   { id: "bug-reports", labelKey: "bugReports", icon: "file",  href: "/bug-reports",     minRole: "admin" },
 ];
 
@@ -85,11 +88,15 @@ function roleAtLeast(role: AppRole | undefined, minimum: AppRole | undefined): b
 export function Sidebar({
   viewer,
   authEnabled = true,
+  newApplicationsCount = 0,
 }: {
   viewer: SidebarViewer | null;
   // When false, the global AUTH_ENABLED flag is off — hide the Sign out
   // button so the user is never sent to /login.
   authEnabled?: boolean;
+  // Number of application intakes with status "new" from the last 24h.
+  // Rendered as "Applications (N new)" inline on the nav row.
+  newApplicationsCount?: number;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -180,7 +187,26 @@ export function Sidebar({
               <span className="ico">
                 <NavIcon name={entry.icon} />
               </span>
-              <span>{t(`nav.${entry.labelKey}`)}</span>
+              <span>
+                {t(`nav.${entry.labelKey}`)}
+                {entry.id === "applications" && newApplicationsCount > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      color: "#0a0a0a",
+                      background: "#F5C518",
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    {newApplicationsCount} new
+                  </span>
+                )}
+              </span>
             </Link>
           )
         )}
@@ -192,6 +218,21 @@ export function Sidebar({
             </div>
             <div className="role">{roleLabel}</div>
             <LanguageSwitcher />
+            {viewer ? (
+              <Link
+                href="/account"
+                className="dt-logout"
+                onClick={close}
+                style={{
+                  display: "block",
+                  textAlign: "center",
+                  textDecoration: "none",
+                  marginTop: 8,
+                }}
+              >
+                {t("nav.account")}
+              </Link>
+            ) : null}
             {viewer && authEnabled ? (
               <form action={logout}>
                 <button type="submit" className="dt-logout">

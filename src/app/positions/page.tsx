@@ -104,11 +104,35 @@ export default async function PositionsPage() {
                 <tbody>
                   {rows.map((p) => {
                     const remaining = Math.max(0, (p.headcount ?? 1) - (p.filled_count ?? 0));
+                    const inIndeedFeed = s.id === "open";
                     return (
                       <tr key={p.id}>
                         <td style={{ paddingLeft: 22 }}>
                           <Link href={`/positions/${p.id}`} className="dt-person-link">
-                            <div className="name" style={{ fontWeight: 500 }}>{p.role_title}</div>
+                            <div
+                              className="name"
+                              style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}
+                            >
+                              <span>{p.role_title}</span>
+                              {inIndeedFeed && (
+                                <span
+                                  title="Auto-published to the Indeed XML feed"
+                                  style={{
+                                    fontSize: 9.5,
+                                    letterSpacing: "0.1em",
+                                    textTransform: "uppercase",
+                                    color: "var(--dt-gold-deep, #8a6a1d)",
+                                    border: "1px solid var(--dt-gold-deep, #8a6a1d)",
+                                    padding: "1px 5px",
+                                    borderRadius: 2,
+                                    fontWeight: 500,
+                                    background: "rgba(212, 175, 55, 0.08)",
+                                  }}
+                                >
+                                  Indeed
+                                </span>
+                              )}
+                            </div>
                             <div className="meta" style={{ fontSize: 11.5 }}>
                               {p.department ?? "—"}
                               {p.shift ? ` · ${p.shift}` : ""}
