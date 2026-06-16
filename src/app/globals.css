@@ -472,6 +472,29 @@ button { font-family: inherit; }
   -webkit-overflow-scrolling: touch;
 }
 
+/* Pinned horizontal scrollbar (StickyScrollTable). Sticks to the bottom of
+   the viewport so a wide table's scrollbar stays reachable without scrolling
+   to the table's bottom edge. */
+.dt-pinned-scrollbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  height: 14px;
+  background: var(--dt-warm-50);
+  border-top: 1px solid var(--dt-warm-150);
+  scrollbar-width: thin;
+}
+.dt-pinned-scrollbar::-webkit-scrollbar {
+  height: 12px;
+}
+.dt-pinned-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--dt-warm-300, #c9bfb0);
+  border-radius: 6px;
+}
+
 /* MOBILE RESPONSIVE */
 .dt-mobile-toggle {
   display: none;

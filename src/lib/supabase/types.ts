@@ -145,6 +145,9 @@ export type Candidate = {
   recruiter: string | null;
   pandadoc_document_id: string | null;
   pandadoc_document_status: string | null;
+  // Added in 0031 — used by the per-recruiter candidate tabs (#14).
+  photo_url: string | null;
+  responded: boolean;
   created_at: string;
   updated_at: string;
 };

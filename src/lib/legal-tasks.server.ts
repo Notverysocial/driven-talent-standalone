@@ -321,6 +321,30 @@ export async function listClientsForPicker(): Promise<
   return (data ?? []) as { id: string; name: string }[];
 }
 
+/**
+ * Active internal Driven Talent team members, for the Tasks assignee picker.
+ * Tasks are assignable to the internal team only (CR #10b) — NOT the field /
+ * client workforce in `employees`. The picker stores the chosen member's name
+ * in tasks.assignee_name (team_members is a separate table from employees, so
+ * the assignee_employee_id FK stays null for team-member assignees).
+ */
+export async function listTeamMembersForPicker(): Promise<
+  { id: string; full_name: string; title: string | null }[]
+> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("team_members")
+    .select("id, full_name, title, status")
+    .eq("status", "active")
+    .order("full_name");
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as {
+    id: string;
+    full_name: string;
+    title: string | null;
+  }[]).map((t) => ({ id: t.id, full_name: t.full_name, title: t.title }));
+}
+
 export async function listContactsForPicker(): Promise<
   { id: string; full_name: string | null; company: string | null }[]
 > {

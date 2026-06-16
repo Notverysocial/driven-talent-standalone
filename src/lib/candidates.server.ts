@@ -22,3 +22,24 @@ export async function getCandidate(id: string): Promise<Candidate | null> {
   if (error) throw new Error(error.message);
   return (data as Candidate | null) ?? null;
 }
+
+export type RecruiterCandidate = Candidate & {
+  client: { id: string; name: string } | null;
+};
+
+/**
+ * All candidates with their target-client name joined, ordered newest-first.
+ * Powers the per-recruiter tabs (#14), which group by the free-text
+ * `recruiter` column in-memory so an empty / unknown recruiter still shows
+ * under an "Unassigned" tab.
+ */
+export async function listRecruiterCandidates(): Promise<RecruiterCandidate[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("*, clients ( id, name )")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  type Row = Candidate & { clients: { id: string; name: string } | null };
+  return ((data ?? []) as Row[]).map((r) => ({ ...r, client: r.clients }));
+}

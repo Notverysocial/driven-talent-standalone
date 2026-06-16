@@ -31,6 +31,7 @@ export const en = {
     applications: "Applicant Tracking",
     calls: "Inbound Calls",
     candidates: "Candidates",
+    recruiters: "Recruiter Tabs",
     positions: "Open Positions",
     jobPostings: "Job Postings",
     onboarding: "Onboarding",

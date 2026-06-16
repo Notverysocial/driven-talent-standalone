@@ -28,6 +28,40 @@ export async function setIntakeStatus(
 }
 
 /**
+ * Edit an application intake's applicant info. Lets the operator correct a
+ * name, contact detail, position, or cover letter before promoting it to a
+ * candidate (CR #3 — "make applicant/candidate info editable").
+ */
+export async function updateIntake(intakeId: string, formData: FormData) {
+  const sb = await createClient();
+
+  const fullName = (formData.get("full_name") as string)?.trim() || null;
+  const expRaw = (formData.get("experience_years") as string)?.trim();
+  const experienceYears = expRaw ? Number(expRaw) : null;
+
+  const { error } = await sb
+    .from("application_intakes")
+    .update({
+      full_name: fullName,
+      email: (formData.get("email") as string)?.trim() || null,
+      phone: (formData.get("phone") as string)?.trim() || null,
+      city: (formData.get("city") as string)?.trim() || null,
+      position_of_interest:
+        (formData.get("position_of_interest") as string)?.trim() || null,
+      experience_years:
+        experienceYears != null && !Number.isNaN(experienceYears)
+          ? experienceYears
+          : null,
+      cover_letter: (formData.get("cover_letter") as string)?.trim() || null,
+      source: (formData.get("source") as string)?.trim() || null,
+    })
+    .eq("id", intakeId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/applications");
+}
+
+/**
  * Promote an application_intakes row to a candidates row.
  *
  * Returns a { ok, error?, candidateId? } object instead of redirecting
