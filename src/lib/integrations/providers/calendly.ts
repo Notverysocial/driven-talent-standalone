@@ -667,9 +667,14 @@ async function reconcileBooking(
 
   if (!convoId) return false;
 
+  // sender_type must be a valid message_sender_type enum value
+  // ('visitor' | 'agent' | 'bot'). "system" is NOT in the enum, so this insert
+  // failed silently and the Calendly conversation appeared in the Inbox with an
+  // empty thread (staff could open the chat but saw no messages). Use 'bot' for
+  // system-generated notes. (DT feedback fix 2026-06-15)
   await sb.from("messages").insert({
     conversation_id: convoId,
-    sender_type: "system",
+    sender_type: "bot",
     sender_name: "Calendly",
     body,
     read: false,
@@ -696,9 +701,11 @@ async function reconcileCancellation(
     .limit(1)
     .maybeSingle();
   if (!convo) return;
+  // 'system' is not a valid message_sender_type enum value -> insert would fail
+  // silently and the cancellation note would never show. (DT feedback fix)
   await sb.from("messages").insert({
     conversation_id: convo.id,
-    sender_type: "system",
+    sender_type: "bot",
     sender_name: "Calendly",
     body:
       `${args.inviteeName} CANCELED "${args.eventName}".` +

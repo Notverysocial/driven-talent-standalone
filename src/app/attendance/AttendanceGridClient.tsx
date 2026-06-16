@@ -132,7 +132,13 @@ export function AttendanceGridClient({
             ))}
           </div>
         </div>
-        <div className="dt-table-wrap">
+        {/* Bounded-height scroll region so the sticky header below actually
+            engages. .dt-table-wrap is overflow-x:auto, which makes overflow-y a
+            scroll context too; without a max-height it never scrolls internally
+            (the page scrolls instead) and `position: sticky` has nothing to
+            stick to. Capping the height moves the vertical scroll inside this
+            box so the date headers stay pinned. (DT feedback fix 2026-06-15) */}
+        <div className="dt-table-wrap" style={{ maxHeight: "calc(100vh - 240px)", overflowY: "auto" }}>
           <div style={{ minWidth: 920 }}>
             {/* Header row — sticky so the date columns stay visible while
                 scrolling the roster vertically. */}
