@@ -763,9 +763,13 @@ async function mirrorCallToInbox(
     .single();
   if (!convo) return;
 
+  // 'system' is not a valid message_sender_type enum value ('visitor' | 'agent'
+  // | 'bot') -> this insert failed silently, leaving call-log conversations
+  // unreadable in the Inbox. Use 'bot' for system-generated notes.
+  // (DT feedback fix 2026-06-15)
   await sb.from("messages").insert({
     conversation_id: convo.id,
-    sender_type: "system",
+    sender_type: "bot",
     sender_name: "RingCentral",
     body:
       `${args.callerName} called from ${args.callerPhone}.` +
