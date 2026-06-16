@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { EmployeeManageBar } from "./EmployeeManageBar";
 import { getEmployeeProfile } from "@/lib/employees.server";
 import {
   attendanceColor,
@@ -61,6 +62,10 @@ export default async function EmployeeDetailPage({
   const docsDone = documents.filter((d) => d.received).length;
 
   const activeAssignments = assignments.filter((a) => a.active);
+  // Most relevant "last company" for the DNR record: the active client, else
+  // the most recent assignment's client.
+  const lastCompany =
+    activeAssignments[0]?.client.name ?? assignments[0]?.client.name ?? null;
 
   return (
     <Shell>
@@ -144,6 +149,15 @@ export default async function EmployeeDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Management controls — edit, status toggle, DNR, delete */}
+      <EmployeeManageBar
+        employeeId={employee.id}
+        status={employee.status}
+        fullName={employee.full_name}
+        phone={employee.phone}
+        lastCompany={lastCompany}
+      />
 
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 22 }}>

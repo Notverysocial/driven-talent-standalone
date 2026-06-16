@@ -75,6 +75,24 @@ export type EmployeeAssignment = {
   updated_at: string;
 };
 
+// ---------- Do Not Return list (migration 0018 + employee link in 0026) ----
+// Standalone DNR roster, originally seeded from the live spreadsheet. The
+// employee_id link (0026) is set when an active employee is flagged from the
+// roster, so the record can be synced (upsert) rather than duplicated.
+export type DoNotReturnEntry = {
+  id: string;
+  employee_id: string | null;
+  full_name: string;
+  phone: string | null;
+  last_company: string | null;
+  reason: string | null;
+  severity: string | null;
+  date_logged: string | null;
+  reported_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AttendanceEntry = {
   id: string;
   employee_id: string;
