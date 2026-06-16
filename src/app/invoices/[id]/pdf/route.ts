@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { renderToBuffer, Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { createElement } from "react";
 import { getInvoice } from "@/lib/invoices.server";
+import { getCompanySettings, contactLine } from "@/lib/company.server";
 import { fmtMoney, fmtPeriod } from "@/lib/invoices";
 
 export const runtime = "nodejs";
@@ -57,6 +58,9 @@ export async function GET(
     return new NextResponse("Not found", { status: 404 });
   }
   const { invoice: inv, lineItems } = result;
+  const company = await getCompanySettings();
+  const accent = company.accent_color || "#B58622";
+  const footer = `Thank you${inv.clients.contact_name ? `, ${inv.clients.contact_name.split(" ")[0]}` : ""}.${company.invoice_footer ? ` ${company.invoice_footer}` : ""}`;
 
   const byDept = new Map<string, typeof lineItems>();
   for (const l of lineItems) {
@@ -79,19 +83,21 @@ export async function GET(
         createElement(
           View,
           null,
-          createElement(Text, { style: styles.brand }, "DRIVEN TALENT"),
-          createElement(Text, { style: styles.brandSub }, "WORKFORCE · SOLUTIONS"),
+          createElement(Text, { style: [styles.brand, { color: accent }] }, company.company_name.toUpperCase()),
+          ...(company.tagline
+            ? [createElement(Text, { style: styles.brandSub, key: "tagline" }, company.tagline.toUpperCase())]
+            : []),
           createElement(
             Text,
             { style: styles.brandAddr },
-            "2200 Mendocino Ave, Suite 4 · Santa Rosa, CA 95403\nhello@driventalent.co · (707) 555-0144 · EIN 88-1284621",
+            [company.address, contactLine(company)].filter(Boolean).join("\n"),
           ),
         ),
         createElement(
           View,
           { style: { alignItems: "flex-end" } },
           createElement(Text, { style: styles.invoiceTitle }, "Invoice"),
-          createElement(Text, { style: styles.invoiceNum }, `№ ${inv.number}`),
+          createElement(Text, { style: [styles.invoiceNum, { color: accent }] }, `№ ${inv.number}`),
           createElement(Text, { style: styles.metaRow }, `ISSUED  ${fmtDate(inv.issued_at)}`),
           createElement(Text, { style: styles.metaRow }, `DUE     ${fmtDate(inv.due_at)}`),
           createElement(Text, { style: styles.metaRow }, `TERMS   ${inv.terms ?? "Net 30"}`),
@@ -188,15 +194,11 @@ export async function GET(
           View,
           { style: styles.totalDue },
           createElement(Text, { style: styles.totalDueLabel }, "Total Due"),
-          createElement(Text, { style: styles.totalDueValue }, `$${fmtMoney(Number(inv.total))}`),
+          createElement(Text, { style: [styles.totalDueValue, { color: accent }] }, `$${fmtMoney(Number(inv.total))}`),
         ),
       ),
       // footer
-      createElement(
-        Text,
-        { style: styles.footer },
-        `Thank you${inv.clients.contact_name ? `, ${inv.clients.contact_name.split(" ")[0]}` : ""}. Payment may be remitted via ACH to Mechanics Bank · Routing 121102036 · Account on file. Questions? Reply to this email and Roxanna will personally make it right.`,
-      ),
+      createElement(Text, { style: styles.footer }, footer),
     ),
   );
 

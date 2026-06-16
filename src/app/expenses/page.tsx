@@ -2,28 +2,27 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
-import { Badge } from "@/components/Badge";
+import { Badge, type BadgeTone } from "@/components/Badge";
 import {
   listClientsForPicker,
   listEmployeesForPicker,
+  listExpenseCategories,
   listExpenses,
   listReimbursements,
 } from "@/lib/expenses.server";
 import {
-  EXPENSE_CATEGORIES,
-  EXPENSE_CATEGORY_LABEL,
-  EXPENSE_CATEGORY_TONE,
   PAYMENT_METHODS,
   PAYMENT_METHOD_LABEL,
   REIMBURSEMENT_CATEGORIES,
   REIMBURSEMENT_CATEGORY_LABEL,
   REIMBURSEMENT_STATUS_LABEL,
   REIMBURSEMENT_STATUS_TONE,
+  asBadgeTone,
   fmtDate,
   fmtMoney,
 } from "@/lib/expenses";
 import type {
-  ExpenseCategory,
+  ExpenseCategoryRow,
   ExpensePaymentMethod,
   ReimbursementCategory,
 } from "@/lib/supabase/types";
@@ -32,6 +31,8 @@ import {
   createReimbursement,
   setReimbursementStatus,
 } from "./actions";
+import { CategoryManager } from "./CategoryManager";
+import { ExpenseRowActions } from "./ExpenseRowActions";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 type View = "reimbursements" | "expenses";
@@ -44,12 +45,20 @@ export default async function ExpensesPage({
   const sp = await searchParams;
   const view: View = sp.view === "expenses" ? "expenses" : "reimbursements";
 
-  const [reimbursements, expenses, employees, clients] = await Promise.all([
+  const [reimbursements, expenses, employees, clients, categories] = await Promise.all([
     listReimbursements(),
     listExpenses(),
     listEmployeesForPicker(),
     listClientsForPicker(),
+    listExpenseCategories({ includeInactive: true }),
   ]);
+
+  // Display maps built from the lookup table (CR #9). Fall back to the raw
+  // slug / a neutral tone for any category not in the active set.
+  const catLabel = (slug: string) =>
+    categories.find((c) => c.slug === slug)?.label ?? slug;
+  const catTone = (slug: string) =>
+    asBadgeTone(categories.find((c) => c.slug === slug)?.tone);
 
   const pendingReimb = reimbursements.filter((r) => r.status === "submitted").length;
   const approvedReimb = reimbursements.filter((r) => r.status === "approved").length;
@@ -120,7 +129,13 @@ export default async function ExpensesPage({
           clients={clients}
         />
       ) : (
-        <ExpensesView expenses={expenses} clients={clients} />
+        <ExpensesView
+          expenses={expenses}
+          clients={clients}
+          categories={categories}
+          catLabel={catLabel}
+          catTone={catTone}
+        />
       )}
     </Shell>
   );
@@ -358,10 +373,17 @@ function ReimbursementsView({
 function ExpensesView({
   expenses,
   clients,
+  categories,
+  catLabel,
+  catTone,
 }: {
   expenses: Awaited<ReturnType<typeof listExpenses>>;
   clients: Awaited<ReturnType<typeof listClientsForPicker>>;
+  categories: ExpenseCategoryRow[];
+  catLabel: (slug: string) => string;
+  catTone: (slug: string) => BadgeTone;
 }) {
+  const activeCategories = categories.filter((c) => c.is_active);
   return (
     <div
       style={{
@@ -371,6 +393,7 @@ function ExpensesView({
         alignItems: "start",
       }}
     >
+      <div className="col gap-md" style={{ minWidth: 0 }}>
       <div className="dt-card gold-edge">
         <div className="dt-card-head">
           <div>
@@ -389,7 +412,8 @@ function ExpensesView({
                 <th>Category</th>
                 <th>Method</th>
                 <th>Client</th>
-                <th style={{ textAlign: "right", paddingRight: 22 }}>Amount</th>
+                <th style={{ textAlign: "right" }}>Amount</th>
+                <th style={{ paddingRight: 22, width: 80 }} />
               </tr>
             </thead>
             <tbody>
@@ -412,8 +436,8 @@ function ExpensesView({
                     )}
                   </td>
                   <td>
-                    <Badge tone={EXPENSE_CATEGORY_TONE[e.category]}>
-                      {EXPENSE_CATEGORY_LABEL[e.category]}
+                    <Badge tone={catTone(e.category)}>
+                      {catLabel(e.category)}
                     </Badge>
                   </td>
                   <td className="muted" style={{ fontSize: 11.5 }}>
@@ -427,16 +451,23 @@ function ExpensesView({
                   </td>
                   <td
                     className="tab-num"
-                    style={{ textAlign: "right", paddingRight: 22, fontSize: 13 }}
+                    style={{ textAlign: "right", fontSize: 13 }}
                   >
                     {fmtMoney(Number(e.amount))}
+                  </td>
+                  <td style={{ textAlign: "right", paddingRight: 22 }}>
+                    <ExpenseRowActions
+                      expense={e}
+                      clients={clients}
+                      categories={activeCategories}
+                    />
                   </td>
                 </tr>
               ))}
               {expenses.length === 0 && (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     style={{
                       textAlign: "center",
                       padding: "48px 22px",
@@ -451,6 +482,9 @@ function ExpensesView({
             </tbody>
           </table>
         </div>
+      </div>
+
+      <CategoryManager categories={categories} />
       </div>
 
       <aside className="dt-card" style={{ padding: 0 }}>
@@ -489,8 +523,8 @@ function ExpensesView({
 
           <Field label="Category">
             <select name="category" required defaultValue="other" className="dt-filter-input">
-              {EXPENSE_CATEGORIES.map((c) => (
-                <option key={c} value={c}>{EXPENSE_CATEGORY_LABEL[c as ExpenseCategory]}</option>
+              {activeCategories.map((c) => (
+                <option key={c.slug} value={c.slug}>{c.label}</option>
               ))}
             </select>
           </Field>

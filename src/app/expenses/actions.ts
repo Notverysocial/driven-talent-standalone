@@ -3,16 +3,28 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
-  EXPENSE_CATEGORIES,
   PAYMENT_METHODS,
   REIMBURSEMENT_CATEGORIES,
+  asBadgeTone,
+  slugifyCategory,
 } from "@/lib/expenses";
 import type {
-  ExpenseCategory,
   ExpensePaymentMethod,
   ReimbursementCategory,
   ReimbursementStatus,
 } from "@/lib/supabase/types";
+
+// Returns the set of valid (active or not) category slugs so we can give a
+// friendly error instead of a raw FK violation.
+async function validExpenseCategorySlugs(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("expense_categories")
+    .select("slug");
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((r: { slug: string }) => r.slug));
+}
 
 const REIMBURSEMENT_STATUSES: ReimbursementStatus[] = [
   "submitted",
@@ -106,7 +118,7 @@ export async function setReimbursementStatus(
 export async function createExpense(formData: FormData) {
   const supabase = await createClient();
 
-  const category = (formData.get("category") as ExpenseCategory) || "other";
+  const category = ((formData.get("category") as string) || "other").trim();
   const amountRaw = (formData.get("amount") as string)?.trim();
   const expenseDate = (formData.get("expense_date") as string)?.trim();
   const vendor = ((formData.get("vendor") as string) || "").trim() || null;
@@ -123,7 +135,8 @@ export async function createExpense(formData: FormData) {
   const receiptUrl = ((formData.get("receipt_url") as string) || "").trim() || null;
   const createdBy = ((formData.get("created_by") as string) || "").trim() || null;
 
-  if (!EXPENSE_CATEGORIES.includes(category)) {
+  const validCats = await validExpenseCategorySlugs(supabase);
+  if (!validCats.has(category)) {
     throw new Error(`Invalid category: ${category}`);
   }
   if (!amountRaw) throw new Error("Amount is required");
@@ -152,9 +165,110 @@ export async function createExpense(formData: FormData) {
   revalidatePath("/expenses");
 }
 
+export async function updateExpense(id: string, formData: FormData) {
+  if (!id) throw new Error("id is required");
+  const supabase = await createClient();
+
+  const category = ((formData.get("category") as string) || "other").trim();
+  const amountRaw = (formData.get("amount") as string)?.trim();
+  const expenseDate = (formData.get("expense_date") as string)?.trim();
+  const paymentMethodRaw = ((formData.get("payment_method") as string) || "").trim();
+  const paymentMethod =
+    paymentMethodRaw && PAYMENT_METHODS.includes(paymentMethodRaw as ExpensePaymentMethod)
+      ? (paymentMethodRaw as ExpensePaymentMethod)
+      : null;
+
+  const validCats = await validExpenseCategorySlugs(supabase);
+  if (!validCats.has(category)) throw new Error(`Invalid category: ${category}`);
+  if (!amountRaw) throw new Error("Amount is required");
+  const amount = Number(amountRaw);
+  if (!Number.isFinite(amount) || amount < 0) {
+    throw new Error("Amount must be a non-negative number");
+  }
+  if (!expenseDate) throw new Error("Expense date is required");
+
+  const { error } = await supabase
+    .from("expenses")
+    .update({
+      category,
+      amount,
+      expense_date: expenseDate,
+      vendor: ((formData.get("vendor") as string) || "").trim() || null,
+      description: ((formData.get("description") as string) || "").trim() || null,
+      payment_method: paymentMethod,
+      client_id: ((formData.get("client_id") as string) || "").trim() || null,
+      reimbursable: formData.get("reimbursable") === "on",
+      reference: ((formData.get("reference") as string) || "").trim() || null,
+      notes: ((formData.get("notes") as string) || "").trim() || null,
+      receipt_url: ((formData.get("receipt_url") as string) || "").trim() || null,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/expenses");
+}
+
 export async function deleteExpense(id: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("expenses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/expenses");
+}
+
+// ---------- Expense category management (CR #9) -------------------------
+
+export async function createExpenseCategory(formData: FormData) {
+  const supabase = await createClient();
+  const label = ((formData.get("label") as string) || "").trim();
+  if (!label) throw new Error("Category name is required");
+  const slug = slugifyCategory(label);
+  if (!slug) throw new Error("Category name must contain letters or numbers");
+  const tone = asBadgeTone((formData.get("tone") as string) || "warm");
+
+  // Place new categories just before "other" if present, else at the end.
+  const { data: maxRow } = await supabase
+    .from("expense_categories")
+    .select("sort")
+    .order("sort", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const sort = (Number(maxRow?.sort ?? 0) || 0) + 10;
+
+  const { error } = await supabase
+    .from("expense_categories")
+    .insert({ slug, label, tone, sort });
+  if (error) {
+    if (error.code === "23505") {
+      throw new Error(`A category with the key "${slug}" already exists`);
+    }
+    throw new Error(error.message);
+  }
+  revalidatePath("/expenses");
+}
+
+export async function updateExpenseCategory(id: string, formData: FormData) {
+  if (!id) throw new Error("id is required");
+  const supabase = await createClient();
+  const label = ((formData.get("label") as string) || "").trim();
+  if (!label) throw new Error("Category name is required");
+  const tone = asBadgeTone((formData.get("tone") as string) || "warm");
+
+  // Rename = change the display label (and tone). The slug stays stable so
+  // existing expenses keep pointing at the same category.
+  const { error } = await supabase
+    .from("expense_categories")
+    .update({ label, tone })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/expenses");
+}
+
+export async function setExpenseCategoryActive(id: string, isActive: boolean) {
+  if (!id) throw new Error("id is required");
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("expense_categories")
+    .update({ is_active: isActive })
+    .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath("/expenses");
 }
