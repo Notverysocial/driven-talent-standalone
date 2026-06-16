@@ -16,6 +16,7 @@ export type AttendanceTrendPoint = {
   missed: number;
   no_show: number;
   excused: number;
+  sick_day: number;
 };
 
 export type RevenueTrendPoint = {
@@ -236,7 +237,7 @@ export async function getDashboard(): Promise<DashboardData> {
   const trendMap = new Map<string, AttendanceTrendPoint>();
   for (let i = 29; i >= 0; i--) {
     const d = isoDaysAgo(i);
-    trendMap.set(d, { date: d, present: 0, late: 0, missed: 0, no_show: 0, excused: 0 });
+    trendMap.set(d, { date: d, present: 0, late: 0, missed: 0, no_show: 0, excused: 0, sick_day: 0 });
   }
   for (const a of att30) {
     const p = trendMap.get(a.date);

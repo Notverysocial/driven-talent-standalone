@@ -1,22 +1,16 @@
+import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
-import { Avatar } from "@/components/Avatar";
-import { Badge } from "@/components/Badge";
 import {
   listEmployeeSickRows,
   listEmployeesForPicker,
   listSickEntriesForEmployee,
 } from "@/lib/hr.server";
-import {
-  CA_SICK_ACCRUAL_CAP_HOURS,
-  CA_SICK_ANNUAL_USAGE_HOURS,
-  SICK_ENTRY_LABEL,
-  SICK_ENTRY_TONE,
-  fmtDate,
-  fmtDateShort,
-} from "@/lib/hr";
-import { logSickEntry, deleteSickEntry } from "./actions";
+import { CA_SICK_ACCRUAL_CAP_HOURS, CA_SICK_ANNUAL_USAGE_HOURS } from "@/lib/hr";
+import { logSickEntry } from "./actions";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { SickBalancesTable } from "./SickBalancesTable";
+import { RecentSickEntries } from "./RecentSickEntries";
 
 export default async function SickTimePage({
   searchParams,
@@ -42,7 +36,21 @@ export default async function SickTimePage({
 
   return (
     <Shell>
-      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
+      <Topbar
+        crumb={tb.crumb}
+        scriptWord={tb.scriptWord}
+        title={tb.title}
+        actions={
+          <>
+            <Link href="/sick-time/export?report=sick" className="dt-btn" prefetch={false}>
+              Export Sick Time (.xlsx)
+            </Link>
+            <Link href="/sick-time/export?report=absences" className="dt-btn" prefetch={false}>
+              Export Absences (.xlsx)
+            </Link>
+          </>
+        }
+      />
 
       <div
         style={{
@@ -102,119 +110,8 @@ export default async function SickTimePage({
           alignItems: "start",
         }}
       >
-        {/* Roster table */}
-        <div className="dt-card gold-edge">
-          <div className="dt-card-head">
-            <div>
-              <h3>Sick Time Balances</h3>
-              <div className="sub">{rows.length} employees · click to log entry</div>
-            </div>
-          </div>
-          <div className="dt-table-wrap">
-            <table className="dt-table">
-              <thead>
-                <tr>
-                  <th style={{ paddingLeft: 22 }}>Employee</th>
-                  <th style={{ textAlign: "right" }}>Balance</th>
-                  <th style={{ textAlign: "right" }}>YTD Accrued</th>
-                  <th style={{ textAlign: "right" }}>YTD Used</th>
-                  <th>Last Entry</th>
-                  <th style={{ paddingRight: 22 }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const isLow = r.balance < 8 && r.employee.status === "active";
-                  const atMax = r.ytdUsed >= CA_SICK_ANNUAL_USAGE_HOURS;
-                  const isFocus = focusEmployeeId === r.employee.id;
-                  return (
-                    <tr
-                      key={r.employee.id}
-                      style={isFocus ? { background: "var(--dt-gold-50)" } : undefined}
-                    >
-                      <td style={{ paddingLeft: 22 }}>
-                        <a
-                          href={`/sick-time?employee=${r.employee.id}`}
-                          className="dt-person dt-person-link"
-                        >
-                          <Avatar name={r.employee.full_name} />
-                          <div>
-                            <div className="name">{r.employee.full_name}</div>
-                            <div className="meta">
-                              {r.employee.city ?? "—"} · {r.employee.status}
-                            </div>
-                          </div>
-                        </a>
-                      </td>
-                      <td
-                        className="tab-num"
-                        style={{
-                          textAlign: "right",
-                          fontWeight: 400,
-                          color: isLow ? "var(--dt-warning)" : "var(--dt-black)",
-                        }}
-                      >
-                        {r.balance.toFixed(1)}
-                      </td>
-                      <td className="tab-num muted" style={{ textAlign: "right" }}>
-                        {r.ytdAccrued.toFixed(1)}
-                      </td>
-                      <td
-                        className="tab-num"
-                        style={{
-                          textAlign: "right",
-                          color: atMax ? "var(--dt-warning)" : "var(--dt-warm-500)",
-                        }}
-                      >
-                        {r.ytdUsed.toFixed(1)}
-                      </td>
-                      <td className="muted" style={{ fontSize: 11.5 }}>
-                        {r.lastEntry ? (
-                          <span>
-                            <Badge tone={SICK_ENTRY_TONE[r.lastEntry.entry_type]}>
-                              {SICK_ENTRY_LABEL[r.lastEntry.entry_type]}
-                            </Badge>
-                            <span style={{ marginLeft: 8 }}>
-                              {fmtDateShort(r.lastEntry.entry_date)}
-                            </span>
-                          </span>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      <td style={{ paddingRight: 22 }}>
-                        {isLow ? (
-                          <Badge tone="amber">Low</Badge>
-                        ) : atMax ? (
-                          <Badge tone="gold">Max used</Badge>
-                        ) : r.employee.status === "onboarding" ? (
-                          <Badge tone="warm">Onboarding</Badge>
-                        ) : (
-                          <Badge tone="green">OK</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {rows.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={6}
-                      style={{
-                        textAlign: "center",
-                        padding: "48px 22px",
-                        color: "var(--dt-warm-500)",
-                        fontStyle: "italic",
-                      }}
-                    >
-                      No employees to track yet.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        {/* Roster table (search + balances) */}
+        <SickBalancesTable rows={rows} focusEmployeeId={focusEmployeeId} />
 
         {/* Side panel: log entry */}
         <aside className="dt-card" style={{ padding: 0 }}>
@@ -299,53 +196,8 @@ export default async function SickTimePage({
             </button>
           </form>
 
-          {focusRow && focusEntries.length > 0 && (
-            <div style={{ borderTop: "1px solid var(--dt-warm-100)", padding: "16px 22px" }}>
-              <div className="tiny" style={{ color: "var(--dt-warm-500)", marginBottom: 10 }}>
-                Recent · {focusEntries.length}
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {focusEntries.slice(0, 12).map((e) => (
-                  <div
-                    key={e.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      borderBottom: "1px dashed var(--dt-warm-100)",
-                      paddingBottom: 8,
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <Badge tone={SICK_ENTRY_TONE[e.entry_type]}>
-                          {SICK_ENTRY_LABEL[e.entry_type]}
-                        </Badge>
-                        <span className="tab-num" style={{ fontSize: 12.5, fontWeight: 400 }}>
-                          {(e.entry_type === "accrual" || e.entry_type === "adjustment" ? "+" : "−")}
-                          {Number(e.hours).toFixed(1)} hr
-                        </span>
-                      </div>
-                      <div className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>
-                        {fmtDate(e.entry_date)}
-                        {e.notes ? ` · ${e.notes}` : ""}
-                      </div>
-                    </div>
-                    <form action={async () => { "use server"; await deleteSickEntry(e.id, focusRow.employee.id); }}>
-                      <button
-                        type="submit"
-                        className="dt-btn dt-btn-ghost"
-                        style={{ padding: "4px 8px", fontSize: 9, letterSpacing: "0.16em" }}
-                        title="Delete entry (reverses balance change)"
-                      >
-                        <span>×</span>
-                      </button>
-                    </form>
-                  </div>
-                ))}
-              </div>
-            </div>
+          {focusRow && (
+            <RecentSickEntries entries={focusEntries} employeeId={focusRow.employee.id} />
           )}
         </aside>
       </div>

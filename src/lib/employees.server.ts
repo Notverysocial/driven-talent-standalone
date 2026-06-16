@@ -7,6 +7,7 @@ import type {
   EmployeeAssignment,
   OnboardingChecklistItem,
   OnboardingDocument,
+  SickTimeEntry,
 } from "./supabase/types";
 import { weightedAttendancePct, countAttendance, isoDaysAgo } from "./staffing";
 
@@ -82,6 +83,8 @@ export type EmployeeProfile = {
   attendance: AttendanceEntry[];
   checklist: OnboardingChecklistItem[];
   documents: OnboardingDocument[];
+  sickEntries: SickTimeEntry[];
+  sickBalance: number;
   clientById: Map<string, Client>;
 };
 
@@ -100,7 +103,7 @@ export async function getEmployeeProfile(idOrLegacy: string): Promise<EmployeePr
   if (empErr) throw new Error(empErr.message);
   if (!emp) return null;
 
-  const [assignRes, attRes, checkRes, docRes, clientsRes] = await Promise.all([
+  const [assignRes, attRes, checkRes, docRes, sickRes, clientsRes] = await Promise.all([
     supabase
       .from("employee_assignments")
       .select("*, clients(*)")
@@ -122,6 +125,12 @@ export async function getEmployeeProfile(idOrLegacy: string): Promise<EmployeePr
       .select("*")
       .eq("employee_id", emp.id)
       .order("name"),
+    supabase
+      .from("sick_time_entries")
+      .select("*")
+      .eq("employee_id", emp.id)
+      .order("entry_date", { ascending: false })
+      .limit(100),
     supabase.from("clients").select("*"),
   ]);
 
@@ -129,6 +138,7 @@ export async function getEmployeeProfile(idOrLegacy: string): Promise<EmployeePr
   if (attRes.error) throw new Error(attRes.error.message);
   if (checkRes.error) throw new Error(checkRes.error.message);
   if (docRes.error) throw new Error(docRes.error.message);
+  if (sickRes.error) throw new Error(sickRes.error.message);
   if (clientsRes.error) throw new Error(clientsRes.error.message);
 
   const clientById = new Map(((clientsRes.data ?? []) as Client[]).map((c) => [c.id, c]));
@@ -145,6 +155,8 @@ export async function getEmployeeProfile(idOrLegacy: string): Promise<EmployeePr
     attendance: (attRes.data ?? []) as AttendanceEntry[],
     checklist: (checkRes.data ?? []) as OnboardingChecklistItem[],
     documents: (docRes.data ?? []) as OnboardingDocument[],
+    sickEntries: (sickRes.data ?? []) as SickTimeEntry[],
+    sickBalance: Number((emp as Employee & { sick_hours_balance?: number }).sick_hours_balance ?? 0),
     clientById,
   };
 }

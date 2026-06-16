@@ -17,6 +17,7 @@ import {
   EMPLOYEE_STATUS_LABEL,
   employeeStatusTone,
 } from "@/lib/staffing";
+import { SICK_ENTRY_LABEL, SICK_ENTRY_TONE } from "@/lib/hr";
 import type { OnboardingCategory } from "@/lib/supabase/types";
 
 function fmtDate(d: string | null) {
@@ -37,7 +38,10 @@ export default async function EmployeeDetailPage({
   const profile = await getEmployeeProfile(id);
   if (!profile) notFound();
 
-  const { employee, assignments, attendance, checklist, documents } = profile;
+  const { employee, assignments, attendance, checklist, documents, sickEntries, sickBalance } = profile;
+  const sickYtdUsed = sickEntries
+    .filter((e) => (e.entry_type === "usage" || e.entry_type === "payout") && e.entry_date >= `${new Date().getFullYear()}-01-01`)
+    .reduce((s, e) => s + Number(e.hours), 0);
   const band = employee.band ?? bandFromScore(employee.score);
   const tone = bandColor(band);
   const totals = countAttendance(attendance);
@@ -376,6 +380,61 @@ export default async function EmployeeDetailPage({
                 <tr>
                   <td colSpan={5} style={{ textAlign: "center", padding: "32px 22px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
                     No attendance recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Sick time history */}
+      <div className="dt-card" style={{ marginTop: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Sick Time</h3>
+            <div className="sub">
+              Balance {sickBalance.toFixed(1)} hr · {sickYtdUsed.toFixed(1)} hr used YTD
+            </div>
+          </div>
+          <Link href={`/sick-time?employee=${employee.id}`} className="dt-btn dt-btn-ghost tiny">
+            Manage →
+          </Link>
+        </div>
+        <div className="dt-table-wrap">
+          <table className="dt-table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 22 }}>Date</th>
+                <th>Type</th>
+                <th style={{ textAlign: "right" }}>Hours</th>
+                <th style={{ paddingRight: 22 }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sickEntries.slice(0, 50).map((e) => (
+                <tr key={e.id}>
+                  <td style={{ paddingLeft: 22 }} className="tab-num">
+                    {fmtDate(e.entry_date)}
+                  </td>
+                  <td>
+                    <Badge tone={SICK_ENTRY_TONE[e.entry_type]}>
+                      {SICK_ENTRY_LABEL[e.entry_type]}
+                    </Badge>
+                  </td>
+                  <td className="tab-num" style={{ textAlign: "right", fontWeight: 400 }}>
+                    {e.entry_type === "accrual" || e.entry_type === "adjustment" ? "+" : "−"}
+                    {Number(e.hours).toFixed(1)}
+                  </td>
+                  <td style={{ paddingRight: 22, fontSize: 11.5, color: "var(--dt-warm-500)" }}>
+                    {e.notes ?? "—"}
+                  </td>
+                </tr>
+              ))}
+              {sickEntries.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "center", padding: "32px 22px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
+                    No sick-time entries recorded yet.
                   </td>
                 </tr>
               )}
