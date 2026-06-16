@@ -13,6 +13,8 @@ import {
   weightedAttendancePct,
   ATTENDANCE_LABEL,
   ATTENDANCE_DOT_COLOR,
+  EMPLOYEE_STATUS_LABEL,
+  employeeStatusTone,
 } from "@/lib/staffing";
 import type { OnboardingCategory } from "@/lib/supabase/types";
 
@@ -107,7 +109,10 @@ export default async function EmployeeDetailPage({
                 : `Rank ${employee.rank ?? "—"}`}
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              <Badge tone={tone.tone}>{tone.label}</Badge>
+              <Badge tone={employeeStatusTone(employee.status)}>
+                {EMPLOYEE_STATUS_LABEL[employee.status]}
+              </Badge>
+              {band && <Badge tone={tone.tone}>{tone.label}</Badge>}
               {activeAssignments.length > 1 && (
                 <Badge tone="gold">{activeAssignments.length} clients</Badge>
               )}

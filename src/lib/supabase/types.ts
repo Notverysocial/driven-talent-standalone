@@ -1,6 +1,9 @@
 // Hand-written types matching supabase/migrations/0000_init.sql + 0001_ops_workflow.sql.
 
-export type EmployeeStatus = "active" | "onboarding" | "inactive";
+// Matches the `employee_status` enum: created in 0000_init.sql with
+// (active, onboarding, inactive) and extended additively in 0012_team_members.sql
+// with (terminated, do_not_return).
+export type EmployeeStatus = "active" | "onboarding" | "inactive" | "terminated" | "do_not_return";
 export type ScoreBand = "green" | "yellow" | "red";
 export type AttendanceStatus = "present" | "late" | "missed" | "no_show" | "excused";
 // Updated by 0001 — old values were new/screening/interview/placed/inactive.
