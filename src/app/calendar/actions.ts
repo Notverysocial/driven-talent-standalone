@@ -8,6 +8,7 @@ const VALID_KINDS: CalendarEventKind[] = [
   "birthday",
   "holiday",
   "social_post",
+  "internal",
   "custom",
 ];
 

@@ -269,6 +269,25 @@ export type InvoiceRun = {
   notes: string | null;
 };
 
+// Editable company / invoice settings (migration 0028). Single-row table:
+// drives the invoice letterhead, remit/footer text, and format defaults.
+export type CompanySettings = {
+  id: boolean;
+  company_name: string;
+  tagline: string | null;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  ein: string | null;
+  invoice_footer: string | null;
+  accent_color: string | null;
+  invoice_number_prefix: string | null;
+  default_terms: string | null;
+  default_fee_pct: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type InvoiceLineItem = {
   id: string;
   invoice_id: string;
@@ -301,7 +320,12 @@ export type PayrollPeriod = {
 
 // ---- Calendar (migration 0003) -----------------------------------------
 
-export type CalendarEventKind = "birthday" | "holiday" | "social_post" | "custom";
+export type CalendarEventKind =
+  | "birthday"
+  | "holiday"
+  | "social_post"
+  | "internal"
+  | "custom";
 
 export type CalendarEvent = {
   id: string;
@@ -489,20 +513,20 @@ export type ReimbursementCategory =
   | "uniform"
   | "other";
 
-export type ExpenseCategory =
-  | "rent"
-  | "utilities"
-  | "software"
-  | "marketing"
-  | "insurance"
-  | "supplies"
-  | "travel"
-  | "meals"
-  | "professional_services"
-  | "payroll"
-  | "taxes"
-  | "equipment"
-  | "other";
+// Expense category is now a user-managed lookup table (migration 0029),
+// not a fixed enum. The stored value on an expense is the category slug.
+export type ExpenseCategorySlug = string;
+
+export type ExpenseCategoryRow = {
+  id: string;
+  slug: string;
+  label: string;
+  tone: string;            // BadgeTone: warm|gold|green|amber|red|dark
+  sort: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 export type ExpensePaymentMethod =
   | "check"
@@ -539,7 +563,7 @@ export type ReimbursementRequest = {
 
 export type Expense = {
   id: string;
-  category: ExpenseCategory;
+  category: ExpenseCategorySlug;
   amount: number;
   expense_date: string;
   vendor: string | null;

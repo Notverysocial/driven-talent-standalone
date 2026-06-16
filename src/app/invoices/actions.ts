@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { countInvoices } from "@/lib/invoices.server";
+import { getCompanySettings } from "@/lib/company.server";
 import { nextInvoiceNumber } from "@/lib/invoices";
 
 type LineSeed = {
@@ -124,12 +125,13 @@ export async function generateInvoiceFromTimecards(formData: FormData) {
     };
   });
 
+  const company = await getCompanySettings();
   const subtotal = lines.reduce((s, l) => s + l.amount, 0);
-  const fee_pct = 8.0;
+  const fee_pct = Number(company.default_fee_pct ?? 8.0);
   const fee = Math.round(subtotal * (fee_pct / 100) * 100) / 100;
   const total = Math.round((subtotal + fee) * 100) / 100;
 
-  const number = nextInvoiceNumber(await countInvoices());
+  const number = nextInvoiceNumber(await countInvoices(), company.invoice_number_prefix);
   const dueAt = new Date(periodEnd + "T00:00:00");
   dueAt.setDate(dueAt.getDate() + 30);
 
@@ -142,7 +144,7 @@ export async function generateInvoiceFromTimecards(formData: FormData) {
       period_end: periodEnd,
       issued_at: new Date().toISOString().slice(0, 10),
       due_at: dueAt.toISOString().slice(0, 10),
-      terms: "Net 30",
+      terms: company.default_terms ?? "Net 30",
       subtotal,
       fee_pct,
       fee,
@@ -194,6 +196,50 @@ export async function removeLineItem(invoiceId: string, lineItemId: string) {
   if (error) throw new Error(error.message);
   await recomputeTotals(invoiceId);
   revalidatePath(`/invoices/${invoiceId}`);
+}
+
+// Edit core invoice fields (CR #8 — make invoice records editable). After
+// changing fee_pct / tax we recompute fee + total from the current subtotal.
+export async function updateInvoice(invoiceId: string, formData: FormData) {
+  if (!invoiceId) throw new Error("invoiceId is required");
+  const supabase = await createClient();
+
+  const number = ((formData.get("number") as string) || "").trim();
+  const issuedAt = ((formData.get("issued_at") as string) || "").trim();
+  const dueAt = ((formData.get("due_at") as string) || "").trim();
+  const terms = ((formData.get("terms") as string) || "").trim() || null;
+  const billTo = ((formData.get("bill_to_client_name") as string) || "").trim() || null;
+  const notes = ((formData.get("notes") as string) || "").trim() || null;
+
+  const feePct = Number(formData.get("fee_pct"));
+  const tax = Number(formData.get("tax"));
+  if (!number) throw new Error("Invoice number is required");
+  if (!issuedAt || !dueAt) throw new Error("Issued and due dates are required");
+  if (!Number.isFinite(feePct) || feePct < 0) throw new Error("Fee % must be a non-negative number");
+  if (!Number.isFinite(tax) || tax < 0) throw new Error("Tax must be a non-negative number");
+
+  const { error } = await supabase
+    .from("invoices")
+    .update({
+      number,
+      issued_at: issuedAt,
+      due_at: dueAt,
+      terms,
+      fee_pct: feePct,
+      tax,
+      bill_to_client_name: billTo,
+      notes,
+    })
+    .eq("id", invoiceId);
+  if (error) {
+    if (error.code === "23505") throw new Error(`Invoice number "${number}" is already in use`);
+    throw new Error(error.message);
+  }
+
+  await recomputeTotals(invoiceId);
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/invoices");
+  revalidatePath("/dashboard");
 }
 
 export async function sendInvoice(invoiceId: string) {

@@ -8,9 +8,9 @@ export const INVOICE_STATUSES: { id: InvoiceStatus; label: string; tone: "warm" 
   { id: "void",     label: "Void",     tone: "dark" },
 ];
 
-export function nextInvoiceNumber(count: number): string {
+export function nextInvoiceNumber(count: number, prefix: string | null = "DT"): string {
   const year = new Date().getFullYear();
-  return `DT-${year}-${String(count + 1).padStart(4, "0")}`;
+  return `${prefix || "DT"}-${year}-${String(count + 1).padStart(4, "0")}`;
 }
 
 export function fmtMoney(n: number): string {

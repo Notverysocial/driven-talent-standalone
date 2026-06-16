@@ -3,7 +3,6 @@
 
 import type { BadgeTone } from "@/components/Badge";
 import type {
-  ExpenseCategory,
   ExpensePaymentMethod,
   ReimbursementCategory,
   ReimbursementStatus,
@@ -59,54 +58,35 @@ export const REIMBURSEMENT_CATEGORIES: ReimbursementCategory[] = [
 ];
 
 // ---------- Expense category --------------------------------------------
+// Categories now live in the user-managed `expense_categories` lookup table
+// (migration 0029). These helpers operate on the rows fetched at request
+// time rather than a hardcoded list.
 
-export const EXPENSE_CATEGORY_LABEL: Record<ExpenseCategory, string> = {
-  rent: "Rent",
-  utilities: "Utilities",
-  software: "Software",
-  marketing: "Marketing",
-  insurance: "Insurance",
-  supplies: "Supplies",
-  travel: "Travel",
-  meals: "Meals",
-  professional_services: "Professional Services",
-  payroll: "Payroll",
-  taxes: "Taxes",
-  equipment: "Equipment",
-  other: "Other",
-};
-
-export const EXPENSE_CATEGORY_TONE: Record<ExpenseCategory, BadgeTone> = {
-  rent: "dark",
-  utilities: "warm",
-  software: "gold",
-  marketing: "amber",
-  insurance: "dark",
-  supplies: "warm",
-  travel: "amber",
-  meals: "warm",
-  professional_services: "gold",
-  payroll: "dark",
-  taxes: "red",
-  equipment: "warm",
-  other: "warm",
-};
-
-export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
-  "rent",
-  "utilities",
-  "software",
-  "marketing",
-  "insurance",
-  "supplies",
-  "travel",
-  "meals",
-  "professional_services",
-  "payroll",
-  "taxes",
-  "equipment",
-  "other",
+// Valid badge tones operators can pick when creating/editing a category.
+export const EXPENSE_CATEGORY_TONES: BadgeTone[] = [
+  "warm",
+  "gold",
+  "green",
+  "amber",
+  "red",
+  "dark",
 ];
+
+// Narrow an arbitrary stored tone string to a valid BadgeTone (fallback warm).
+export function asBadgeTone(tone: string | null | undefined): BadgeTone {
+  return EXPENSE_CATEGORY_TONES.includes(tone as BadgeTone)
+    ? (tone as BadgeTone)
+    : "warm";
+}
+
+// Derive a stable slug from a free-text category label.
+export function slugifyCategory(label: string): string {
+  return label
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
 
 // ---------- Payment method ----------------------------------------------
 
