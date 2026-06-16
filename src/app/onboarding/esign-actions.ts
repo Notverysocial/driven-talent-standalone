@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProvider, getProvider } from "@/lib/esign/provider";
+import { maybePromoteToActive } from "./actions";
 import type { EsignProvider as ProviderKey } from "@/lib/team";
 
 // Map document_kind -> onboarding checklist key to flip Done when signed.
@@ -92,6 +93,12 @@ export async function markEsignatureSigned(
   revalidatePath(`/onboarding/${employeeId}`);
   revalidatePath("/onboarding");
   revalidatePath(`/employees/${employeeId}`);
+
+  // Signing an e-doc can complete the final onboarding item. Re-evaluate
+  // promotion here too — setItemStatus/markWelcomeLetterSent already do this,
+  // but this path skipped it, leaving fully-onboarded employees stuck on
+  // "onboarding" instead of flipping to "active".
+  await maybePromoteToActive(employeeId);
 }
 
 export async function cancelEsignatureRequest(

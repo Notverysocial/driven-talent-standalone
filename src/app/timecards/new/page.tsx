@@ -47,10 +47,6 @@ export default async function NewTimecardPage() {
             </select>
           </label>
 
-          <input type="hidden" name="employee_id" id="employee_id" />
-          <input type="hidden" name="client_id"   id="client_id" />
-          <input type="hidden" name="hourly_rate" id="hourly_rate" />
-
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontSize: 10.5, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--dt-warm-500)", fontWeight: 400 }}>
               Week (any day)
@@ -74,22 +70,6 @@ export default async function NewTimecardPage() {
           </button>
         </div>
 
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              const sel = document.getElementById('assignment_serialized');
-              const empF = document.getElementById('employee_id');
-              const cliF = document.getElementById('client_id');
-              const rateF = document.getElementById('hourly_rate');
-              sel?.addEventListener('change', () => {
-                const [emp, cli, rate] = (sel.value || '').split('|');
-                if (empF) empF.value = emp || '';
-                if (cliF) cliF.value = cli || '';
-                if (rateF) rateF.value = rate || '';
-              });
-            `,
-          }}
-        />
       </form>
     </Shell>
   );
