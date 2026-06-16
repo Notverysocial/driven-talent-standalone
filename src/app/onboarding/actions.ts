@@ -131,7 +131,7 @@ export async function markWelcomeLetterSent(employeeId: string) {
   await maybePromoteToActive(employeeId);
 }
 
-async function maybePromoteToActive(employeeId: string) {
+export async function maybePromoteToActive(employeeId: string) {
   const supabase = await createClient();
   const [emp, items] = await Promise.all([
     supabase.from("employees").select("status").eq("id", employeeId).single(),

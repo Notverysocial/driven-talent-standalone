@@ -134,13 +134,17 @@ export function AttendanceGridClient({
         </div>
         <div className="dt-table-wrap">
           <div style={{ minWidth: 920 }}>
-            {/* Header row */}
+            {/* Header row — sticky so the date columns stay visible while
+                scrolling the roster vertically. */}
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: `260px repeat(${dates.length}, 1fr)`,
                 background: "var(--dt-warm-50)",
                 borderBottom: "1px solid var(--dt-warm-150)",
+                position: "sticky",
+                top: 0,
+                zIndex: 2,
               }}
             >
               <div

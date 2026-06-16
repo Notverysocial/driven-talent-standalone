@@ -14,11 +14,26 @@ import type { TimecardDay, TimecardDays } from "@/lib/supabase/types";
 
 export async function createOrOpenTimecard(formData: FormData) {
   const supabase = await createClient();
-  const employeeId = formData.get("employee_id") as string;
-  const clientId   = formData.get("client_id") as string;
+
+  // The assignment <select> submits "employeeId|clientId|hourlyRate" as a
+  // single value. Parse it server-side so the flow never depends on client
+  // JS: the page used an inline script to copy the parts into hidden fields,
+  // but that script does not re-run on App Router soft navigation (arriving
+  // via the "+ New Timecard" link), so employee_id/client_id stayed empty and
+  // the created timecard 404'd.
+  const serialized = (formData.get("assignment_serialized") as string) || "";
+  const [serEmp, serCli, serRate] = serialized.split("|");
+  const employeeId = (serEmp ?? "").trim();
+  const clientId   = (serCli ?? "").trim();
   const weekRaw    = (formData.get("week") as string) || new Date().toISOString().slice(0, 10);
   const weekStart  = startOfWeek(new Date(weekRaw + "T00:00:00")).toISOString().slice(0, 10);
-  const rateRaw    = Number(formData.get("hourly_rate")) || 0;
+  const rateRaw    = Number(serRate) || 0;
+
+  // No assignment selected (or a malformed value): bounce back to the form
+  // rather than inserting a timecard with no employee/client.
+  if (!employeeId || !clientId) {
+    redirect("/timecards/new");
+  }
 
   // Look up rate from current assignment if not passed
   let rate = rateRaw;
