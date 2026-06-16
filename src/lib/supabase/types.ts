@@ -5,7 +5,16 @@
 // with (terminated, do_not_return).
 export type EmployeeStatus = "active" | "onboarding" | "inactive" | "terminated" | "do_not_return";
 export type ScoreBand = "green" | "yellow" | "red";
-export type AttendanceStatus = "present" | "late" | "missed" | "no_show" | "excused";
+// `present` is retained for historical rows; the attendance workflow now logs
+// EXCEPTIONS only (everyone is assumed scheduled/present unless an exception is
+// recorded). `sick_day` was added additively in migration 0027.
+export type AttendanceStatus =
+  | "present"
+  | "late"
+  | "missed"
+  | "no_show"
+  | "excused"
+  | "sick_day";
 // Updated by 0001 — old values were new/screening/interview/placed/inactive.
 export type CandidateStatus = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";
 export type TimecardStatus = "draft" | "submitted" | "approved" | "rejected";

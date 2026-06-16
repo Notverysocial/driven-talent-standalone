@@ -41,20 +41,41 @@ export type AttendanceCounts = {
   missed: number;
   noShow: number;
   excused: number;
+  sickDay: number;
   total: number;
 };
 
 export function countAttendance(records: AttendanceEntry[]): AttendanceCounts {
-  let present = 0, late = 0, missed = 0, noShow = 0, excused = 0;
+  let present = 0, late = 0, missed = 0, noShow = 0, excused = 0, sickDay = 0;
   for (const r of records) {
     if (r.status === "present") present++;
     else if (r.status === "late") late++;
     else if (r.status === "missed") missed++;
     else if (r.status === "no_show") noShow++;
     else if (r.status === "excused") excused++;
+    else if (r.status === "sick_day") sickDay++;
   }
-  return { present, late, missed, noShow, excused, total: present + late + missed + noShow + excused };
+  return {
+    present,
+    late,
+    missed,
+    noShow,
+    excused,
+    sickDay,
+    total: present + late + missed + noShow + excused + sickDay,
+  };
 }
+
+// The attendance workflow logs EXCEPTIONS only — these are the statuses an
+// exception entry can take. `present` is intentionally excluded (it's the
+// assumed default and is never logged going forward).
+export const EXCEPTION_STATUSES = [
+  "late",
+  "missed",
+  "no_show",
+  "excused",
+  "sick_day",
+] as const satisfies readonly AttendanceStatus[];
 
 // Weighted attendance %: (present + 0.5×late) / scoreable × 100.
 // Excused days don't count against the rate (protected leave).
@@ -124,14 +145,16 @@ export const ATTENDANCE_DOT_COLOR: Record<AttendanceStatus, string> = {
   missed: "var(--dt-danger)",
   no_show: "var(--dt-danger)",
   excused: "var(--dt-warm-300)",
+  sick_day: "#3E7CB1",
 };
 
 export const ATTENDANCE_LABEL: Record<AttendanceStatus, string> = {
   present: "Present",
   late: "Late",
-  missed: "Missed",
-  no_show: "No-Show",
+  missed: "Missed Work",
+  no_show: "No Show",
   excused: "Excused",
+  sick_day: "Sick Day",
 };
 
 export function attendanceColor(pct: number): string {
