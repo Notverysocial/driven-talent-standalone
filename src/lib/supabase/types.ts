@@ -5,6 +5,12 @@ export type ScoreBand = "green" | "yellow" | "red";
 export type AttendanceStatus = "present" | "late" | "missed" | "no_show" | "excused";
 // Updated by 0001 — old values were new/screening/interview/placed/inactive.
 export type CandidateStatus = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";
+export type CandidateLifecycleStatus =
+  | "new_applicant"
+  | "in_process"
+  | "placed"
+  | "available_for_rehire"
+  | "do_not_return";
 export type TimecardStatus = "draft" | "submitted" | "approved" | "rejected";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "void";
 export type OnboardingCategory =
@@ -94,6 +100,17 @@ export type CandidateCriterion = {
   note: string;
 };
 
+// One entry per past placement, stored on candidates.placement_history.
+export type PlacementHistoryEntry = {
+  client_id?: string | null;
+  client_name?: string | null;
+  role?: string | null;
+  season?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  reason_for_end?: string | null;
+};
+
 export type Candidate = {
   id: string;
   full_name: string;
@@ -115,6 +132,14 @@ export type Candidate = {
   recruiter: string | null;
   pandadoc_document_id: string | null;
   pandadoc_document_status: string | null;
+  // Seasonal Talent Pool lifecycle layer (migration 0026).
+  lifecycle_status: CandidateLifecycleStatus;
+  placement_history: PlacementHistoryEntry[];
+  last_placement_end: string | null;
+  skills: string[];
+  preferred_location: string | null;
+  preferred_shift: string | null;
+  do_not_return_reason: string | null;
   created_at: string;
   updated_at: string;
 };

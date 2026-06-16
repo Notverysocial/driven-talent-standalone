@@ -29,6 +29,7 @@ export const es: Dictionary = {
     applications: "Seguimiento de solicitantes",
     calls: "Llamadas entrantes",
     candidates: "Candidatos",
+    talentPool: "Bolsa de Talento",
     positions: "Vacantes abiertas",
     jobPostings: "Publicaciones de empleo",
     onboarding: "Incorporación",

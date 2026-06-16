@@ -13,6 +13,7 @@ import {
 } from "@/lib/job-postings";
 import { createJobPosting } from "./actions";
 import { JobPostingRow } from "./JobPostingRow";
+import { MatchingPoolBanner } from "./MatchingPoolBanner";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function JobPostingsPage() {
@@ -109,6 +110,8 @@ export default async function JobPostingsPage() {
           </div>
         ))}
       </div>
+
+      <MatchingPoolBanner />
 
       <div className="dt-card" style={{ marginBottom: 22, padding: "20px 24px" }}>
         <div className="dt-card-head" style={{ padding: 0, marginBottom: 16, border: "none" }}>

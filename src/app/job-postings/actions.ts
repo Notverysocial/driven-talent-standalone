@@ -2,10 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { findRehireMatches, type RehireMatch } from "@/lib/talent-pool.server";
 import type {
   JobPostingPlatform,
   JobPostingStatus,
 } from "@/lib/job-postings";
+
+// Surfaces already-vetted rehires before a recruiter posts externally.
+// Called from the MatchingPoolBanner client island on the Job Postings page.
+export async function findRehireMatchesAction(input: {
+  role?: string;
+  location?: string;
+}): Promise<RehireMatch[]> {
+  return findRehireMatches({ role: input.role, location: input.location });
+}
 
 function num(v: FormDataEntryValue | null): number | null {
   const s = (v as string)?.trim();
