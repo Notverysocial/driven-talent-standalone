@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
-import { promoteIntakeToCandidate, setIntakeStatus } from "./actions";
+import { promoteIntakeToCandidate, setIntakeStatus, updateIntake } from "./actions";
 
 export function IntakeCard({
   intake,
@@ -16,6 +16,7 @@ export function IntakeCard({
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<
     | { kind: "ok"; message: string }
@@ -140,6 +141,15 @@ export function IntakeCard({
             </button>
           )}
 
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="dt-btn"
+            style={{ fontSize: 11, padding: "4px 10px", justifyContent: "center" }}
+          >
+            Edit Info
+          </button>
+
           {intake.status !== "rejected" && intake.status !== "promoted" && (
             <button
               type="button"
@@ -193,6 +203,91 @@ export function IntakeCard({
           }}
         >
           {feedback.message}
+        </div>
+      )}
+
+      {editOpen && (
+        <div
+          className="dt-cal-dialog-backdrop"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEditOpen(false);
+          }}
+        >
+          <div className="dt-cal-dialog" role="dialog" aria-modal="true">
+            <div className="dt-cal-dialog-head">
+              <div>
+                <div className="crumb">Edit applicant</div>
+                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 300, letterSpacing: "0.06em" }}>
+                  {intake.full_name ?? "Applicant"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="dt-btn dt-btn-ghost tiny"
+                onClick={() => setEditOpen(false)}
+              >
+                Close ✕
+              </button>
+            </div>
+
+            <form
+              action={updateIntake.bind(null, intake.id)}
+              onSubmit={() => setEditOpen(false)}
+              className="dt-cal-dialog-body"
+              style={{ display: "flex", flexDirection: "column", gap: 12 }}
+            >
+              <EditField label="Full Name">
+                <input name="full_name" type="text" defaultValue={intake.full_name ?? ""} className="dt-filter-input" />
+              </EditField>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <EditField label="Email">
+                  <input name="email" type="email" defaultValue={intake.email ?? ""} className="dt-filter-input" />
+                </EditField>
+                <EditField label="Phone">
+                  <input name="phone" type="tel" defaultValue={intake.phone ?? ""} className="dt-filter-input" />
+                </EditField>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <EditField label="City">
+                  <input name="city" type="text" defaultValue={intake.city ?? ""} className="dt-filter-input" />
+                </EditField>
+                <EditField label="Years Experience">
+                  <input
+                    name="experience_years"
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    defaultValue={intake.experience_years != null ? String(intake.experience_years) : ""}
+                    className="dt-filter-input"
+                  />
+                </EditField>
+              </div>
+              <EditField label="Position of Interest">
+                <input name="position_of_interest" type="text" defaultValue={intake.position_of_interest ?? ""} className="dt-filter-input" />
+              </EditField>
+              <EditField label="Source">
+                <input name="source" type="text" defaultValue={intake.source ?? ""} className="dt-filter-input" />
+              </EditField>
+              <EditField label="Cover Letter">
+                <textarea
+                  name="cover_letter"
+                  rows={4}
+                  defaultValue={intake.cover_letter ?? ""}
+                  className="dt-filter-input"
+                  style={{ resize: "vertical", minHeight: 70 }}
+                />
+              </EditField>
+
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+                <button type="button" className="dt-btn" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="dt-btn dt-btn-gold">
+                  <span>Save</span>
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -250,5 +345,14 @@ export function IntakeCard({
         </div>
       )}
     </div>
+  );
+}
+
+function EditField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="dt-filter">
+      <span className="dt-filter-label">{label}</span>
+      {children}
+    </label>
   );
 }
