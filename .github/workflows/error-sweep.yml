@@ -5,10 +5,19 @@ name: error-sweep
 # Sentry issues and open ONE fix PR per issue. PR-only — it never merges,
 # never auto-merges, never force-pushes, and never deploys.
 #
-# Triggers: nightly ~2am PT, plus manual (workflow_dispatch).
+# ⚠️ METERED — this is "automated usage": as of 2026-06-15 the GitHub Action bills
+#    from the pay-per-token Anthropic API pool, NOT the Claude Max subscription.
+#    It requires ANTHROPIC_API_KEY. Do NOT use a subscription OAuth token here —
+#    using a Max OAuth token for unattended CI violates Anthropic's ToS.
+#    FREE alternative for the pilot: run `/error-sweep` inside an interactive
+#    Claude Code session (covered by Max). See .loops/README.md → COST.
+#
+# The nightly cron is OPT-IN and DISABLED by default (schedule is commented out).
+# Until you uncomment it, this workflow only runs when you trigger it manually
+# from the Actions tab (workflow_dispatch) — and every such run is metered.
+#
 # Secrets required (set in repo Settings -> Secrets and variables -> Actions):
-#   CLAUDE_CODE_OAUTH_TOKEN   Claude Code OAuth token (Claude subscription; no API bill)
-#                             — OR — ANTHROPIC_API_KEY for direct API billing (see below)
+#   ANTHROPIC_API_KEY         Anthropic API key — pay-per-token (METERED)
 #   SENTRY_AUTH_TOKEN         Sentry token with project read + issue write
 #   SENTRY_ORG                Sentry org slug
 #   SENTRY_PROJECT            Sentry project slug
@@ -17,10 +26,11 @@ name: error-sweep
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 on:
-  schedule:
-    # 09:00 UTC = 02:00 America/Los_Angeles during PDT (summer).
-    # Cron is fixed-UTC, so this lands at 01:00 PT during PST (winter) — close enough.
-    - cron: "0 9 * * *"
+  # OPT-IN nightly cron — METERED. Uncomment to enable (and accept API billing).
+  # 09:00 UTC = 02:00 America/Los_Angeles during PDT (summer); lands at 01:00 PT
+  # during PST (winter) since cron is fixed-UTC — close enough.
+  # schedule:
+  #   - cron: "0 9 * * *"
   workflow_dispatch:
     inputs:
       max_issues:
@@ -67,18 +77,21 @@ jobs:
       - name: Run Production Error Sweep
         uses: anthropics/claude-code-action@v1
         with:
-          # AUTH: prefer the Claude subscription OAuth token (no API bill).
-          # To bill the Anthropic API instead, delete the line below and use:
-          #   anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # AUTH: METERED. Unattended runs must use the pay-per-token API key.
+          # A Claude Max subscription does NOT cover automated usage, and using a
+          # subscription OAuth token in CI violates Anthropic's ToS. For a FREE run,
+          # use the /error-sweep slash command interactively instead of this workflow.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Single source of truth: the loop prompt lives in the repo.
           prompt: |
             Read and follow .loops/production-error-sweep.md exactly.
             Handle at most ${{ github.event.inputs.max_issues || '5' }} issues this run.
             This is an UNATTENDED run: PR-only. Never merge, never enable auto-merge,
             never force-push, never deploy. Respect every guardrail in that file.
-          # CLI passthrough. --max-turns caps an unattended runaway; the loop's own
-          # "5 issues then stop" is the primary stop condition.
+          # CLI passthrough. --max-turns caps an unattended runaway (and caps metered
+          # spend); the loop's own "5 issues then stop" is the primary stop condition.
+          # Since this path is METERED, default to a cheaper model; bump to opus only
+          # if fix quality needs it.
           claude_args: |
             --max-turns 80
             --model claude-sonnet-4-6

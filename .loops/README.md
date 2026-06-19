@@ -17,9 +17,12 @@ branch, runs this repo's typecheck + build (and e2e when relevant), and opens **
 PR per issue** linking the Sentry issue. It then comments the PR link back on the
 Sentry issue. It handles at most **5 issues per run**, then stops and writes a summary.
 
+Three ways to run it — **read the [COST](#cost) section first**, the difference is real money:
+
 - **Prompt (single source of truth):** [`production-error-sweep.md`](./production-error-sweep.md)
-- **Nightly runner:** [`.github/workflows/error-sweep.yml`](../.github/workflows/error-sweep.yml) — cron ~2am PT + manual `workflow_dispatch`
-- **Supervised local runner:** [`../scripts/run-error-sweep.sh`](../scripts/run-error-sweep.sh)
+- 🟢 **FREE — interactive slash command** (recommended pilot): [`/error-sweep`](../.claude/commands/error-sweep.md) — run it inside a Claude Code session; covered by Max, $0 extra.
+- 💸 **METERED — nightly GitHub Action:** [`.github/workflows/error-sweep.yml`](../.github/workflows/error-sweep.yml) — `workflow_dispatch` always; cron is **opt-in / disabled by default**. Pay-per-token API.
+- 💸 **METERED — supervised headless script:** [`../scripts/run-error-sweep.sh`](../scripts/run-error-sweep.sh) — headless `claude -p`; pay-per-token API.
 
 ### How it works (the loop shape)
 
@@ -44,16 +47,44 @@ Build/test need placeholder Supabase env to boot in non-prod — the runners set
 
 ---
 
+## COST
+
+Billing policy as of **2026-06-15**, and it drives everything below:
+
+| Path | How it runs | Billing |
+|------|-------------|---------|
+| 🟢 `/error-sweep` slash command | **Interactive** Claude Code session | **Free on Claude Max** — interactive usage is covered by the subscription. **$0 extra.** |
+| 💸 GitHub Action (`error-sweep.yml`) | Unattended CI | **Metered** — "automated usage" bills the **pay-per-token Anthropic API** pool, *not* Max. Needs `ANTHROPIC_API_KEY`. |
+| 💸 `run-error-sweep.sh` | Headless `claude -p` | **Metered** — same pay-per-token API pool. Needs `ANTHROPIC_API_KEY`. |
+
+Two hard rules from that policy:
+
+1. **Pilot via the free interactive path.** Run `/error-sweep` in a session first. It's
+   $0 on Max and you watch every step. Only move to the metered paths once you trust it
+   and specifically want it unattended.
+2. **Never put a subscription OAuth token on the unattended paths.** Using a Max OAuth
+   token for the GitHub Action or headless `claude -p` **violates Anthropic's ToS** —
+   automated usage must use a pay-per-token `ANTHROPIC_API_KEY`. That's why the metered
+   runners require the API key and the cron ships **disabled**.
+
+**Keeping the metered bill small** (if/when you enable it): the cron is opt-in and off by
+default; `--max-turns` and "max 5 issues/run" cap each run; and the runners default to a
+cheaper model (`claude-sonnet-4-6`) — bump to opus only if fix quality needs it.
+
+---
+
 ## Secrets to set
 
-Add these in **GitHub → repo Settings → Secrets and variables → Actions** before the
-nightly workflow can run. **No secret values live in this repo** — only names.
+Add these in **GitHub → repo Settings → Secrets and variables → Actions** — only needed
+for the **metered GitHub Action**. The free `/error-sweep` path needs none of them
+(it uses your interactive session + your shell's Sentry env vars). **No secret values
+live in this repo** — only names.
 
-**Required**
+**Required (for the metered Action)**
 
 | Secret | What it is |
 |--------|------------|
-| `CLAUDE_CODE_OAUTH_TOKEN` | Claude Code OAuth token from a Claude subscription (no per-call API bill). Generate with `claude setup-token`. **Or** use `ANTHROPIC_API_KEY` instead (see below). |
+| `ANTHROPIC_API_KEY` | Anthropic API key — **pay-per-token (METERED)**. Required for the unattended Action/headless paths; Max does not cover them, and a subscription OAuth token is not allowed here (ToS). |
 | `SENTRY_AUTH_TOKEN` | Sentry auth token with **project read** + **issue write** (to read issues/events and to tag/comment them). |
 | `SENTRY_ORG` | Sentry org slug. |
 | `SENTRY_PROJECT` | Sentry project slug for Driven Talent. |
@@ -62,41 +93,50 @@ nightly workflow can run. **No secret values live in this repo** — only names.
 
 | Secret | What it is |
 |--------|------------|
-| `ANTHROPIC_API_KEY` | Alternative to `CLAUDE_CODE_OAUTH_TOKEN` — bills the Anthropic API directly. If you use this, swap the auth line in `error-sweep.yml` (commented there). |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Real Supabase values for fuller build/test parity. Harmless placeholders are used if unset. |
 
 > One-time: install the **Claude GitHub App** on the repo (`/install-github-app` from
 > the `claude` CLI, or <https://github.com/apps/claude>). The app lets the action
-> authenticate to GitHub; the secrets above cover Claude + Sentry.
+> authenticate to GitHub; the secrets above cover the API + Sentry.
 
 ---
 
-## Run the supervised pilot (do this BEFORE trusting the cron)
+## Run the pilot — FREE interactive path (do this first)
 
-The local script defaults to a **safe dry run** — it queries Sentry and prints the
-plan it *would* execute, touching no files, branches, or PRs.
+This costs **$0 extra** on Max and is the recommended way to try the loop:
 
 ```bash
-# 1) Auth once
-claude            # log in (subscription), or: export ANTHROPIC_API_KEY=...
-gh auth login     # only needed for a --live run
-
-# 2) Point at Sentry
+# 1) Point your shell at Sentry (the session inherits these)
 export SENTRY_AUTH_TOKEN=...   # project read + issue write
 export SENTRY_ORG=...          # org slug
 export SENTRY_PROJECT=...      # project slug
 
-# 3) Dry run — watch what it plans, no changes made
-scripts/run-error-sweep.sh
+# 2) Start an interactive Claude Code session in the repo, then run:
+/error-sweep            # handle up to 5 issues
+/error-sweep 1          # or just one, to review a single PR first
+```
 
-# 4) When you trust it, do ONE real issue and review the PR it opens
-scripts/run-error-sweep.sh --live --max-issues 1
+You approve each tool call as it happens and watch it open PRs (it never merges).
+
+### Metered supervised path (only if you want it headless)
+
+`scripts/run-error-sweep.sh` runs the same loop via headless `claude -p` — **metered**,
+so it requires `ANTHROPIC_API_KEY`. It defaults to a **safe dry run** (queries Sentry,
+prints the plan, touches nothing):
+
+```bash
+export ANTHROPIC_API_KEY=...   # pay-per-token — this path is metered
+export SENTRY_AUTH_TOKEN=... SENTRY_ORG=... SENTRY_PROJECT=...
+gh auth login                  # only needed for a --live run
+
+scripts/run-error-sweep.sh                      # dry run, no changes
+scripts/run-error-sweep.sh --live --max-issues 1   # one real issue → review the PR
 ```
 
 Every run streams to your terminal and is teed to `.loops/runs/sweep-<timestamp>.log`
-(git-ignored). Once a `--live` pilot opens a clean PR you're happy with, enable the
-nightly workflow by adding the secrets above — or trigger it on demand from the
-**Actions** tab via **Run workflow** (`workflow_dispatch`).
+(git-ignored). The metered **cron** stays disabled until you uncomment the `schedule:`
+block in `error-sweep.yml`; until then the Action only runs on demand from the
+**Actions** tab via **Run workflow** (`workflow_dispatch`) — and each run is metered.
 
 ---
 

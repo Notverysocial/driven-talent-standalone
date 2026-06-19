@@ -2,6 +2,15 @@
 #
 # run-error-sweep.sh — run ONE Production Error Sweep pass locally, supervised.
 #
+# ⚠️ METERED. This uses headless `claude -p`, which is "automated usage": as of
+#    2026-06-15 it bills from the pay-per-token Anthropic API pool, NOT the Claude
+#    Max subscription. It therefore REQUIRES ANTHROPIC_API_KEY. A subscription
+#    OAuth token must not be used for unattended/headless runs (ToS).
+#
+#    FREE alternative (recommended pilot): run the `/error-sweep` slash command
+#    inside an interactive Claude Code session — that's covered by Max, $0 extra.
+#    Use this script only when you specifically want the headless/metered path.
+#
 # This is the "watch it before you trust the cron" script. It runs the same loop
 # (.loops/production-error-sweep.md) that the nightly GitHub Action runs, but on
 # your machine where you can read every action it streams.
@@ -18,7 +27,8 @@
 #   scripts/run-error-sweep.sh --live --max-issues 1
 #
 # Requires:
-#   - claude  (Claude Code CLI, logged in: `claude` subscription OR ANTHROPIC_API_KEY)
+#   - claude  (Claude Code CLI)
+#   - ANTHROPIC_API_KEY  (pay-per-token — this path is METERED; Max does not cover it)
 #   - gh      (GitHub CLI, authenticated) — only needed for --live
 #   - SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT in your environment
 #
@@ -49,6 +59,10 @@ fail() { echo "ERROR: $*" >&2; exit 1; }
 
 command -v claude >/dev/null 2>&1 || fail "claude CLI not found. Install Claude Code first."
 [[ -f "$PROMPT_FILE" ]] || fail "missing loop prompt: $PROMPT_FILE"
+
+# METERED: headless `claude -p` bills the pay-per-token API, not Max. Require the key
+# so this never silently falls back to (ToS-violating) subscription auth.
+: "${ANTHROPIC_API_KEY:?METERED path — set ANTHROPIC_API_KEY (pay-per-token). For a FREE run, use the /error-sweep slash command in an interactive Claude session instead.}"
 
 : "${SENTRY_AUTH_TOKEN:?set SENTRY_AUTH_TOKEN (Sentry token: project read + issue write)}"
 : "${SENTRY_ORG:?set SENTRY_ORG (Sentry org slug)}"
@@ -88,7 +102,7 @@ fi
 PROMPT="Read and follow ${PROMPT_FILE} exactly. ${RUN_NOTE}"
 
 echo "============================================================"
-echo " Production Error Sweep — ${MODE}"
+echo " Production Error Sweep — ${MODE}  [METERED: pay-per-token API]"
 echo "   max issues : ${MAX_ISSUES}"
 echo "   max turns  : ${MAX_TURNS}"
 echo "   model      : ${MODEL}"
