@@ -2,10 +2,26 @@ import "server-only";
 import { createClient } from "./supabase/server";
 import type {
   Client,
+  ClientWorkersCompCode,
   EmployeeAssignment,
   InvoiceLineItem,
   InvoiceStatus,
 } from "./supabase/types";
+
+// Per-client × position workers-comp code mapping (task 86e20w8tq). Ordered
+// by position for stable display. Empty array when none configured yet.
+export async function listClientWorkersCompCodes(
+  clientId: string,
+): Promise<ClientWorkersCompCode[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("client_workers_comp_codes")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("position");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ClientWorkersCompCode[];
+}
 
 // One row per client in the margin overview list.
 // `realized*` come from posted invoices (the "what we billed and what
