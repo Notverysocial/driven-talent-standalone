@@ -8,8 +8,9 @@ import {
   type ApplicationIntake,
   type ApplicationIntakeStatus,
 } from "@/lib/recruiting";
-import { IntakeCard } from "./IntakeCard";
+import { IntakeCard, type IntakeCalendlyContext } from "./IntakeCard";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -53,6 +54,15 @@ export default async function ApplicationsPage({
 
   const tb = (await getServerDictionary()).topbar.applications;
   const all = await listApplicationIntakes();
+
+  // Calendly context (connected + base URL + phone-screen slug) is read once
+  // and handed to each intake card, which builds its own prefilled URL.
+  const cal = await getCalendlySchedulingContext();
+  const calendly = {
+    connected: cal.connected,
+    schedulingUrl: cal.schedulingUrl,
+    phoneScreenSlug: cal.eventSlugs.phone_screen,
+  };
 
   // Filter option lists from the full data set.
   const monthSet = new Set<string>();
@@ -275,13 +285,13 @@ export default async function ApplicationsPage({
           empty state). With a status filter active, only render the groups
           that actually have matching rows. */}
       {(!validStatus || newIntakes.length > 0) && (
-        <Section title="New" subtitle="Awaiting first review" rows={newIntakes} fmt={fmtDateTime} hideWhenEmpty={Boolean(validStatus)} />
+        <Section title="New" subtitle="Awaiting first review" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} hideWhenEmpty={Boolean(validStatus)} />
       )}
       {reviewed.length > 0 && (
-        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} />
+        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} />
       )}
       {promoted.length > 0 && (
-        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} />
+        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} />
       )}
 
       {all.length === 0 && (
@@ -322,12 +332,14 @@ function Section({
   subtitle,
   rows,
   fmt,
+  calendly,
   hideWhenEmpty = false,
 }: {
   title: string;
   subtitle: string;
   rows: ApplicationIntake[];
   fmt: (d: string | null) => string;
+  calendly: IntakeCalendlyContext;
   hideWhenEmpty?: boolean;
 }) {
   if (rows.length === 0 && hideWhenEmpty) return null;
@@ -358,7 +370,7 @@ function Section({
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
         {rows.map((intake) => (
-          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} />
+          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} />
         ))}
       </div>
     </div>

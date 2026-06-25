@@ -4,15 +4,28 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
+import { CalendlyScheduler } from "@/components/CalendlyScheduler";
+import {
+  buildCalendlyBookingUrl,
+  CALENDLY_EVENT_TYPES,
+} from "@/lib/integrations/calendly-events";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
 import { promoteIntakeToCandidate, setIntakeStatus, updateIntake } from "./actions";
+
+export type IntakeCalendlyContext = {
+  connected: boolean;
+  schedulingUrl: string | null;
+  phoneScreenSlug: string;
+};
 
 export function IntakeCard({
   intake,
   createdLabel,
+  calendly,
 }: {
   intake: ApplicationIntake;
   createdLabel: string;
+  calendly: IntakeCalendlyContext;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -52,6 +65,20 @@ export function IntakeCard({
     intake.created_at &&
       Date.now() - new Date(intake.created_at).getTime() < 24 * 60 * 60 * 1000,
   );
+
+  // Offer a phone-screen booking on still-actionable intakes only.
+  const showScheduler =
+    intake.status !== "rejected" &&
+    intake.status !== "spam" &&
+    intake.status !== "promoted";
+  const phoneScreenUrl = calendly.schedulingUrl
+    ? buildCalendlyBookingUrl({
+        schedulingUrl: calendly.schedulingUrl,
+        slug: calendly.phoneScreenSlug,
+        name: intake.full_name,
+        email: intake.email,
+      })
+    : null;
 
   return (
     <div
@@ -149,6 +176,23 @@ export function IntakeCard({
           >
             Edit Info
           </button>
+
+          {showScheduler && (
+            <CalendlyScheduler
+              connected={calendly.connected}
+              size="sm"
+              emptyHint="Connect Calendly to schedule"
+              options={[
+                {
+                  key: "phone_screen",
+                  label: "Schedule Phone Screen",
+                  durationMinutes:
+                    CALENDLY_EVENT_TYPES.phone_screen.durationMinutes,
+                  url: phoneScreenUrl,
+                },
+              ]}
+            />
+          )}
 
           {intake.status !== "rejected" && intake.status !== "promoted" && (
             <button

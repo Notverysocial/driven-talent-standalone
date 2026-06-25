@@ -11,6 +11,12 @@ import {
   weightedScore,
 } from "@/lib/candidates";
 import { getCandidate } from "@/lib/candidates.server";
+import { CalendlyScheduler } from "@/components/CalendlyScheduler";
+import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
+import {
+  buildCalendlyBookingUrl,
+  CALENDLY_EVENT_TYPES,
+} from "@/lib/integrations/calendly-events";
 import { CriterionRow } from "./CriterionRow";
 import { NotesEditor } from "./NotesEditor";
 import { StatusActions } from "./StatusActions";
@@ -32,6 +38,39 @@ export default async function CandidateDetailPage({
   const tier = tierLabel(score);
   const tierColor = scoreColor(score);
   const status = CANDIDATE_STATUSES.find((s) => s.id === cand.status)!;
+
+  // Calendly scheduling — surface Phone Screen + Interview while the candidate
+  // is still moving through the pipeline (no point once hired/rejected/offer).
+  const cal = await getCalendlySchedulingContext();
+  const schedulingActive = ["applied", "screening", "interview"].includes(
+    cand.status,
+  );
+  const calOptions = cal.schedulingUrl
+    ? [
+        {
+          key: "phone_screen",
+          label: "Phone Screen",
+          durationMinutes: CALENDLY_EVENT_TYPES.phone_screen.durationMinutes,
+          url: buildCalendlyBookingUrl({
+            schedulingUrl: cal.schedulingUrl,
+            slug: cal.eventSlugs.phone_screen,
+            name: cand.full_name,
+            email: cand.email,
+          }),
+        },
+        {
+          key: "interview",
+          label: "Interview",
+          durationMinutes: CALENDLY_EVENT_TYPES.interview.durationMinutes,
+          url: buildCalendlyBookingUrl({
+            schedulingUrl: cal.schedulingUrl,
+            slug: cal.eventSlugs.interview,
+            name: cand.full_name,
+            email: cand.email,
+          }),
+        },
+      ]
+    : [];
 
   return (
     <Shell>
@@ -286,6 +325,28 @@ export default async function CandidateDetailPage({
               />
             </div>
           </div>
+
+          {schedulingActive && (
+            <div className="dt-card" style={{ padding: 18 }}>
+              <div
+                className="tiny muted"
+                style={{
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  fontWeight: 400,
+                  marginBottom: 10,
+                }}
+              >
+                Schedule
+              </div>
+              <CalendlyScheduler
+                connected={cal.connected}
+                options={calOptions}
+                size="sm"
+                emptyHint="Connect Calendly in Integrations to schedule."
+              />
+            </div>
+          )}
 
           {cand.status === "offer" && (
             <div className="dt-card" style={{ padding: 18 }}>
