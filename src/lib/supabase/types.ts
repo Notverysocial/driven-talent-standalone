@@ -5,6 +5,10 @@
 // with (terminated, do_not_return).
 export type EmployeeStatus = "active" | "onboarding" | "inactive" | "terminated" | "do_not_return";
 export type ScoreBand = "green" | "yellow" | "red";
+// Document-language preference on a person record (migration 0033, task 86e20w8yz).
+// Distinct from the app's UI locale: this is the language their onboarding docs /
+// welcome letter should be generated in.
+export type LanguagePref = "en" | "es";
 // `present` is retained for historical rows; the attendance workflow now logs
 // EXCEPTIONS only (everyone is assumed scheduled/present unless an exception is
 // recorded). `sick_day` was added additively in migration 0027.
@@ -41,6 +45,26 @@ export type Client = {
   terms: string | null;
   service_fee_pct: number;
   report_format: ClientReportFormat;
+  // Added in 0033 — per-client config from the onboarding backlog (task 86e20w8qy).
+  // `account_manager` is the DT person "in charge" of the account. The
+  // workers_comp_* fields are the client's default WC code/class; per-position
+  // overrides live in `client_workers_comp_codes`.
+  workers_comp_code: string | null;
+  workers_comp_class: string | null;
+  account_manager: string | null;
+  workers_comp_notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// Per-client × position workers-comp code mapping (migration 0033, task 86e20w8tq).
+export type ClientWorkersCompCode = {
+  id: string;
+  client_id: string;
+  position: string;
+  wc_code: string;
+  wc_class: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -62,6 +86,8 @@ export type Employee = {
   onboarding_in_charge: string | null;
   sick_hours_balance: number;
   birthday: string | null;
+  // Added in 0033 — document-language preference (task 86e20w8yz).
+  language_pref: LanguagePref;
   created_at: string;
   updated_at: string;
 };
@@ -148,6 +174,23 @@ export type Candidate = {
   // Added in 0031 — used by the per-recruiter candidate tabs (#14).
   photo_url: string | null;
   responded: boolean;
+  // Added in 0033 — document-language preference (task 86e20w8yz).
+  language_pref: LanguagePref;
+  created_at: string;
+  updated_at: string;
+};
+
+// PEOPLEASE new-hire forms tracker (migration 0033, task 86e20w8v9).
+export type PeopleaseFormStatus = "pending" | "in_progress" | "complete" | "na";
+
+export type EmployeePeopleaseForm = {
+  id: string;
+  employee_id: string;
+  form_key: string;
+  label: string;
+  status: PeopleaseFormStatus;
+  completed_on: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };

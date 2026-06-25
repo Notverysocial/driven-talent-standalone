@@ -34,6 +34,10 @@ export default async function ApplicationsPage({
     month?: string;
     day?: string;
     status?: string;
+    source?: string;
+    position?: string;
+    city?: string;
+    minExp?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -41,16 +45,30 @@ export default async function ApplicationsPage({
   const filterMonth = (sp.month ?? "").trim();
   const filterDay = (sp.day ?? "").trim();
   const filterStatusRaw = (sp.status ?? "").trim();
+  const filterSource = (sp.source ?? "").trim();
+  const filterPosition = (sp.position ?? "").trim();
+  const filterCity = (sp.city ?? "").trim();
+  const filterMinExpRaw = (sp.minExp ?? "").trim();
+  const filterMinExp = filterMinExpRaw ? Number(filterMinExpRaw) : null;
 
   const tb = (await getServerDictionary()).topbar.applications;
   const all = await listApplicationIntakes();
 
   // Filter option lists from the full data set.
   const monthSet = new Set<string>();
+  const sourceSet = new Set<string>();
+  const positionSet = new Set<string>();
+  const citySet = new Set<string>();
   for (const i of all) {
     if (i.created_at) monthSet.add(monthKey(i.created_at));
+    if (i.source) sourceSet.add(i.source);
+    if (i.position_of_interest) positionSet.add(i.position_of_interest);
+    if (i.city) citySet.add(i.city);
   }
   const months = Array.from(monthSet).sort().reverse();
+  const sources = Array.from(sourceSet).sort();
+  const positions = Array.from(positionSet).sort();
+  const cities = Array.from(citySet).sort();
 
   const validStatus = INTAKE_STATUSES.some((s) => s.id === filterStatusRaw)
     ? (filterStatusRaw as ApplicationIntakeStatus)
@@ -61,6 +79,12 @@ export default async function ApplicationsPage({
     if (filterMonth && (!i.created_at || monthKey(i.created_at) !== filterMonth)) return false;
     if (filterDay && (!i.created_at || i.created_at.slice(0, 10) !== filterDay)) return false;
     if (validStatus && i.status !== validStatus) return false;
+    if (filterSource && i.source !== filterSource) return false;
+    if (filterPosition && i.position_of_interest !== filterPosition) return false;
+    if (filterCity && i.city !== filterCity) return false;
+    if (filterMinExp !== null && !Number.isNaN(filterMinExp)) {
+      if (i.experience_years == null || i.experience_years < filterMinExp) return false;
+    }
     if (searchLower) {
       const hay = `${i.full_name ?? ""} ${i.position_of_interest ?? ""} ${i.email ?? ""}`.toLowerCase();
       if (!hay.includes(searchLower)) return false;
@@ -68,7 +92,10 @@ export default async function ApplicationsPage({
     return true;
   });
 
-  const anyFilter = Boolean(search || filterMonth || filterDay || validStatus);
+  const anyFilter = Boolean(
+    search || filterMonth || filterDay || validStatus ||
+    filterSource || filterPosition || filterCity || filterMinExpRaw,
+  );
 
   // Counts from the full data set so the KPI strip is a constant tally.
   const counts = new Map<ApplicationIntakeStatus, number>();
@@ -84,6 +111,10 @@ export default async function ApplicationsPage({
   if (search) baseParams.set("q", search);
   if (filterMonth) baseParams.set("month", filterMonth);
   if (filterDay) baseParams.set("day", filterDay);
+  if (filterSource) baseParams.set("source", filterSource);
+  if (filterPosition) baseParams.set("position", filterPosition);
+  if (filterCity) baseParams.set("city", filterCity);
+  if (filterMinExpRaw) baseParams.set("minExp", filterMinExpRaw);
 
   return (
     <Shell>
@@ -182,6 +213,46 @@ export default async function ApplicationsPage({
         <label className="dt-filter">
           <span className="dt-filter-label">Day</span>
           <input type="date" name="day" defaultValue={filterDay} className="dt-filter-input" />
+        </label>
+        <label className="dt-filter">
+          <span className="dt-filter-label">Source</span>
+          <select name="source" defaultValue={filterSource} className="dt-filter-input">
+            <option value="">All sources</option>
+            {sources.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="dt-filter">
+          <span className="dt-filter-label">Position</span>
+          <select name="position" defaultValue={filterPosition} className="dt-filter-input">
+            <option value="">All positions</option>
+            {positions.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </label>
+        <label className="dt-filter">
+          <span className="dt-filter-label">City</span>
+          <select name="city" defaultValue={filterCity} className="dt-filter-input">
+            <option value="">All cities</option>
+            {cities.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+        <label className="dt-filter">
+          <span className="dt-filter-label">Min Exp (yrs)</span>
+          <input
+            type="number"
+            name="minExp"
+            min={0}
+            step={1}
+            defaultValue={filterMinExpRaw}
+            placeholder="Any"
+            className="dt-filter-input"
+            style={{ width: 96 }}
+          />
         </label>
         {validStatus && <input type="hidden" name="status" value={validStatus} />}
         <button type="submit" className="dt-btn">

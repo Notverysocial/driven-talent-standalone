@@ -16,6 +16,8 @@ import { NotesEditor } from "./NotesEditor";
 import { StatusActions } from "./StatusActions";
 import { ResumeBlock } from "./ResumeBlock";
 import { SendOnboardingDoc } from "./SendOnboardingDoc";
+import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
+import { setCandidateLanguagePref } from "../actions";
 
 export default async function CandidateDetailPage({
   params,
@@ -274,6 +276,14 @@ export default async function CandidateDetailPage({
             <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.7 }}>
               <div>{cand.email ?? "—"}</div>
               <div className="tab-num">{cand.phone ?? "—"}</div>
+            </div>
+            {/* Document-language preference — carries onto the employee record
+                at hire so onboarding docs default to their language (task 86e20w8yz). */}
+            <div style={{ marginTop: 14 }}>
+              <LanguagePrefSelect
+                current={cand.language_pref}
+                action={setCandidateLanguagePref.bind(null, cand.id)}
+              />
             </div>
           </div>
 

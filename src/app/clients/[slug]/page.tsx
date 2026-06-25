@@ -4,9 +4,17 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
 import { KpiTile, KpiGrid } from "@/components/KpiTile";
-import { getClientMarginDetail } from "@/lib/clients.server";
+import {
+  getClientMarginDetail,
+  listClientWorkersCompCodes,
+} from "@/lib/clients.server";
 import { fmtPct, fmtUSD, fmtUSD2, marginTone } from "@/lib/clients";
 import { INVOICE_STATUSES } from "@/lib/invoices";
+import {
+  addWorkersCompCode,
+  deleteWorkersCompCode,
+  updateClientConfig,
+} from "../actions";
 
 function fmtPeriod(start: string, end: string): string {
   const s = new Date(start + "T00:00:00").toLocaleDateString("en-US", {
@@ -38,6 +46,7 @@ export default async function ClientMarginDetailPage(props: {
   if (!detail) notFound();
 
   const { client, overview, invoices, assignments } = detail;
+  const wcCodes = await listClientWorkersCompCodes(client.id);
   const realizedTone = marginTone(overview.realizedMarginPct);
   const expectedTone = marginTone(overview.expectedMarginPct);
 
@@ -309,7 +318,155 @@ export default async function ClientMarginDetailPage(props: {
               valueColor="var(--dt-gold-deep)"
             />
           </div>
+
+          {/* Editable per-client config: who's in charge + default WC code/class.
+              Per-position WC overrides live in the table below. (task 86e20w8qy) */}
+          <form
+            action={updateClientConfig.bind(null, slug)}
+            className="dt-card"
+            style={{ padding: "22px 24px" }}
+          >
+            <div
+              className="tiny muted"
+              style={{
+                letterSpacing: "0.18em",
+                textTransform: "uppercase",
+                fontWeight: 400,
+                marginBottom: 12,
+              }}
+            >
+              Client Configuration
+            </div>
+            <ConfigField
+              label="Account Manager"
+              name="account_manager"
+              defaultValue={client.account_manager ?? ""}
+              placeholder="DT person in charge of this client"
+            />
+            <ConfigField
+              label="Default WC Code"
+              name="workers_comp_code"
+              defaultValue={client.workers_comp_code ?? ""}
+              placeholder="e.g. 8810"
+            />
+            <ConfigField
+              label="Default WC Class"
+              name="workers_comp_class"
+              defaultValue={client.workers_comp_class ?? ""}
+              placeholder="e.g. Clerical"
+            />
+            <ConfigField
+              label="WC Notes"
+              name="workers_comp_notes"
+              defaultValue={client.workers_comp_notes ?? ""}
+              placeholder="Carrier / policy notes"
+              textarea
+            />
+            <button type="submit" className="dt-btn dt-btn-primary" style={{ marginTop: 12, width: "100%" }}>
+              Save Configuration
+            </button>
+          </form>
         </div>
+      </div>
+
+      {/* Workers-comp code mapping per position (task 86e20w8tq). The default
+          code/class lives on the client config card above; these are
+          position-specific overrides PEOPLEASE assigns at this client. */}
+      <div className="dt-card" style={{ marginBottom: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Workers-Comp Codes by Position</h3>
+            <div className="sub">
+              Position-specific WC code/class · falls back to the client default when unset
+            </div>
+          </div>
+        </div>
+        <div className="dt-table-wrap">
+          <table className="dt-table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 22 }}>Position</th>
+                <th>WC Code</th>
+                <th>Class</th>
+                <th>Description</th>
+                <th style={{ textAlign: "right", paddingRight: 22 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {wcCodes.map((wc) => (
+                <tr key={wc.id}>
+                  <td style={{ paddingLeft: 22, fontWeight: 500 }}>{wc.position}</td>
+                  <td className="tab-num">{wc.wc_code}</td>
+                  <td>{wc.wc_class ?? "—"}</td>
+                  <td style={{ fontSize: 12, color: "var(--dt-warm-700)" }}>
+                    {wc.description ?? "—"}
+                  </td>
+                  <td style={{ textAlign: "right", paddingRight: 22 }}>
+                    <form action={deleteWorkersCompCode.bind(null, wc.id, slug)}>
+                      <button
+                        type="submit"
+                        className="dt-btn dt-btn-ghost tiny"
+                        style={{ color: "var(--dt-danger)" }}
+                      >
+                        Remove
+                      </button>
+                    </form>
+                  </td>
+                </tr>
+              ))}
+              {wcCodes.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    style={{
+                      textAlign: "center",
+                      padding: "28px 22px",
+                      color: "var(--dt-warm-500)",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No position-specific codes yet — the client default applies to everyone.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <form
+          action={addWorkersCompCode.bind(null, slug, client.id)}
+          style={{
+            margin: "8px 18px 18px",
+            padding: "14px 16px",
+            background: "var(--dt-warm-50)",
+            border: "1px dashed var(--dt-warm-200)",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              letterSpacing: "0.22em",
+              textTransform: "uppercase",
+              color: "var(--dt-warm-500)",
+              fontWeight: 400,
+              marginBottom: 10,
+            }}
+          >
+            Add / update a position code
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr auto", gap: 8 }}>
+            <input name="position" placeholder="Position (e.g. Forklift Operator)" className="dt-filter-input" required />
+            <input name="wc_code" placeholder="WC code (e.g. 8810)" className="dt-filter-input" required />
+            <input name="wc_class" placeholder="Class (optional)" className="dt-filter-input" />
+            <button type="submit" className="dt-btn">Add</button>
+          </div>
+          <input
+            name="description"
+            placeholder="Optional description"
+            className="dt-filter-input"
+            style={{ width: "100%", marginTop: 8 }}
+          />
+        </form>
       </div>
 
       <div className="dt-card">
@@ -431,6 +588,56 @@ export default async function ClientMarginDetailPage(props: {
         </div>
       </div>
     </Shell>
+  );
+}
+
+function ConfigField({
+  label,
+  name,
+  defaultValue,
+  placeholder,
+  textarea,
+}: {
+  label: string;
+  name: string;
+  defaultValue: string;
+  placeholder?: string;
+  textarea?: boolean;
+}) {
+  return (
+    <label style={{ display: "block", marginBottom: 10 }}>
+      <span
+        style={{
+          display: "block",
+          fontSize: 9.5,
+          letterSpacing: "0.2em",
+          textTransform: "uppercase",
+          color: "var(--dt-warm-500)",
+          fontWeight: 400,
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </span>
+      {textarea ? (
+        <textarea
+          name={name}
+          defaultValue={defaultValue}
+          placeholder={placeholder}
+          className="dt-filter-input"
+          rows={2}
+          style={{ width: "100%", resize: "vertical" }}
+        />
+      ) : (
+        <input
+          name={name}
+          defaultValue={defaultValue}
+          placeholder={placeholder}
+          className="dt-filter-input"
+          style={{ width: "100%" }}
+        />
+      )}
+    </label>
   );
 }
 

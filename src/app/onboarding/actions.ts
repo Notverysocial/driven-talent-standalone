@@ -4,11 +4,61 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import type {
+  LanguagePref,
   OnboardingCategory,
   OnboardingStatus,
+  PeopleaseFormStatus,
 } from "@/lib/supabase/types";
 
+const LANGUAGE_PREFS: LanguagePref[] = ["en", "es"];
+
+// Document-language preference on the employee record (task 86e20w8yz).
+export async function setEmployeeLanguagePref(
+  employeeId: string,
+  next: LanguagePref,
+) {
+  if (!LANGUAGE_PREFS.includes(next)) throw new Error(`Invalid language: ${next}`);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("employees")
+    .update({ language_pref: next })
+    .eq("id", employeeId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/onboarding/${employeeId}`);
+  revalidatePath(`/employees/${employeeId}`);
+}
+
 const STATUS_VALUES: OnboardingStatus[] = ["not_started", "in_progress", "done", "na"];
+
+const PEOPLEASE_FORM_STATUS_VALUES: PeopleaseFormStatus[] = [
+  "pending",
+  "in_progress",
+  "complete",
+  "na",
+];
+
+// PEOPLEASE forms tracker — set a single form's completion status (task 86e20w8v9).
+export async function setPeopleaseFormStatus(
+  formId: string,
+  employeeId: string,
+  status: PeopleaseFormStatus,
+) {
+  if (!PEOPLEASE_FORM_STATUS_VALUES.includes(status)) {
+    throw new Error(`Invalid form status: ${status}`);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("employee_peoplease_forms")
+    .update({
+      status,
+      completed_on: status === "complete" ? new Date().toISOString().slice(0, 10) : null,
+    })
+    .eq("id", formId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/onboarding/${employeeId}`);
+  revalidatePath("/onboarding");
+}
 
 export async function setItemStatus(
   itemId: string,

@@ -7,13 +7,21 @@ import { Badge } from "@/components/Badge";
 import {
   generateWelcomeLetterBody,
   getOnboardingDetail,
+  getPeopleaseForms,
 } from "@/lib/onboarding.server";
 import { ONBOARDING_TEMPLATE, calcProgress } from "@/lib/onboarding";
 import { listEsignatureRequestsForEmployee } from "@/lib/team.server";
 import { ItemRow } from "./ItemRow";
+import { PeopleaseFormsPanel } from "./PeopleaseFormsPanel";
 import { WelcomeLetter } from "./WelcomeLetter";
 import { EsignaturePanel } from "./EsignaturePanel";
-import { addChecklistItem, addDocument, toggleDocument } from "../actions";
+import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
+import {
+  addChecklistItem,
+  addDocument,
+  setEmployeeLanguagePref,
+  toggleDocument,
+} from "../actions";
 import { getActiveEsignProviderInfo } from "../esign-actions";
 
 function fmtDate(d: string | null) {
@@ -31,9 +39,10 @@ export default async function OnboardingDetailPage({
   if (!detail) notFound();
 
   const { employee, checklist, documents, primaryAssignment, welcomeLetter } = detail;
-  const [esignRequests, providerInfo] = await Promise.all([
+  const [esignRequests, providerInfo, peopleaseForms] = await Promise.all([
     listEsignatureRequestsForEmployee(employeeId),
     getActiveEsignProviderInfo(),
+    getPeopleaseForms(employeeId),
   ]);
   const progress = calcProgress(checklist);
   const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
@@ -82,6 +91,15 @@ export default async function OnboardingDetailPage({
             {employee.onboarding_in_charge && (
               <Badge tone="warm">In charge: {employee.onboarding_in_charge}</Badge>
             )}
+          </div>
+
+          {/* Document-language preference — drives the language onboarding docs
+              are generated in (task 86e20w8yz). */}
+          <div style={{ marginTop: 12 }}>
+            <LanguagePrefSelect
+              current={employee.language_pref}
+              action={setEmployeeLanguagePref.bind(null, employee.id)}
+            />
           </div>
 
           <div
@@ -218,6 +236,9 @@ export default async function OnboardingDetailPage({
           />
         </form>
       </div>
+
+      {/* PEOPLEASE new-hire forms packet (task 86e20w8v9) */}
+      <PeopleaseFormsPanel employeeId={employee.id} forms={peopleaseForms} />
 
       {/* Documents */}
       <div className="dt-card" style={{ marginTop: 22 }}>
