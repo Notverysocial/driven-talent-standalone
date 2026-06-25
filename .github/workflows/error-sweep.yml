@@ -1,0 +1,106 @@
+name: error-sweep
+
+# Production Error Sweep loop (.loops/production-error-sweep.md).
+# Runs Claude Code unattended against this repo to triage the top unresolved
+# Sentry issues and open ONE fix PR per issue. PR-only — it never merges,
+# never auto-merges, never force-pushes, and never deploys.
+#
+# ⚠️ METERED — this is "automated usage": as of 2026-06-15 the GitHub Action bills
+#    from the pay-per-token Anthropic API pool, NOT the Claude Max subscription.
+#    It requires ANTHROPIC_API_KEY. Do NOT use a subscription OAuth token here —
+#    using a Max OAuth token for unattended CI violates Anthropic's ToS.
+#    FREE alternative for the pilot: run `/error-sweep` inside an interactive
+#    Claude Code session (covered by Max). See .loops/README.md → COST.
+#
+# The nightly cron is OPT-IN and DISABLED by default (schedule is commented out).
+# Until you uncomment it, this workflow only runs when you trigger it manually
+# from the Actions tab (workflow_dispatch) — and every such run is metered.
+#
+# Secrets required (set in repo Settings -> Secrets and variables -> Actions):
+#   ANTHROPIC_API_KEY         Anthropic API key — pay-per-token (METERED)
+#   SENTRY_AUTH_TOKEN         Sentry token with project read + issue write
+#   SENTRY_ORG                Sentry org slug
+#   SENTRY_PROJECT            Sentry project slug
+# Optional (build/test parity with ci.yml; harmless placeholders used if unset):
+#   NEXT_PUBLIC_SUPABASE_URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+on:
+  # OPT-IN nightly cron — METERED. Uncomment to enable (and accept API billing).
+  # 09:00 UTC = 02:00 America/Los_Angeles during PDT (summer); lands at 01:00 PT
+  # during PST (winter) since cron is fixed-UTC — close enough.
+  # schedule:
+  #   - cron: "0 9 * * *"
+  workflow_dispatch:
+    inputs:
+      max_issues:
+        description: "Override max issues to handle this run (default 5)"
+        required: false
+        default: "5"
+
+# Never let two sweeps run at once (no racing branches / duplicate PRs).
+concurrency:
+  group: error-sweep
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # create fix/sentry-* branches and commits
+  pull-requests: write  # open PRs (never merge)
+  issues: write         # link PRs back onto issues
+
+jobs:
+  sweep:
+    name: production-error-sweep
+    # Don't run the schedule on forks.
+    if: github.repository == 'Notverysocial/driven-talent-standalone'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history so Claude can branch off main cleanly
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Browsers preinstalled so the loop can run the Playwright suite when relevant.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Production Error Sweep
+        uses: anthropics/claude-code-action@v1
+        with:
+          # AUTH: METERED. Unattended runs must use the pay-per-token API key.
+          # A Claude Max subscription does NOT cover automated usage, and using a
+          # subscription OAuth token in CI violates Anthropic's ToS. For a FREE run,
+          # use the /error-sweep slash command interactively instead of this workflow.
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Single source of truth: the loop prompt lives in the repo.
+          prompt: |
+            Read and follow .loops/production-error-sweep.md exactly.
+            Handle at most ${{ github.event.inputs.max_issues || '5' }} issues this run.
+            This is an UNATTENDED run: PR-only. Never merge, never enable auto-merge,
+            never force-push, never deploy. Respect every guardrail in that file.
+          # CLI passthrough. --max-turns caps an unattended runaway (and caps metered
+          # spend); the loop's own "5 issues then stop" is the primary stop condition.
+          # Since this path is METERED, default to a cheaper model; bump to opus only
+          # if fix quality needs it.
+          claude_args: |
+            --max-turns 80
+            --model claude-sonnet-4-6
+            --allowedTools Bash,Read,Edit,Write,Glob,Grep,WebFetch,TodoWrite
+        env:
+          # Sentry access for the loop.
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+          # Build/test parity with ci.yml (placeholders keep the Next server booting).
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
