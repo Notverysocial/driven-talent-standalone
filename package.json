@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "verify:integrations": "node scripts/verify-integrations.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
