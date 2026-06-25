@@ -15,6 +15,10 @@ import {
   listEmployeeOptions,
   listUnmappedUattendEmployeeIds,
 } from "@/lib/timeclock-punches.server";
+import {
+  CALENDLY_EVENT_LIST,
+  buildCalendlyBookingUrl,
+} from "@/lib/integrations/calendly-events";
 import { ApiKeyForm } from "./ApiKeyForm";
 import { DisconnectButton } from "./DisconnectButton";
 import { syncIntegrationAction } from "./actions";
@@ -287,6 +291,7 @@ export default async function IntegrationsPage({
                   label="Last count"
                   value={String(row?.last_sync_count ?? 0)}
                 />
+                {provider === "calendly" && <CalendlyCardExtras row={row} />}
                 {status === "error" && row?.last_error && (
                   <details
                     style={{
@@ -368,6 +373,80 @@ export default async function IntegrationsPage({
         })}
       </div>
     </Shell>
+  );
+}
+
+// Calendly-only card extras: the discovered scheduling URL plus the booking
+// link for every DT event type (so an admin can copy a link, or verify the
+// event-type slugs match what was created in Calendly). Links are unprefilled
+// (no candidate name/email) — those are added at the point of use.
+function CalendlyCardExtras({ row }: { row: IntegrationRow | undefined }) {
+  const cfg = (row?.config ?? {}) as Record<string, unknown>;
+  const schedulingUrl =
+    typeof cfg.scheduling_url === "string" && cfg.scheduling_url.trim()
+      ? cfg.scheduling_url.trim()
+      : null;
+  const overrides =
+    (cfg.event_types as Record<string, { slug?: string } | undefined>) ?? {};
+
+  return (
+    <>
+      <Row label="Scheduling URL" value={schedulingUrl ?? "—"} />
+      <div
+        style={{
+          marginTop: 4,
+          paddingTop: 10,
+          borderTop: "1px dashed var(--dt-warm-200, rgba(0,0,0,0.08))",
+          display: "grid",
+          gap: 8,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10.5,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "var(--dt-warm-500)",
+          }}
+        >
+          Event types DT books
+        </div>
+        {CALENDLY_EVENT_LIST.map((evt) => {
+          const slug = overrides[evt.key]?.slug?.trim() || evt.defaultSlug;
+          const link = schedulingUrl
+            ? buildCalendlyBookingUrl({ schedulingUrl, slug, hideGdpr: false })
+            : null;
+          return (
+            <div key={evt.key} style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+              <div style={{ fontWeight: 500 }}>
+                {evt.name}{" "}
+                <span style={{ color: "var(--dt-warm-500)", fontWeight: 400 }}>
+                  · {evt.durationMinutes}m · slug <code>{slug}</code>
+                </span>
+              </div>
+              {link ? (
+                <a
+                  href={link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    color: "var(--dt-gold, #9a7b2e)",
+                    wordBreak: "break-all",
+                    fontSize: 11,
+                  }}
+                >
+                  {link}
+                </a>
+              ) : (
+                <span style={{ color: "var(--dt-warm-500)" }}>
+                  Connect to generate link
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

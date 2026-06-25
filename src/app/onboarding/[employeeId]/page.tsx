@@ -10,6 +10,12 @@ import {
 } from "@/lib/onboarding.server";
 import { ONBOARDING_TEMPLATE, calcProgress } from "@/lib/onboarding";
 import { listEsignatureRequestsForEmployee } from "@/lib/team.server";
+import { CalendlyScheduler } from "@/components/CalendlyScheduler";
+import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
+import {
+  buildCalendlyBookingUrl,
+  CALENDLY_EVENT_TYPES,
+} from "@/lib/integrations/calendly-events";
 import { ItemRow } from "./ItemRow";
 import { WelcomeLetter } from "./WelcomeLetter";
 import { EsignaturePanel } from "./EsignaturePanel";
@@ -38,6 +44,25 @@ export default async function OnboardingDetailPage({
   const progress = calcProgress(checklist);
   const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
   const generated = generateWelcomeLetterBody(employee, primaryAssignment);
+
+  // Calendly — book the new-hire orientation, prefilled with the employee's
+  // name/email so the booking reconciles back to them via the webhook.
+  const cal = await getCalendlySchedulingContext();
+  const onboardingOptions = cal.schedulingUrl
+    ? [
+        {
+          key: "onboarding",
+          label: "Schedule Orientation",
+          durationMinutes: CALENDLY_EVENT_TYPES.onboarding.durationMinutes,
+          url: buildCalendlyBookingUrl({
+            schedulingUrl: cal.schedulingUrl,
+            slug: cal.eventSlugs.onboarding,
+            name: employee.full_name,
+            email: employee.email,
+          }),
+        },
+      ]
+    : [];
 
   return (
     <Shell>
@@ -133,6 +158,41 @@ export default async function OnboardingDetailPage({
             </div>
           </div>
         </div>
+      </div>
+
+      <div
+        className="dt-card"
+        style={{
+          padding: "16px 22px",
+          marginBottom: 22,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div
+            className="tiny muted"
+            style={{
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              fontWeight: 400,
+            }}
+          >
+            Orientation
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--dt-warm-500)", marginTop: 4 }}>
+            Book the new-hire onboarding session via Calendly.
+          </div>
+        </div>
+        <CalendlyScheduler
+          connected={cal.connected}
+          options={onboardingOptions}
+          size="sm"
+          emptyHint="Connect Calendly in Integrations to schedule orientation."
+        />
       </div>
 
       <WelcomeLetter
