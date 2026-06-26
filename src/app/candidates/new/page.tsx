@@ -1,3 +1,7 @@
+// TODO [GATED — Estephany deliverable: candidate-log field list]
+// The candidate-log field rebuild (re-spec of which fields this form captures)
+// is blocked until Estephany provides the final field list. Leave the current
+// fields as-is; do NOT rebuild until the list is delivered.
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";

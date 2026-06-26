@@ -49,6 +49,7 @@ export const en = {
     pipeline: "Sales Pipeline",
     calendar: "Calendar",
     tasks: "Tasks",
+    notifications: "Notifications",
     contacts: "Contacts",
     legal: "Legal · Notices",
     workflows: "Workflows",

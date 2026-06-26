@@ -32,6 +32,9 @@ export type OnboardingCategory =
 export type OnboardingStatus = "not_started" | "in_progress" | "done" | "na";
 export type PayrollPeriodStatus = "open" | "audited" | "submitted" | "approved" | "closed";
 export type ClientReportFormat = "standard" | "hours_spent" | "timecard";
+// Client lifecycle status (migration 0034). Distinguishes live accounts from
+// prospects / churned ones in the Client section.
+export type ClientStatus = "active" | "prospect" | "inactive";
 
 export type Client = {
   id: string;
@@ -53,6 +56,10 @@ export type Client = {
   workers_comp_class: string | null;
   account_manager: string | null;
   workers_comp_notes: string | null;
+  // Added in 0034 — basic company info for the Client section.
+  phone: string | null;
+  website: string | null;
+  status: ClientStatus;
   created_at: string;
   updated_at: string;
 };
@@ -950,6 +957,75 @@ export type Profile = {
   team_member_id: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// ---------- Recruiters roster (migration 0034) -------------------------
+// Canonical, self-serve recruiter list driving the per-recruiter candidate
+// tabs. Candidates still link via the free-text candidates.recruiter column.
+export type Recruiter = {
+  id: string;
+  name: string;
+  email: string | null;
+  active: boolean;
+  sort: number;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Client contacts (migration 0020, surfaced in 0034 UI) ------
+export type ClientContact = {
+  id: string;
+  client_id: string;
+  full_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  department: string | null;
+  position: string | null;
+  phone: string | null;
+  email: string | null;
+  shift: string | null;
+  role_type: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Wellness / follow-up notes timeline (migration 0034) -------
+// Immutable, append-only case-management entries scoped to an employee.
+export type WellnessEntryType =
+  | "note"
+  | "follow_up"
+  | "wellness_check"
+  | "incident"
+  | "accident"
+  | "return_to_work"
+  | "other";
+
+export type WellnessNote = {
+  id: string;
+  employee_id: string;
+  entry_type: WellnessEntryType;
+  body: string;
+  author_name: string;
+  author_team_member_id: string | null;
+  occurred_at: string;
+  created_at: string;
+};
+
+// ---------- Notifications (team tagging, migration 0034) ----------------
+export type AppNotification = {
+  id: string;
+  recipient_team_member_id: string | null;
+  recipient_name: string;
+  actor_name: string | null;
+  kind: string;
+  body: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  link_path: string | null;
+  meta: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
 };
 
 export type BugReport = {

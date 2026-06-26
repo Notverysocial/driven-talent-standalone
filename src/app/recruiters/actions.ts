@@ -2,12 +2,61 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/auth.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { CandidateStatus } from "@/lib/supabase/types";
 
 function str(formData: FormData, name: string): string | null {
   const v = ((formData.get(name) as string) || "").trim();
   return v || null;
+}
+
+// ---------- Recruiter management (Phase-1 #3, admin-only) ----------------
+// Self-serve roster maintenance. Gated on the admin role so only authorized
+// operators can add/retire recruiters. Candidates keep their free-text
+// recruiter name, so retiring a recruiter never orphans their history.
+
+export async function addRecruiter(formData: FormData) {
+  await assertRole("admin");
+  const name = str(formData, "name");
+  if (!name) throw new Error("Recruiter name is required");
+  const email = str(formData, "email");
+
+  const sb = await createClient();
+  // Next sort = max + 1 so new recruiters append to the end of the tab order.
+  const { data: maxRow } = await sb
+    .from("recruiters")
+    .select("sort")
+    .order("sort", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextSort = ((maxRow?.sort as number | undefined) ?? 0) + 1;
+
+  const { error } = await sb
+    .from("recruiters")
+    .insert({ name, email, sort: nextSort });
+  if (error) {
+    // Unique index on lower(name) — surface a friendly duplicate message.
+    if (error.code === "23505") throw new Error(`Recruiter "${name}" already exists`);
+    throw new Error(error.message);
+  }
+  revalidatePath("/recruiters");
+}
+
+export async function setRecruiterActive(id: string, active: boolean) {
+  await assertRole("admin");
+  const sb = await createClient();
+  const { error } = await sb.from("recruiters").update({ active }).eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/recruiters");
+}
+
+export async function removeRecruiter(id: string) {
+  await assertRole("admin");
+  const sb = await createClient();
+  const { error } = await sb.from("recruiters").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  revalidatePath("/recruiters");
 }
 
 /**

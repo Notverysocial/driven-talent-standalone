@@ -10,7 +10,8 @@ import {
   getPeopleaseForms,
 } from "@/lib/onboarding.server";
 import { ONBOARDING_TEMPLATE, calcProgress } from "@/lib/onboarding";
-import { listEsignatureRequestsForEmployee } from "@/lib/team.server";
+import { listEsignatureRequestsForEmployee, listTeamMembers } from "@/lib/team.server";
+import { listItemMentions } from "@/lib/notifications.server";
 import { CalendlyScheduler } from "@/components/CalendlyScheduler";
 import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
 import {
@@ -18,6 +19,7 @@ import {
   CALENDLY_EVENT_TYPES,
 } from "@/lib/integrations/calendly-events";
 import { ItemRow } from "./ItemRow";
+import { OnboardingStatusToggle } from "./OnboardingStatusToggle";
 import { PeopleaseFormsPanel } from "./PeopleaseFormsPanel";
 import { WelcomeLetter } from "./WelcomeLetter";
 import { EsignaturePanel } from "./EsignaturePanel";
@@ -45,11 +47,18 @@ export default async function OnboardingDetailPage({
   if (!detail) notFound();
 
   const { employee, checklist, documents, primaryAssignment, welcomeLetter } = detail;
-  const [esignRequests, providerInfo, peopleaseForms] = await Promise.all([
-    listEsignatureRequestsForEmployee(employeeId),
-    getActiveEsignProviderInfo(),
-    getPeopleaseForms(employeeId),
-  ]);
+  const [esignRequests, providerInfo, peopleaseForms, teamMembers, mentionsByItem] =
+    await Promise.all([
+      listEsignatureRequestsForEmployee(employeeId),
+      getActiveEsignProviderInfo(),
+      getPeopleaseForms(employeeId),
+      listTeamMembers(),
+      listItemMentions(checklist.map((i) => i.id)),
+    ]);
+  // Active teammates only for the @mention picker.
+  const taggableTeam = teamMembers
+    .filter((m) => m.status === "active")
+    .map((m) => ({ id: m.id, full_name: m.full_name, title: m.title }));
   const progress = calcProgress(checklist);
   const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
   const generated = generateWelcomeLetterBody(employee, primaryAssignment);
@@ -117,6 +126,18 @@ export default async function OnboardingDetailPage({
               <Badge tone="warm">In charge: {employee.onboarding_in_charge}</Badge>
             )}
           </div>
+
+          {/* Active toggle — decoupled from checklist completion (Phase-1 #1).
+              Only shown for the onboarding ⇄ active pair. */}
+          {(employee.status === "onboarding" || employee.status === "active") && (
+            <div style={{ marginTop: 12 }}>
+              <OnboardingStatusToggle
+                employeeId={employee.id}
+                status={employee.status}
+                complete={progress.pct === 100}
+              />
+            </div>
+          )}
 
           {/* Document-language preference — drives the language onboarding docs
               are generated in (task 86e20w8yz). */}
@@ -250,6 +271,8 @@ export default async function OnboardingDetailPage({
               status={i.status}
               doneOn={i.done_on}
               notes={i.notes}
+              teamMembers={taggableTeam}
+              mentions={mentionsByItem.get(i.id) ?? []}
             />
           ))}
         </div>

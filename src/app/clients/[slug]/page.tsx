@@ -6,15 +6,20 @@ import { Badge } from "@/components/Badge";
 import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import {
   getClientMarginDetail,
+  listClientContacts,
   listClientWorkersCompCodes,
 } from "@/lib/clients.server";
 import { fmtPct, fmtUSD, fmtUSD2, marginTone } from "@/lib/clients";
 import { INVOICE_STATUSES } from "@/lib/invoices";
+import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
 import {
+  addClientContact,
   addWorkersCompCode,
+  deleteClientContact,
   deleteWorkersCompCode,
   updateClientConfig,
 } from "../actions";
+import { ClientInfoEditor } from "./ClientInfoEditor";
 
 function fmtPeriod(start: string, end: string): string {
   const s = new Date(start + "T00:00:00").toLocaleDateString("en-US", {
@@ -46,7 +51,12 @@ export default async function ClientMarginDetailPage(props: {
   if (!detail) notFound();
 
   const { client, overview, invoices, assignments } = detail;
-  const wcCodes = await listClientWorkersCompCodes(client.id);
+  const [wcCodes, contacts, me] = await Promise.all([
+    listClientWorkersCompCodes(client.id),
+    listClientContacts(client.id),
+    getCurrentUser(),
+  ]);
+  const isAdmin = roleAtLeast(me?.profile.role ?? "user", "admin");
   const realizedTone = marginTone(overview.realizedMarginPct);
   const expectedTone = marginTone(overview.expectedMarginPct);
 
@@ -263,12 +273,23 @@ export default async function ClientMarginDetailPage(props: {
             >
               {client.city ?? "—"} · {client.industry ?? "—"}
             </div>
+            <div style={{ marginTop: 8 }}>
+              <Badge tone={client.status === "active" ? "green" : client.status === "prospect" ? "amber" : "dark"}>
+                {client.status}
+              </Badge>
+            </div>
             <div
               style={{
                 height: 1,
                 background: "var(--dt-warm-100)",
                 margin: "18px 0",
               }}
+            />
+            <DetailRow label="Address" value={client.address ?? "—"} />
+            <DetailRow label="Phone" value={client.phone ?? "—"} />
+            <DetailRow
+              label="Website"
+              value={client.website ?? "—"}
             />
             <DetailRow
               label="Service Fee"
@@ -282,6 +303,9 @@ export default async function ClientMarginDetailPage(props: {
               value={fmtDate(client.created_at)}
             />
           </div>
+
+          {/* Editable basic company info (Phase-1 #4, admin only) */}
+          {isAdmin && <ClientInfoEditor client={client} />}
 
           <div className="dt-card" style={{ padding: "22px 24px" }}>
             <div
@@ -467,6 +491,117 @@ export default async function ClientMarginDetailPage(props: {
             style={{ width: "100%", marginTop: 8 }}
           />
         </form>
+      </div>
+
+      {/* Client contacts directory (Phase-1 #4) */}
+      <div className="dt-card" style={{ marginBottom: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Contacts</h3>
+            <div className="sub">Company contacts at {client.name}</div>
+          </div>
+        </div>
+        <div className="dt-table-wrap">
+          <table className="dt-table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 22 }}>Name</th>
+                <th>Role / Title</th>
+                <th>Department</th>
+                <th>Phone</th>
+                <th>Email</th>
+                {isAdmin && <th style={{ textAlign: "right", paddingRight: 22 }}></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {contacts.map((ct) => (
+                <tr key={ct.id}>
+                  <td style={{ paddingLeft: 22, fontWeight: 500 }}>{ct.full_name}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {ct.role_type ?? ct.position ?? "—"}
+                  </td>
+                  <td style={{ fontSize: 12, color: "var(--dt-warm-700)" }}>
+                    {ct.department ?? "—"}
+                  </td>
+                  <td className="tab-num" style={{ fontSize: 12 }}>{ct.phone ?? "—"}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {ct.email ? (
+                      <a href={`mailto:${ct.email}`} style={{ color: "var(--dt-gold-deep)" }}>
+                        {ct.email}
+                      </a>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  {isAdmin && (
+                    <td style={{ textAlign: "right", paddingRight: 22 }}>
+                      <form action={deleteClientContact.bind(null, ct.id, slug)}>
+                        <button
+                          type="submit"
+                          className="dt-btn dt-btn-ghost tiny"
+                          style={{ color: "var(--dt-danger)" }}
+                        >
+                          Remove
+                        </button>
+                      </form>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {contacts.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={isAdmin ? 6 : 5}
+                    style={{
+                      textAlign: "center",
+                      padding: "28px 22px",
+                      color: "var(--dt-warm-500)",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No contacts on file yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {isAdmin && (
+          <form
+            action={addClientContact.bind(null, slug, client.id)}
+            style={{
+              margin: "8px 18px 18px",
+              padding: "14px 16px",
+              background: "var(--dt-warm-50)",
+              border: "1px dashed var(--dt-warm-200)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                letterSpacing: "0.22em",
+                textTransform: "uppercase",
+                color: "var(--dt-warm-500)",
+                fontWeight: 400,
+                marginBottom: 10,
+              }}
+            >
+              Add a contact
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr 1fr auto", gap: 8 }}>
+              <input name="full_name" placeholder="Full name" className="dt-filter-input" required />
+              <input name="role_type" placeholder="Role (e.g. Manager)" className="dt-filter-input" />
+              <input name="department" placeholder="Department" className="dt-filter-input" />
+              <button type="submit" className="dt-btn">Add</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 8 }}>
+              <input name="position" placeholder="Title (optional)" className="dt-filter-input" />
+              <input name="phone" placeholder="Phone" className="dt-filter-input" />
+              <input name="email" type="email" placeholder="Email" className="dt-filter-input" />
+            </div>
+          </form>
+        )}
       </div>
 
       <div className="dt-card">

@@ -43,6 +43,13 @@ export async function createEmployee(formData: FormData) {
     if (aErr) throw new Error(aErr.message);
   }
 
+  // TODO [GATED — Estephany deliverable: welcome-letter template]
+  // Auto-generate + queue a welcome letter on profile creation here. Blocked
+  // until Estephany provides the welcome-letter template (EN/ES). The manual
+  // generator already exists (generateWelcomeLetterBody + saveWelcomeLetter on
+  // the onboarding detail page); this hook should call it automatically once
+  // the approved template lands. Do NOT build until the template is delivered.
+
   revalidatePath("/roster");
   revalidatePath("/dashboard");
   redirect(`/employees/${emp.id}`);

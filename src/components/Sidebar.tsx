@@ -65,9 +65,10 @@ const NAV: NavEntry[] = [
   { id: "pipeline",   labelKey: "pipeline",  icon: "chart", href: "/pipeline" },
 
   { sectionKey: "internal" },
-  { id: "calendar",   labelKey: "calendar",  icon: "calendar", href: "/calendar" },
-  { id: "tasks",      labelKey: "tasks",     icon: "check",    href: "/tasks" },
-  { id: "contacts",   labelKey: "contacts",  icon: "users",    href: "/contacts" },
+  { id: "calendar",     labelKey: "calendar",     icon: "calendar", href: "/calendar" },
+  { id: "tasks",        labelKey: "tasks",        icon: "check",    href: "/tasks" },
+  { id: "notifications",labelKey: "notifications",icon: "message",  href: "/notifications" },
+  { id: "contacts",     labelKey: "contacts",     icon: "users",    href: "/contacts" },
   { id: "legal",      labelKey: "legal",     icon: "file",     href: "/legal",     minRole: "admin" },
   { id: "workflows",  labelKey: "workflows", icon: "check",    href: "/workflows", minRole: "admin" },
 

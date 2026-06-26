@@ -47,6 +47,7 @@ export const es: Dictionary = {
     pipeline: "Embudo de ventas",
     calendar: "Calendario",
     tasks: "Tareas",
+    notifications: "Notificaciones",
     contacts: "Contactos",
     legal: "Legal · Avisos",
     workflows: "Flujos de trabajo",
