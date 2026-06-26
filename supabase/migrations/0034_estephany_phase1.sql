@@ -41,6 +41,7 @@ create table if not exists recruiters (
 create unique index if not exists recruiters_name_lower_idx
   on recruiters (lower(name));
 
+drop trigger if exists recruiters_updated on recruiters;
 create trigger recruiters_updated before update on recruiters
   for each row execute function set_updated_at();
 
