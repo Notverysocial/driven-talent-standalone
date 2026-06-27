@@ -55,8 +55,10 @@ const NAV: NavEntry[] = [
 
   { sectionKey: "payrollFinance" },
   { id: "timecards",  labelKey: "timecards", icon: "clock", href: "/timecards" },
-  { id: "payroll",    labelKey: "payroll",   icon: "chart", href: "/payroll" },
-  { id: "invoices",   labelKey: "invoices",  icon: "file",     href: "/invoices" },
+  { id: "payroll",        labelKey: "payroll",        icon: "chart", href: "/payroll" },
+  { id: "reports",        labelKey: "reports",        icon: "file",  href: "/reports" },
+  { id: "reconciliation", labelKey: "reconciliation", icon: "check", href: "/reconciliation" },
+  { id: "invoices",       labelKey: "invoices",       icon: "file",  href: "/invoices" },
   { id: "clients",    labelKey: "clients",   icon: "building", href: "/clients" },
   { id: "bonuses",    labelKey: "bonuses",   icon: "star",  href: "/bonuses" },
   { id: "expenses",   labelKey: "expenses",  icon: "file",  href: "/expenses" },

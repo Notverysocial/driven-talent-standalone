@@ -40,6 +40,8 @@ export const es: Dictionary = {
     safety: "Seguridad / Advertencias",
     timecards: "Tarjetas de tiempo",
     payroll: "Nómina",
+    reports: "Reportes",
+    reconciliation: "Verificación",
     invoices: "Facturas",
     clients: "Clientes",
     bonuses: "Bonificaciones",

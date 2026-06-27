@@ -6,6 +6,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import {
   auditPeriod,
   generateInvoicesForPeriod,
+  regenerateInvoicesForPeriod,
   setPeriodStatus,
 } from "../actions";
 
@@ -64,19 +65,33 @@ export function PeriodActions({
         </button>
       )}
       {status === "approved" && (
-        <button
-          className="dt-btn dt-btn-gold"
-          disabled={isPending}
-          onClick={() => {
-            const who = window.prompt(
-              "Who is generating these invoices? (for audit trail)",
-              "Roxanna",
-            ) ?? "";
-            setGenerateOpen(who);
-          }}
-        >
-          <span>{isPending ? "Generating…" : "Generate Invoices + Close"}</span>
-        </button>
+        <>
+          <button
+            className="dt-btn"
+            disabled={isPending}
+            onClick={() =>
+              startTransition(async () => {
+                await regenerateInvoicesForPeriod(periodId, "Roxanna");
+              })
+            }
+            title="Build/refresh draft invoices from current hours without closing — review before sending."
+          >
+            {isPending ? "Refreshing…" : "Refresh Draft Invoices"}
+          </button>
+          <button
+            className="dt-btn dt-btn-gold"
+            disabled={isPending}
+            onClick={() => {
+              const who = window.prompt(
+                "Who is generating these invoices? (for audit trail)",
+                "Roxanna",
+              ) ?? "";
+              setGenerateOpen(who);
+            }}
+          >
+            <span>{isPending ? "Generating…" : "Generate Invoices + Close"}</span>
+          </button>
+        </>
       )}
       {status === "closed" && (
         <button
@@ -84,14 +99,14 @@ export function PeriodActions({
           disabled={isPending}
           onClick={() => {
             const who = window.prompt(
-              "Re-generate invoices (creates new invoice numbers — does not delete existing). Operator name?",
+              "Refresh invoices from the current hours? Existing DRAFT invoices update in place (same numbers); already-sent invoices are left untouched. Operator name?",
               "Roxanna",
             ) ?? "";
             if (!who) return;
             setRegenOpen(who);
           }}
         >
-          Re-generate Invoices
+          Refresh Invoices from Hours
         </button>
       )}
       {status !== "open" && status !== "closed" && (
@@ -125,16 +140,15 @@ export function PeriodActions({
       />
       <ConfirmDialog
         open={regenOpen !== null}
-        title="Re-generate invoices?"
-        description="Re-run will create ADDITIONAL invoices for this period."
-        confirmLabel="Re-generate"
-        destructive
+        title="Refresh invoices from current hours?"
+        description="Draft invoices are rebuilt in place from the latest time-card hours (same invoice numbers). Drafts whose hours are now zero are removed; already-sent invoices are left untouched."
+        confirmLabel="Refresh"
         busy={isPending}
         onCancel={() => setRegenOpen(null)}
         onConfirm={() => {
           const who = regenOpen ?? "";
           startTransition(async () => {
-            await generateInvoicesForPeriod(periodId, who);
+            await regenerateInvoicesForPeriod(periodId, who);
             setRegenOpen(null);
           });
         }}

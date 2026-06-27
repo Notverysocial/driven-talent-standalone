@@ -1,198 +1,180 @@
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
+import { Badge } from "@/components/Badge";
 import { getServerDictionary } from "@/lib/i18n/server";
+import {
+  buildPeriodVerification,
+  listPeriodVerifications,
+  listVerifiablePeriods,
+} from "@/lib/verification.server";
+import type { VerificationDetail } from "@/lib/supabase/types";
+import { SignOffButton } from "./SignOffButton";
 
-type ReconStatus = "match" | "variance" | "missing";
-type ReconRow = {
-  who: string;
-  dt: { hours: number; ot: number; amount: number };
-  client: { hours: number; ot: number; amount: number };
-  status: ReconStatus;
-  delta?: number;
-  note?: string;
-};
-
-const RECON: { client: string; period: string; rows: ReconRow[] } = {
-  client: "Pacific Vines Hotel & Resort",
-  period: "Apr 14 — Apr 27, 2026",
-  rows: [
-    { who: "Maria Hernandez", dt: { hours: 76.0, ot: 4.0, amount: 2280.0 }, client: { hours: 76.0, ot: 4.0, amount: 2280.0 }, status: "match" },
-    { who: "Aaliyah Brooks", dt: { hours: 78.5, ot: 4.0, amount: 1891.75 }, client: { hours: 78.5, ot: 4.0, amount: 1891.75 }, status: "match" },
-    { who: "Marcus Webb", dt: { hours: 64.0, ot: 0, amount: 1248.0 }, client: { hours: 62.5, ot: 0, amount: 1218.75 }, status: "variance", delta: -29.25, note: "1.5 hr discrepancy — Sat shift" },
-    { who: "Prep cooks (×2)", dt: { hours: 92.5, ot: 0, amount: 1942.5 }, client: { hours: 92.5, ot: 0, amount: 1942.5 }, status: "match" },
-    { who: "Tomás Reyes (sub)", dt: { hours: 0, ot: 0, amount: 0 }, client: { hours: 8.0, ot: 0, amount: 248.0 }, status: "missing", delta: 248.0, note: "On client log only — verify assignment" },
-  ],
-};
-
-function fmtR(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function fmtPeriod(start: string, end: string): string {
+  const f = (d: string) =>
+    new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${f(start)} — ${f(end)}, ${new Date(end + "T00:00:00").getFullYear()}`;
 }
 
-function StatusIcon({ status }: { status: ReconStatus }) {
-  if (status === "match")
-    return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--dt-success)", fontSize: 12, fontWeight: 400 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="9" fill="var(--dt-success-bg)" stroke="var(--dt-success)" />
-          <path d="M8 12.5l2.5 2.5L16 9.5" />
-        </svg>
-        Match
-      </span>
-    );
-  if (status === "variance")
-    return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--dt-warning)", fontSize: 12, fontWeight: 400 }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--dt-warning-bg)" stroke="var(--dt-warning)" strokeWidth="2">
-          <path d="M12 3l10 18H2z" />
-          <path d="M12 10v5M12 17.5v.5" stroke="var(--dt-warning)" strokeLinecap="round" />
-        </svg>
-        Variance
-      </span>
-    );
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--dt-danger)", fontSize: 12, fontWeight: 400 }}>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--dt-danger-bg)" stroke="var(--dt-danger)" strokeWidth="2">
-        <circle cx="12" cy="12" r="9" />
-        <path d="M12 8v4M12 15.5v.5" strokeLinecap="round" />
-      </svg>
-      Missing
-    </span>
-  );
+function fmtWhen(iso: string): string {
+  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-export default async function ReconciliationPage() {
-  const dtTotal = RECON.rows.reduce((s, r) => s + r.dt.amount, 0);
-  const cTotal = RECON.rows.reduce((s, r) => s + r.client.amount, 0);
-  const variance = cTotal - dtTotal;
-  const matches = RECON.rows.filter((r) => r.status === "match").length;
-  const issues = RECON.rows.length - matches;
+function StatusBadge({ status }: { status: VerificationDetail["status"] }) {
+  if (status === "match") return <Badge tone="green">Match</Badge>;
+  if (status === "variance") return <Badge tone="amber">Variance</Badge>;
+  return <Badge tone="red">Missing</Badge>;
+}
+
+export default async function ReconciliationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string }>;
+}) {
+  const sp = await searchParams;
+  const periods = await listVerifiablePeriods();
+  const periodId = sp.period || periods[0]?.id || "";
+
   const tb = (await getServerDictionary()).topbar.reconciliation;
+
+  const [result, history] = await Promise.all([
+    periodId ? buildPeriodVerification(periodId) : Promise.resolve(null),
+    periodId ? listPeriodVerifications(periodId) : Promise.resolve([]),
+  ]);
 
   return (
     <Shell>
-      <Topbar
-        crumb={tb.crumb}
-        scriptWord={tb.scriptWord}
-        title={tb.title}
-        actions={
-          <>
-            <button className="dt-btn">Import client log</button>
-            <button className="dt-btn">Flag for review</button>
-            <button className="dt-btn dt-btn-gold"><span>Approve &amp; Lock</span></button>
-          </>
-        }
-      />
+      <Topbar crumb={tb.crumb} scriptWord={tb.scriptWord} title={tb.title} />
 
-      <div className="dt-card gold-edge" style={{ padding: "22px 28px", marginBottom: 22, display: "flex", flexWrap: "wrap", gap: 32, alignItems: "center" }}>
-        <div style={{ flex: "1 1 280px" }}>
-          <div className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}>Reconciling</div>
-          <div style={{ fontFamily: "var(--dt-display)", fontSize: 19, fontWeight: 300, marginTop: 4 }}>{RECON.client}</div>
-          <div className="tiny muted" style={{ marginTop: 2 }}>{RECON.period} · {RECON.rows.length} placements</div>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 26, fontWeight: 300, color: "var(--dt-success)" }}>{matches}</div>
-          <div className="tiny muted">Matched</div>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 26, fontWeight: 300, color: "var(--dt-warning)" }}>{issues}</div>
-          <div className="tiny muted">Need review</div>
-        </div>
-        <div style={{ textAlign: "right", paddingLeft: 24, borderLeft: "1px solid var(--dt-warm-150)" }}>
-          <div className="tiny muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 400 }}>Net Variance</div>
-          <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 30, fontWeight: 300, color: variance > 0 ? "var(--dt-danger)" : "var(--dt-success)", marginTop: 2 }}>
-            {variance >= 0 ? "+" : "−"}${fmtR(Math.abs(variance))}
-          </div>
-        </div>
-      </div>
+      {/* Period picker */}
+      <form method="get" className="dt-card" style={{ padding: "14px 18px", marginBottom: 18, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <label className="dt-filter" style={{ flex: "1 1 280px" }}>
+          <span className="dt-filter-label">Payroll period</span>
+          <select name="period" defaultValue={periodId} className="dt-filter-input">
+            {periods.length === 0 && <option value="">No payroll periods yet</option>}
+            {periods.map((p) => (
+              <option key={p.id} value={p.id}>
+                {fmtPeriod(p.start_date, p.end_date)} · {p.status}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="submit" className="dt-btn dt-btn-primary">Load</button>
+      </form>
 
-      <div className="dt-card" style={{ overflow: "hidden" }}>
-        <div className="dt-table-wrap">
-          <div style={{ minWidth: 980 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", borderBottom: "1px solid var(--dt-warm-150)" }}>
-              <div style={{ padding: "14px 22px", background: "#FFFFFF", borderRight: "1px solid var(--dt-warm-150)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <div>
-                    <div style={{ fontFamily: "var(--dt-script)", fontSize: 14, fontWeight: 200, letterSpacing: "0.22em", lineHeight: 1, color: "var(--dt-gold-deep)", textTransform: "uppercase" }}>Driven Talent</div>
-                    <div style={{ fontSize: 9.5, letterSpacing: "0.22em", color: "rgba(26,26,26,0.45)", textTransform: "uppercase", marginTop: 4, fontWeight: 300 }}>Internal Timecards</div>
-                  </div>
-                  <div className="tab-num" style={{ fontSize: 13, fontWeight: 400 }}>${fmtR(dtTotal)}</div>
-                </div>
+      {!result ? (
+        <div className="dt-card" style={{ padding: "44px 28px", textAlign: "center", color: "var(--dt-warm-500)" }}>
+          Select a payroll period to verify hours across the time card, invoice, and payroll views.
+        </div>
+      ) : (
+        <>
+          <div className="dt-card gold-edge" style={{ padding: "20px 26px", marginBottom: 20, display: "flex", flexWrap: "wrap", gap: 28, alignItems: "center" }}>
+            <div style={{ flex: "1 1 240px" }}>
+              <div className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}>Verifying</div>
+              <div style={{ fontFamily: "var(--dt-display)", fontSize: 19, fontWeight: 300, marginTop: 4 }}>
+                {fmtPeriod(result.period.start_date, result.period.end_date)}
               </div>
-              <div style={{ padding: "14px 22px", background: "var(--dt-warm-50)", borderLeft: "3px solid var(--dt-gold)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                  <div>
-                    <div style={{ fontFamily: "var(--dt-display)", fontSize: 16, fontWeight: 400 }}>Pacific Vines · Client Log</div>
-                    <div className="tiny muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase", marginTop: 4, fontWeight: 400 }}>Imported via Kronos · Apr 28</div>
-                  </div>
-                  <div className="tab-num" style={{ fontSize: 13, fontWeight: 400 }}>${fmtR(cTotal)}</div>
-                </div>
+              <div className="tiny muted" style={{ marginTop: 2 }}>{result.employeeCount} employees · time card ↔ invoice ↔ payroll</div>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div className="tab-num" style={{ fontFamily: "var(--dt-display)", fontSize: 26, fontWeight: 300, color: "var(--dt-warning)" }}>{result.varianceCount}</div>
+              <div className="tiny muted">Variances</div>
+            </div>
+            <div style={{ textAlign: "center", paddingLeft: 24, borderLeft: "1px solid var(--dt-warm-150)" }}>
+              <div className="tiny muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 400 }}>Deduction = 0</div>
+              <div style={{ marginTop: 6 }}>
+                {result.deductionZeroOk ? (
+                  <Badge tone="green">Balanced ({result.netDeltaHours}h)</Badge>
+                ) : (
+                  <Badge tone="red">Off by {result.netDeltaHours}h</Badge>
+                )}
               </div>
             </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr 0.6fr 0.9fr 1fr 0.6fr 0.6fr 0.9fr 1.1fr", background: "var(--dt-warm-50)", borderBottom: "1px solid var(--dt-warm-150)", fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--dt-warm-500)", fontWeight: 400 }}>
-              <div style={{ padding: "11px 18px" }}>Talent</div>
-              <div style={{ padding: "11px 8px", textAlign: "right" }}>Hrs</div>
-              <div style={{ padding: "11px 8px", textAlign: "right" }}>OT</div>
-              <div style={{ padding: "11px 18px 11px 8px", textAlign: "right", borderRight: "2px solid var(--dt-warm-150)" }}>DT $</div>
-              <div style={{ padding: "11px 18px" }}>&nbsp;</div>
-              <div style={{ padding: "11px 8px", textAlign: "right" }}>Hrs</div>
-              <div style={{ padding: "11px 8px", textAlign: "right" }}>OT</div>
-              <div style={{ padding: "11px 8px", textAlign: "right" }}>Client $</div>
-              <div style={{ padding: "11px 18px", textAlign: "right" }}>Status</div>
+            <div style={{ marginLeft: "auto" }}>
+              <SignOffButton periodId={result.period.id} clean={result.varianceCount === 0 && result.deductionZeroOk} />
             </div>
-
-            {RECON.rows.map((r, i) => {
-              const matchBg = r.status === "match";
-              return (
-                <div key={r.who} style={{ display: "grid", gridTemplateColumns: "1.4fr 0.6fr 0.6fr 0.9fr 1fr 0.6fr 0.6fr 0.9fr 1.1fr", background: i % 2 ? "var(--dt-warm-50)" : "var(--dt-white)", borderBottom: i < RECON.rows.length - 1 ? "1px solid var(--dt-warm-100)" : "none", fontSize: 13, alignItems: "center" }}>
-                  <div style={{ padding: "14px 18px" }}>
-                    <div className="dt-person">
-                      <Avatar name={r.who} />
-                      <div>
-                        <div className="name">{r.who}</div>
-                        {r.note && <div style={{ fontSize: 11, color: r.status === "missing" ? "var(--dt-danger)" : "var(--dt-warning)", marginTop: 2, fontWeight: 300 }}>{r.note}</div>}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="tab-num" style={{ padding: "14px 8px", textAlign: "right" }}>{r.dt.hours ? r.dt.hours.toFixed(1) : "—"}</div>
-                  <div className="tab-num" style={{ padding: "14px 8px", textAlign: "right", color: r.dt.ot ? "var(--dt-gold-deep)" : "var(--dt-warm-300)" }}>{r.dt.ot ? r.dt.ot.toFixed(1) : "—"}</div>
-                  <div className="tab-num" style={{ padding: "14px 18px 14px 8px", textAlign: "right", borderRight: "2px solid var(--dt-warm-150)", fontWeight: 400 }}>${fmtR(r.dt.amount)}</div>
-
-                  <div style={{ padding: "14px 18px", display: "flex", justifyContent: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <div style={{ width: 18, height: 1, background: matchBg ? "var(--dt-success)" : "var(--dt-warning)" }} />
-                      {matchBg ? (
-                        <span style={{ width: 18, height: 18, borderRadius: "50%", background: "var(--dt-success-bg)", color: "var(--dt-success)", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 300 }}>=</span>
-                      ) : (
-                        <span className="tab-num" style={{ padding: "2px 8px", borderRadius: 4, background: r.status === "missing" ? "var(--dt-danger-bg)" : "var(--dt-warning-bg)", color: r.status === "missing" ? "var(--dt-danger)" : "var(--dt-warning)", fontSize: 10.5, fontWeight: 300, letterSpacing: "0.04em" }}>
-                          {(r.delta ?? 0) > 0 ? "+" : "−"}${fmtR(Math.abs(r.delta || 0))}
-                        </span>
-                      )}
-                      <div style={{ width: 18, height: 1, background: matchBg ? "var(--dt-success)" : "var(--dt-warning)" }} />
-                    </div>
-                  </div>
-
-                  <div className="tab-num" style={{ padding: "14px 8px", textAlign: "right" }}>{r.client.hours ? r.client.hours.toFixed(1) : "—"}</div>
-                  <div className="tab-num" style={{ padding: "14px 8px", textAlign: "right", color: r.client.ot ? "var(--dt-gold-deep)" : "var(--dt-warm-300)" }}>{r.client.ot ? r.client.ot.toFixed(1) : "—"}</div>
-                  <div className="tab-num" style={{ padding: "14px 8px", textAlign: "right", fontWeight: 400 }}>${fmtR(r.client.amount)}</div>
-                  <div style={{ padding: "14px 18px", textAlign: "right" }}><StatusIcon status={r.status} /></div>
-                </div>
-              );
-            })}
           </div>
-        </div>
-      </div>
 
-      <div style={{ marginTop: 18, padding: "14px 20px", background: "var(--dt-gold-50)", border: "1px solid var(--dt-gold-100)", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 14 }}>
-        <div style={{ fontSize: 12.5, color: "var(--dt-warm-700)" }}>
-          <strong style={{ fontFamily: "var(--dt-display)", fontSize: 14 }}>{issues} items need a decision.</strong> &nbsp; Roxanna typically resolves variances within 24 hours by reaching out to the client AP team directly.
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="dt-btn">Email client AP</button>
-          <button className="dt-btn dt-btn-primary">Resolve all</button>
-        </div>
-      </div>
+          <div className="dt-card" style={{ overflow: "hidden" }}>
+            <div className="dt-table-wrap">
+              <table className="dt-table">
+                <thead>
+                  <tr>
+                    <th style={{ paddingLeft: 22 }}>Employee</th>
+                    <th style={{ textAlign: "right" }}>Time Card</th>
+                    <th style={{ textAlign: "right" }}>Invoice</th>
+                    <th style={{ textAlign: "right" }}>Payroll</th>
+                    <th style={{ textAlign: "right" }}>Δ Hrs</th>
+                    <th style={{ paddingRight: 22 }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.rows.map((r, i) => (
+                    <tr key={`${r.employee_id}-${i}`}>
+                      <td style={{ paddingLeft: 22 }}>
+                        <div className="dt-person">
+                          <Avatar name={r.name} />
+                          <div>
+                            <div className="name">{r.name}</div>
+                            {r.note && (
+                              <div style={{ fontSize: 11, color: r.status === "missing" ? "var(--dt-danger)" : "var(--dt-warning)", marginTop: 2 }}>
+                                {r.note}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{r.timecard_hours.toFixed(2)}</td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{r.invoice_hours.toFixed(2)}</td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{r.payroll_hours.toFixed(2)}</td>
+                      <td className="tab-num" style={{ textAlign: "right", color: Math.abs(r.delta_hours) > 0.01 ? "var(--dt-warning)" : "var(--dt-warm-400)" }}>
+                        {r.delta_hours > 0 ? "+" : ""}{r.delta_hours.toFixed(2)}
+                      </td>
+                      <td style={{ paddingRight: 22 }}><StatusBadge status={r.status} /></td>
+                    </tr>
+                  ))}
+                  {result.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: "center", padding: "32px 22px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
+                        No time cards or invoices in this period.
+                      </td>
+                    </tr>
+                  )}
+                  {result.rows.length > 0 && (
+                    <tr style={{ borderTop: "2px solid var(--dt-warm-200)", fontWeight: 600 }}>
+                      <td style={{ paddingLeft: 22 }}>TOTAL</td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{result.totals.timecard.toFixed(2)}</td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{result.totals.invoice.toFixed(2)}</td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{result.totals.payroll.toFixed(2)}</td>
+                      <td className="tab-num" style={{ textAlign: "right" }}>{result.netDeltaHours.toFixed(2)}</td>
+                      <td style={{ paddingRight: 22 }} />
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {history.length > 0 && (
+            <div className="dt-card" style={{ marginTop: 18, padding: "14px 20px" }}>
+              <div className="tiny muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase", fontWeight: 400, marginBottom: 8 }}>
+                Verification history
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {history.map((v) => (
+                  <div key={v.id} style={{ fontSize: 12, display: "flex", gap: 10, alignItems: "center" }}>
+                    <Badge tone={v.result === "clean" ? "green" : "amber"}>{v.result}</Badge>
+                    <span>{v.verified_by ?? "—"}</span>
+                    <span className="muted">{fmtWhen(v.verified_at)}</span>
+                    <span className="muted">· {v.variance_count} variances · deduction {v.deduction_zero_ok ? "balanced" : "off"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </Shell>
   );
 }

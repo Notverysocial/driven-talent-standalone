@@ -121,3 +121,30 @@ injected.
 - The three drop/confirm decisions (Resend, Stripe, e-sign of record).
 - Applying migration `0032` to the database.
 - Deploying the branch (build is green; awaiting your approval to merge/deploy).
+
+---
+
+## Payroll / Invoice / Report Engine (Rocio call) — branch `feat/payroll-invoice-engine`
+
+Core principle: **everything is built from the time card; hours entered once propagate to reports, invoices, the roster, the audit view, and PEO export.** Built against the documented uAttend API contract using a mock adapter so connecting the live key is a **config step, not a rewrite**. Migration **`0035_payroll_report_engine.sql`** (additive, idempotent) — must be applied to the DB before deploy.
+
+### uAttend (WorkwellTech) data adapter — `src/lib/uattend/`
+- Documented contract: base **`https://api.workwelltech.com`**, auth header **`x-api-key`**, endpoints **`/employee`**, **`/timecards`**, **`/reports/punch`**.
+- `LiveUattendAdapter` (calls the API) and `MockUattendAdapter` (realistic seed data through the **same normalizers**). `resolveUattendAdapter({apiKey})` returns live when a key is present, else mock — the single config switch. The key reuses the existing `/integrations → uAttend` row (`access_token`).
+- `importUattendTimecards()` maps the adapter feed onto the canonical DB time cards (creating employees/assignments as needed); `reconcileRosterFromUattend()` drives roster auto add/remove.
+
+> ⚠️ **uAttend data-shape ASSUMPTIONS to confirm against the real API** (encoded in `src/lib/uattend/contract.ts`; a mismatch is a one-line normalizer fix, nothing downstream changes):
+> - `GET /employee` → `[{ employeeId, firstName, lastName, email, department, payRate, active, badge, clientCode }]`
+> - `GET /timecards?startDate&endDate` → `[{ employeeId, weekStart, department, clientCode, days:[{date, regular, overtime, holiday, in, out}] }]`
+> - `GET /reports/punch?startDate&endDate` → `[{ employeeId, date, punchIn, punchOut, department, hours }]`
+> - Auth header is literally `x-api-key`. The normalizers also accept snake_case + common alternate names, and unwrap `{data}` / `{employees}` / `{timecards}` / `{punches}` envelopes or bare arrays.
+> - `clientCode` is assumed to map to a **DT client slug**; employees are matched to DT by **email**. Confirm uAttend exposes a client/location code we can map, and that emails line up — otherwise we wire an explicit ID map on `/integrations`.
+
+### Shipped
+1. **Customizable per-client report builder** (`/reports`) — template catalog (`hours_spent` system report = each employee × each day matrix, `timecard_daily`, `standard_weekly`), per-client selection via `clients.report_template_key`. CSV + PDF export.
+2. **Invoice auto-generation now idempotent** — `upsertInvoicesForPeriod` reuses draft invoices in place from current hours (stable numbers), collapses duplicates, removes stale drafts, never touches sent/paid invoices. "Refresh Draft Invoices" + "Refresh Invoices from Hours" actions. Still review/download/edit — **no auto-send, no PandaDoc**.
+3. **Roster auto add/remove** (`/roster` → Sync from uAttend) — new hires added, terminations retired; logged to `roster_sync_runs`.
+4. **Audit / verification view** (`/reconciliation`, now real) — per-employee time card ↔ invoice ↔ payroll hours, the **deduction = zero** check, explicit sign-off saved to `period_verifications`.
+5. **PEO hours-by-department CSV** — `/payroll/[periodId]/export?format=peo_department` (PrismHR-friendly).
+
+Verified: `tsc` clean · `next build` green · Playwright **25 passed / 8 skipped / 0 failed** (skips are the pre-existing data-dependent specs; new pure specs cover the uAttend adapter + report engine). Committed on the branch — **not deployed**.
