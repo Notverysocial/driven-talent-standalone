@@ -16,6 +16,17 @@ const ROLE_TITLE = `e2e-delete-test-${Date.now()}`;
 
 async function seedPostingIfMissing(page: Page): Promise<void> {
   await page.goto("/job-postings");
+  // The route is behind login in production. With no authenticated session the
+  // app redirects to /login (no posting form). Skip rather than fail, matching
+  // the signal the other live specs use to tell "no seeded/authenticated
+  // backend" apart from a real regression.
+  if (/\/login(\?|$)/.test(page.url())) {
+    test.skip(
+      true,
+      "Redirected to /login - provide an authenticated session (E2E_STORAGE_STATE) to run this flow.",
+    );
+    return;
+  }
   // If a posting with our marker already exists, we're done.
   const existing = page.getByText(ROLE_TITLE, { exact: false });
   if (await existing.count()) return;
