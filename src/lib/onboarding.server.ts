@@ -63,11 +63,32 @@ export type OnboardingSummary = {
 
 export async function listOnboardingSummaries(): Promise<OnboardingSummary[]> {
   const supabase = await createClient();
-  const { data: employees, error } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("status", "onboarding")
-    .order("hire_date", { ascending: false });
+
+  // Phase-1 #1: the Active flag is decoupled from onboarding completion. Show
+  // every employee whose status is still 'onboarding', PLUS anyone who was
+  // marked 'active' early but still has incomplete checklist steps. The latter
+  // is found via the (naturally small) set of not-done items, so we don't scan
+  // every active employee.
+  const { data: incompleteRows } = await supabase
+    .from("onboarding_checklist_items")
+    .select("employee_id")
+    .in("status", ["not_started", "in_progress"]);
+  const incompleteIds = Array.from(
+    new Set(
+      (incompleteRows ?? []).map(
+        (r) => (r as { employee_id: string }).employee_id,
+      ),
+    ),
+  );
+
+  let query = supabase.from("employees").select("*");
+  query =
+    incompleteIds.length > 0
+      ? query.or(`status.eq.onboarding,id.in.(${incompleteIds.join(",")})`)
+      : query.eq("status", "onboarding");
+  const { data: employees, error } = await query.order("hire_date", {
+    ascending: false,
+  });
   if (error) throw new Error(error.message);
   if (!employees || employees.length === 0) return [];
 

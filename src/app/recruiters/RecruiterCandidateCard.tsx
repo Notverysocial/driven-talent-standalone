@@ -6,7 +6,6 @@ import { useState, useTransition } from "react";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import type { RecruiterCandidate } from "@/lib/candidates.server";
-import { RECRUITERS } from "./constants";
 import {
   toggleResponded,
   updateRecruiterCandidate,
@@ -16,9 +15,11 @@ import {
 export function RecruiterCandidateCard({
   candidate,
   clients,
+  recruiterNames,
 }: {
   candidate: RecruiterCandidate;
   clients: { id: string; name: string }[];
+  recruiterNames: string[];
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -199,10 +200,10 @@ export function RecruiterCandidateCard({
                 <Field label="Recruiter">
                   <select name="recruiter" defaultValue={candidate.recruiter ?? ""} className="dt-filter-input">
                     <option value="">— Unassigned —</option>
-                    {RECRUITERS.map((r) => (
+                    {recruiterNames.map((r) => (
                       <option key={r} value={r}>{r}</option>
                     ))}
-                    {candidate.recruiter && !RECRUITERS.some((r) => r === candidate.recruiter) && (
+                    {candidate.recruiter && !recruiterNames.some((r) => r === candidate.recruiter) && (
                       <option value={candidate.recruiter}>{candidate.recruiter} (current)</option>
                     )}
                   </select>

@@ -6,10 +6,14 @@ import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import { getClientMarginsOverview } from "@/lib/clients.server";
 import { fmtPct, fmtUSD, marginTone } from "@/lib/clients";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
+import { AddClientPanel } from "./AddClientPanel";
 
 export default async function ClientsPage() {
   const { totals, rows } = await getClientMarginsOverview();
   const tb = (await getServerDictionary()).topbar.clients;
+  const me = await getCurrentUser();
+  const isAdmin = roleAtLeast(me?.profile.role ?? "user", "admin");
 
   return (
     <Shell>
@@ -50,6 +54,8 @@ export default async function ClientsPage() {
           sub={`${fmtPct(totals.expectedWeeklyMarginPct)} forward margin`}
         />
       </KpiGrid>
+
+      {isAdmin && <AddClientPanel />}
 
       <div className="dt-card">
         <div className="dt-card-head">
@@ -104,9 +110,14 @@ export default async function ClientsPage() {
                       >
                         <div
                           className="name"
-                          style={{ fontWeight: 500, color: "var(--dt-warm-900)" }}
+                          style={{ fontWeight: 500, color: "var(--dt-warm-900)", display: "flex", alignItems: "center", gap: 6 }}
                         >
                           {r.client.name}
+                          {r.client.status !== "active" && (
+                            <Badge tone={r.client.status === "prospect" ? "amber" : "dark"}>
+                              {r.client.status}
+                            </Badge>
+                          )}
                         </div>
                         <div
                           className="meta"

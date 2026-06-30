@@ -3,47 +3,74 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { listRecruiterCandidates } from "@/lib/candidates.server";
 import { listClientsForPicker } from "@/lib/legal-tasks.server";
-import { RECRUITERS, canonicalRecruiter } from "./constants";
+import { listRecruiters } from "@/lib/recruiters.server";
+import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
+import { canonicalRecruiter } from "./constants";
 import { createRecruiterCandidate } from "./actions";
 import { RecruiterCandidateCard } from "./RecruiterCandidateCard";
+import { RecruiterAdmin } from "./RecruiterAdmin";
 
 const UNASSIGNED = "__unassigned__";
 
 export default async function RecruitersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ r?: string }>;
+  searchParams: Promise<{ r?: string; q?: string; pos?: string }>;
 }) {
   const sp = await searchParams;
   const selected = (sp.r ?? "all").trim() || "all";
+  const nameQuery = (sp.q ?? "").trim();
+  const posQuery = (sp.pos ?? "").trim();
 
-  const [candidates, clients] = await Promise.all([
+  const [candidates, clients, recruiters, me] = await Promise.all([
     listRecruiterCandidates(),
     listClientsForPicker(),
+    listRecruiters(),
+    getCurrentUser(),
   ]);
+
+  const isAdmin = roleAtLeast(me?.profile.role ?? "user", "admin");
+
+  // Roster (all) drives the tabs + canonical normalization; active-only names
+  // populate the "assign recruiter" pickers.
+  const rosterNames = recruiters.map((r) => r.name);
+  const activeRecruiterNames = recruiters.filter((r) => r.active).map((r) => r.name);
 
   // Group by canonical recruiter; null/empty -> Unassigned.
   const counts = new Map<string, number>();
-  for (const r of RECRUITERS) counts.set(r, 0);
+  for (const r of rosterNames) counts.set(r, 0);
   counts.set(UNASSIGNED, 0);
   const otherRecruiters = new Set<string>();
   for (const c of candidates) {
-    const canon = canonicalRecruiter(c.recruiter);
+    const canon = canonicalRecruiter(c.recruiter, rosterNames);
     if (!canon) {
       counts.set(UNASSIGNED, (counts.get(UNASSIGNED) ?? 0) + 1);
     } else {
       counts.set(canon, (counts.get(canon) ?? 0) + 1);
-      if (!RECRUITERS.some((r) => r === canon)) otherRecruiters.add(canon);
+      if (!rosterNames.some((r) => r === canon)) otherRecruiters.add(canon);
     }
   }
 
+  const nq = nameQuery.toLowerCase();
+  const pq = posQuery.toLowerCase();
   const matches = (c: (typeof candidates)[number]): boolean => {
-    const canon = canonicalRecruiter(c.recruiter);
-    if (selected === "all") return true;
-    if (selected === UNASSIGNED) return canon == null;
-    return canon != null && canon.toLowerCase() === selected.toLowerCase();
+    const canon = canonicalRecruiter(c.recruiter, rosterNames);
+    const recruiterOk =
+      selected === "all"
+        ? true
+        : selected === UNASSIGNED
+          ? canon == null
+          : canon != null && canon.toLowerCase() === selected.toLowerCase();
+    // Phase-1 #2 — also filter by candidate name + position.
+    const nameOk = !nq || c.full_name.toLowerCase().includes(nq);
+    const posOk = !pq || (c.applied_for ?? "").toLowerCase().includes(pq);
+    return recruiterOk && nameOk && posOk;
   };
   const filtered = candidates.filter(matches);
+  const positions = Array.from(
+    new Set(candidates.map((c) => c.applied_for).filter((p): p is string => !!p)),
+  ).sort();
+  const filtering = nameQuery !== "" || posQuery !== "";
 
   // The "Add candidate" form pre-selects the recruiter when a specific tab is
   // active (so logging a candidate drops them straight into that tab).
@@ -52,10 +79,20 @@ export default async function RecruitersPage({
 
   const tabs: { key: string; label: string; count: number }[] = [
     { key: "all", label: "All", count: candidates.length },
-    ...RECRUITERS.map((r) => ({ key: r, label: r, count: counts.get(r) ?? 0 })),
+    ...rosterNames.map((r) => ({ key: r, label: r, count: counts.get(r) ?? 0 })),
     ...Array.from(otherRecruiters).map((r) => ({ key: r, label: r, count: counts.get(r) ?? 0 })),
     { key: UNASSIGNED, label: "Unassigned", count: counts.get(UNASSIGNED) ?? 0 },
   ];
+
+  // Preserve the active name/position filter when switching recruiter tabs.
+  const tabHref = (key: string): string => {
+    const params = new URLSearchParams();
+    if (key !== "all") params.set("r", key);
+    if (nameQuery) params.set("q", nameQuery);
+    if (posQuery) params.set("pos", posQuery);
+    const qs = params.toString();
+    return qs ? `/recruiters?${qs}` : "/recruiters";
+  };
 
   return (
     <Shell>
@@ -70,6 +107,9 @@ export default async function RecruitersPage({
         }
       />
 
+      {/* Recruiter management — admin only (Phase-1 #3) */}
+      {isAdmin && <RecruiterAdmin recruiters={recruiters} />}
+
       {/* Recruiter tabs */}
       <div
         style={{
@@ -77,19 +117,61 @@ export default async function RecruitersPage({
           gap: 8,
           flexWrap: "wrap",
           alignItems: "center",
-          marginBottom: 18,
+          marginBottom: 14,
         }}
       >
         {tabs.map((t) => (
           <Link
             key={t.key}
-            href={t.key === "all" ? "/recruiters" : `/recruiters?r=${encodeURIComponent(t.key)}`}
+            href={tabHref(t.key)}
             className={"dt-chip" + (selected === t.key ? " active" : "")}
           >
             {t.label} · {t.count}
           </Link>
         ))}
       </div>
+
+      {/* Name / position filter (Phase-1 #2) */}
+      <form
+        method="get"
+        style={{
+          display: "flex",
+          gap: 10,
+          alignItems: "flex-end",
+          flexWrap: "wrap",
+          marginBottom: 18,
+        }}
+      >
+        {selected !== "all" && <input type="hidden" name="r" value={selected} />}
+        <label className="dt-filter" style={{ flex: "1 1 200px" }}>
+          <span className="dt-filter-label">Name</span>
+          <input name="q" type="text" defaultValue={nameQuery} placeholder="Search name…" className="dt-filter-input" />
+        </label>
+        <label className="dt-filter" style={{ flex: "1 1 200px" }}>
+          <span className="dt-filter-label">Position</span>
+          <input
+            name="pos"
+            type="text"
+            defaultValue={posQuery}
+            placeholder="Filter by position…"
+            className="dt-filter-input"
+            list="recruiter-positions"
+          />
+          <datalist id="recruiter-positions">
+            {positions.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
+        </label>
+        <button type="submit" className="dt-btn dt-btn-primary">
+          Filter
+        </button>
+        {filtering && (
+          <Link href={selected === "all" ? "/recruiters" : `/recruiters?r=${encodeURIComponent(selected)}`} className="dt-btn">
+            Clear
+          </Link>
+        )}
+      </form>
 
       <div
         style={{
@@ -135,7 +217,12 @@ export default async function RecruitersPage({
               }}
             >
               {filtered.map((c) => (
-                <RecruiterCandidateCard key={c.id} candidate={c} clients={clients} />
+                <RecruiterCandidateCard
+                  key={c.id}
+                  candidate={c}
+                  clients={clients}
+                  recruiterNames={activeRecruiterNames}
+                />
               ))}
             </div>
           )}
@@ -158,9 +245,12 @@ export default async function RecruitersPage({
             <Field label="Recruiter">
               <select name="recruiter" defaultValue={presetRecruiter} className="dt-filter-input">
                 <option value="">— Unassigned —</option>
-                {RECRUITERS.map((r) => (
+                {activeRecruiterNames.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
+                {presetRecruiter && !activeRecruiterNames.includes(presetRecruiter) && (
+                  <option value={presetRecruiter}>{presetRecruiter}</option>
+                )}
               </select>
             </Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>

@@ -5,7 +5,10 @@ import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import { EmployeeManageBar } from "./EmployeeManageBar";
+import { WellnessTimeline } from "./WellnessTimeline";
 import { getEmployeeProfile } from "@/lib/employees.server";
+import { listWellnessNotes } from "@/lib/wellness.server";
+import { getCurrentUser } from "@/lib/auth.server";
 import {
   attendanceColor,
   bandColor,
@@ -39,6 +42,10 @@ export default async function EmployeeDetailPage({
   if (!profile) notFound();
 
   const { employee, assignments, attendance, checklist, documents, sickEntries, sickBalance } = profile;
+  const [wellnessNotes, me] = await Promise.all([
+    listWellnessNotes(id),
+    getCurrentUser(),
+  ]);
   const sickYtdUsed = sickEntries
     .filter((e) => (e.entry_type === "usage" || e.entry_type === "payout") && e.entry_date >= `${new Date().getFullYear()}-01-01`)
     .reduce((s, e) => s + Number(e.hours), 0);
@@ -456,6 +463,14 @@ export default async function EmployeeDetailPage({
           </div>
         </div>
       )}
+
+      {/* Wellness / follow-up timeline — immutable case record (Phase-1 #6) */}
+      <WellnessTimeline
+        employeeId={employee.id}
+        employeeName={employee.full_name}
+        notes={wellnessNotes}
+        defaultAuthor={me?.profile.full_name ?? me?.email ?? ""}
+      />
     </Shell>
   );
 }
