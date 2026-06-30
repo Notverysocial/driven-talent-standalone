@@ -1,5 +1,10 @@
--- 0026_seasonal_talent_pool.sql
+-- 0036_seasonal_talent_pool.sql
 -- Seasonal Talent Pool / Rehire Database (internal ClickUp 86e1vwzuq).
+--
+-- Renumbered 0026 -> 0036: the branch was cut when 0026 was free, but main now
+-- has 0026_do_not_return_employee_link.sql and is at 0035. 0036 is the next
+-- free slot, after the already-applied 0034/0035. Additive + idempotent
+-- (safe to re-run; enum guarded, columns/indexes use IF NOT EXISTS, seed guarded).
 --
 -- Adds a lifecycle layer on top of the existing `candidates` ATS so DT can
 -- resurface already-vetted workers (rehires) instead of always sourcing
@@ -12,13 +17,20 @@
 
 -- ---------- lifecycle enum ----------------------------------------------
 
-create type candidate_lifecycle_status as enum (
-  'new_applicant',
-  'in_process',
-  'placed',
-  'available_for_rehire',
-  'do_not_return'
-);
+-- Guarded so re-running the migration set never errors with "type already
+-- exists" (CREATE TYPE has no IF NOT EXISTS).
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'candidate_lifecycle_status') then
+    create type candidate_lifecycle_status as enum (
+      'new_applicant',
+      'in_process',
+      'placed',
+      'available_for_rehire',
+      'do_not_return'
+    );
+  end if;
+end $$;
 
 -- ---------- columns -----------------------------------------------------
 
