@@ -149,11 +149,16 @@ export default async function OnboardingListPage() {
                       </div>
                     </td>
                     <td style={{ paddingRight: 22 }}>
-                      {isReady ? (
-                        <Badge tone="green">Ready</Badge>
-                      ) : (
-                        <Badge tone="amber">In progress</Badge>
-                      )}
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {s.employee.status === "active" && (
+                          <Badge tone="green">Active</Badge>
+                        )}
+                        {isReady ? (
+                          <Badge tone="green">Ready</Badge>
+                        ) : (
+                          <Badge tone="amber">In progress</Badge>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

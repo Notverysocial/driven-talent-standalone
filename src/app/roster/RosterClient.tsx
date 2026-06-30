@@ -17,6 +17,8 @@ import {
   lastNDays,
   ATTENDANCE_DOT_COLOR,
   ATTENDANCE_LABEL,
+  EMPLOYEE_STATUS_LABEL,
+  employeeStatusTone,
 } from "@/lib/staffing";
 import type { AttendanceEntry, Client, ScoreBand } from "@/lib/supabase/types";
 import type { RosterRow } from "@/lib/employees.server";
@@ -290,6 +292,7 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
             <thead>
               <tr>
                 <th style={{ paddingLeft: 22 }}>Employee</th>
+                <th>Status</th>
                 <th>Client</th>
                 <th>Position</th>
                 <th>Shift</th>
@@ -311,13 +314,16 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
                         <div>
                           <div className="name">{r.employee.full_name}</div>
                           <div className="meta">
-                            {r.employee.status === "onboarding"
-                              ? "ONBOARDING"
-                              : `RANK ${r.employee.rank ?? "—"}`}
+                            {`RANK ${r.employee.rank ?? "—"}`}
                             {r.assignmentCount > 1 && ` · ${r.assignmentCount} clients`}
                           </div>
                         </div>
                       </Link>
+                    </td>
+                    <td>
+                      <Badge tone={employeeStatusTone(r.employee.status)}>
+                        {EMPLOYEE_STATUS_LABEL[r.employee.status]}
+                      </Badge>
                     </td>
                     <td>
                       <span style={{ fontWeight: 400 }}>{r.client.name}</span>
@@ -374,7 +380,7 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
               })}
               {sorted.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: "center", padding: "48px 22px", color: "var(--dt-warm-500)", fontSize: 13 }}>
+                  <td colSpan={9} style={{ textAlign: "center", padding: "48px 22px", color: "var(--dt-warm-500)", fontSize: 13 }}>
                     {rows.length === 0 ? (
                       <>
                         No employees on the roster yet.{" "}

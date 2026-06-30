@@ -251,38 +251,138 @@ export async function previewInvoicesForPeriod(
   };
 }
 
-// Commit the preview: create invoice rows + per-employee Reg/OT line
-// items, then log the run. Marks the period as `closed` to mirror the
-// SOP's "invoiced" terminal state.
-export async function commitInvoicesForPeriod(
+export type InvoiceUpsertResult = {
+  runId: string;
+  invoicesCreated: number;
+  invoicesUpdated: number;
+  invoicesRemoved: number;
+  invoicesSuperseded: number;
+  lineItemsCreated: number;
+  totalBilled: number;
+};
+
+const groupKey = (clientId: string, department: string, branch: string | null) =>
+  `${clientId}::${department}::${branch ?? ""}`;
+
+// Build the per-employee Reg + OT line items for a group. OT row skipped when
+// zero so we don't litter invoices with $0 rows.
+function buildGroupLineItems(invoiceId: string, g: InvoicePreviewGroup) {
+  const items: Array<{
+    invoice_id: string;
+    department: string | null;
+    employee_name: string;
+    role: string | null;
+    hours: number;
+    ot_hours: number;
+    rate: number;
+    amount: number;
+    employee_cost: number | null;
+    sort_order: number;
+    timecard_id: string | null;
+  }> = [];
+  let sort = 0;
+  for (const line of g.lines) {
+    const regHours = round2(line.regHours + line.holidayHours);
+    if (regHours > 0) {
+      items.push({
+        invoice_id: invoiceId,
+        department: g.department,
+        employee_name: line.employeeName,
+        role: line.role,
+        hours: regHours,
+        ot_hours: 0,
+        rate: line.billRate,
+        amount: line.regAmount,
+        employee_cost: round2(regHours * line.payRate),
+        sort_order: sort++,
+        timecard_id: line.timecardIds[0] ?? null,
+      });
+    }
+    if (line.otHours > 0) {
+      items.push({
+        invoice_id: invoiceId,
+        department: g.department,
+        employee_name: line.employeeName,
+        role: line.role,
+        hours: 0,
+        ot_hours: line.otHours,
+        rate: round2(line.billRate * 1.5),
+        amount: line.otAmount,
+        employee_cost: round2(line.otHours * line.payRate * 1.5),
+        sort_order: sort++,
+        timecard_id: line.timecardIds[0] ?? null,
+      });
+    }
+  }
+  return items;
+}
+
+// Idempotent invoice sync for a period — the heart of "enter hours once, the
+// invoice updates." For each (client × department × branch) group:
+//   * an existing DRAFT invoice is REUSED in place (same number/id): its line
+//     items are replaced from the current hours and its totals updated;
+//   * duplicate drafts for the same group are collapsed into one;
+//   * a draft whose group no longer has any hours (employee removed) is
+//     deleted — the "remove" side;
+//   * groups with no draft but a locked (sent/paid) invoice get a fresh draft,
+//     flagged as superseded — locked invoices are NEVER mutated.
+// Re-running produces the same stable set of draft invoices, killing the
+// manual delete-add that caused billing errors. `close` flips the period to
+// the terminal "closed" status (the final "Generate" step).
+export async function upsertInvoicesForPeriod(
   periodId: string,
-  ranBy?: string,
-): Promise<{ runId: string; invoicesCreated: number; lineItemsCreated: number; totalBilled: number }> {
+  opts: { ranBy?: string; close?: boolean } = {},
+): Promise<InvoiceUpsertResult> {
   const supabase = await createClient();
+  const { ranBy, close = false } = opts;
 
   const preview = await previewInvoicesForPeriod(periodId, { onlyApproved: true });
   if (!preview) throw new Error("Payroll period not found.");
-  if (preview.groups.length === 0) {
+  if (close && preview.groups.length === 0) {
     throw new Error("No approved timecards to invoice. Approve timecards first.");
   }
 
-  let invoiceCount = await countInvoices();
-  const issuedAt = preview.period.invoice_date
-    ?? new Date().toISOString().slice(0, 10);
-
-  // Default due date: issued + 10 days (Net 10 per SOP).
+  const issuedAt = preview.period.invoice_date ?? new Date().toISOString().slice(0, 10);
   const issuedDate = new Date(issuedAt + "T00:00:00");
   const dueDate = new Date(issuedDate);
   dueDate.setDate(dueDate.getDate() + 10);
   const dueAt = dueDate.toISOString().slice(0, 10);
 
+  // Existing invoices already attached to this period, indexed by group key.
+  const { data: existingRaw } = await supabase
+    .from("invoices")
+    .select("id, client_id, department, branch, status, number")
+    .eq("payroll_period_id", periodId);
+  type ExistingInv = {
+    id: string;
+    client_id: string;
+    department: string | null;
+    branch: string | null;
+    status: string;
+    number: string;
+  };
+  const existing = (existingRaw ?? []) as ExistingInv[];
+  const draftsByKey = new Map<string, ExistingInv[]>();
+  const lockedByKey = new Map<string, ExistingInv[]>();
+  for (const inv of existing) {
+    const key = groupKey(inv.client_id, (inv.department || DEFAULT_DEPT).trim() || DEFAULT_DEPT, inv.branch);
+    const bucket = inv.status === "draft" ? draftsByKey : lockedByKey;
+    const arr = bucket.get(key) ?? [];
+    arr.push(inv);
+    bucket.set(key, arr);
+  }
+
+  let invoiceCount = await countInvoices();
   let invoicesCreated = 0;
+  let invoicesUpdated = 0;
+  let invoicesSuperseded = 0;
   let lineItemsCreated = 0;
   let totalBilled = 0;
+  const activeKeys = new Set<string>();
 
   for (const g of preview.groups) {
-    invoiceCount++;
-    const number = nextInvoiceNumber(invoiceCount - 1);
+    const key = groupKey(g.clientId, g.department, g.branch);
+    activeKeys.add(key);
 
     const subtotal = round2(g.subtotal);
     const feePct = round2(g.serviceFeePct);
@@ -290,120 +390,147 @@ export async function commitInvoicesForPeriod(
     const total = round2(subtotal + fee);
     totalBilled += total;
 
-    const { data: inv, error: invErr } = await supabase
-      .from("invoices")
-      .insert({
-        number,
-        client_id: g.clientId,
-        period_start: preview.period.start_date,
-        period_end: preview.period.end_date,
-        issued_at: issuedAt,
-        due_at: dueAt,
-        terms: "Net 10 Days",
-        subtotal,
-        fee_pct: feePct,
-        fee,
-        tax: 0,
-        total,
-        status: "draft",
-        payroll_period_id: periodId,
-        department: g.department,
-        branch: g.branch,
-        bill_to_client_name: g.clientName,
-      })
-      .select("id")
-      .single();
-    if (invErr) throw new Error(invErr.message);
-    invoicesCreated++;
+    const drafts = draftsByKey.get(key) ?? [];
+    let invoiceId: string;
 
-    // Two line items per employee — Reg + OT (the OT row is skipped when
-    // hours are zero so we don't litter invoices with $0 rows).
-    const lineItems: Array<{
-      invoice_id: string;
-      department: string | null;
-      employee_name: string;
-      role: string | null;
-      hours: number;
-      ot_hours: number;
-      rate: number;
-      amount: number;
-      employee_cost: number | null;
-      sort_order: number;
-      timecard_id: string | null;
-    }> = [];
-    let sort = 0;
-    for (const line of g.lines) {
-      const regHours = round2(line.regHours + line.holidayHours);
-      if (regHours > 0) {
-        const cost = round2(regHours * line.payRate);
-        lineItems.push({
-          invoice_id: inv.id,
-          department: g.department,
-          employee_name: line.employeeName,
-          role: line.role,
-          hours: regHours,
-          ot_hours: 0,
-          rate: line.billRate,
-          amount: line.regAmount,
-          employee_cost: cost,
-          sort_order: sort++,
-          timecard_id: line.timecardIds[0] ?? null,
-        });
+    if (drafts.length > 0) {
+      // Reuse the first draft; collapse any duplicate drafts for this group.
+      const keep = drafts[0];
+      invoiceId = keep.id;
+      const dupes = drafts.slice(1).map((d) => d.id);
+      if (dupes.length > 0) {
+        await supabase.from("invoices").delete().in("id", dupes); // line items cascade
       }
-      if (line.otHours > 0) {
-        const cost = round2(line.otHours * line.payRate * 1.5);
-        lineItems.push({
-          invoice_id: inv.id,
+      await supabase
+        .from("invoices")
+        .update({
+          subtotal,
+          fee_pct: feePct,
+          fee,
+          tax: 0,
+          total,
+          issued_at: issuedAt,
+          due_at: dueAt,
           department: g.department,
-          employee_name: line.employeeName,
-          role: line.role,
-          hours: 0,
-          ot_hours: line.otHours,
-          rate: round2(line.billRate * 1.5),
-          amount: line.otAmount,
-          employee_cost: cost,
-          sort_order: sort++,
-          timecard_id: line.timecardIds[0] ?? null,
-        });
-      }
+          branch: g.branch,
+          bill_to_client_name: g.clientName,
+        })
+        .eq("id", invoiceId);
+      // Replace the line items from current hours.
+      await supabase.from("invoice_line_items").delete().eq("invoice_id", invoiceId);
+      invoicesUpdated++;
+    } else {
+      invoiceCount++;
+      if ((lockedByKey.get(key) ?? []).length > 0) invoicesSuperseded++;
+      const { data: inv, error: invErr } = await supabase
+        .from("invoices")
+        .insert({
+          number: nextInvoiceNumber(invoiceCount - 1),
+          client_id: g.clientId,
+          period_start: preview.period.start_date,
+          period_end: preview.period.end_date,
+          issued_at: issuedAt,
+          due_at: dueAt,
+          terms: "Net 10 Days",
+          subtotal,
+          fee_pct: feePct,
+          fee,
+          tax: 0,
+          total,
+          status: "draft",
+          payroll_period_id: periodId,
+          department: g.department,
+          branch: g.branch,
+          bill_to_client_name: g.clientName,
+        })
+        .select("id")
+        .single();
+      if (invErr) throw new Error(invErr.message);
+      invoiceId = inv.id;
+      invoicesCreated++;
     }
-    if (lineItems.length > 0) {
-      const { error: liErr } = await supabase
-        .from("invoice_line_items")
-        .insert(lineItems);
+
+    const items = buildGroupLineItems(invoiceId, g);
+    if (items.length > 0) {
+      const { error: liErr } = await supabase.from("invoice_line_items").insert(items);
       if (liErr) throw new Error(liErr.message);
-      lineItemsCreated += lineItems.length;
+      lineItemsCreated += items.length;
     }
   }
+
+  // Remove stale drafts: a draft whose group no longer has any hours.
+  let invoicesRemoved = 0;
+  const staleIds: string[] = [];
+  for (const [key, drafts] of draftsByKey) {
+    if (!activeKeys.has(key)) staleIds.push(...drafts.map((d) => d.id));
+  }
+  if (staleIds.length > 0) {
+    await supabase.from("invoices").delete().in("id", staleIds);
+    invoicesRemoved = staleIds.length;
+  }
+
+  const noteParts = [
+    `${invoicesUpdated} updated`,
+    `${invoicesCreated} created`,
+    `${invoicesRemoved} removed`,
+  ];
+  if (invoicesSuperseded > 0) noteParts.push(`${invoicesSuperseded} superseded (locked)`);
 
   const { data: runRow, error: rErr } = await supabase
     .from("invoice_runs")
     .insert({
       payroll_period_id: periodId,
       ran_by: ranBy ?? null,
-      invoices_created: invoicesCreated,
+      invoices_created: invoicesCreated + invoicesUpdated,
       line_items_created: lineItemsCreated,
       total_billed: round2(totalBilled),
+      notes: noteParts.join(" · "),
     })
     .select("id")
     .single();
   if (rErr) throw new Error(rErr.message);
 
-  // Stamp invoice_date if this is the first run and the period didn't
-  // already specify one. Move the period to terminal "closed" status.
-  await supabase
-    .from("payroll_periods")
-    .update({
-      status: "closed",
-      invoice_date: preview.period.invoice_date ?? issuedAt,
-    })
-    .eq("id", periodId);
+  if (close) {
+    await supabase
+      .from("payroll_periods")
+      .update({ status: "closed", invoice_date: preview.period.invoice_date ?? issuedAt })
+      .eq("id", periodId);
+  }
 
   return {
     runId: runRow.id,
     invoicesCreated,
+    invoicesUpdated,
+    invoicesRemoved,
+    invoicesSuperseded,
     lineItemsCreated,
     totalBilled: round2(totalBilled),
+  };
+}
+
+// Refresh draft invoices from current hours WITHOUT closing the period. Safe to
+// run repeatedly as time cards change — this is the "entering hours once
+// updates the invoice" path operators use while reviewing.
+export async function regenerateDraftInvoicesForPeriod(
+  periodId: string,
+  ranBy?: string,
+): Promise<InvoiceUpsertResult> {
+  return upsertInvoicesForPeriod(periodId, { ranBy, close: false });
+}
+
+// Commit the preview and move the period to terminal "closed" status. Now
+// idempotent — re-running reuses existing draft invoices instead of piling up
+// new numbers.
+export async function commitInvoicesForPeriod(
+  periodId: string,
+  ranBy?: string,
+): Promise<{ runId: string; invoicesCreated: number; lineItemsCreated: number; totalBilled: number }> {
+  const r = await upsertInvoicesForPeriod(periodId, { ranBy, close: true });
+  return {
+    runId: r.runId,
+    invoicesCreated: r.invoicesCreated + r.invoicesUpdated,
+    lineItemsCreated: r.lineItemsCreated,
+    totalBilled: r.totalBilled,
   };
 }
 

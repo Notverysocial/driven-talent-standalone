@@ -178,6 +178,8 @@ export function EventDialog({
                   ? "e.g. IG carousel — warehouse hiring"
                   : kind === "holiday"
                   ? "e.g. Office closed"
+                  : kind === "internal"
+                  ? "e.g. Team meeting · payroll deadline"
                   : "e.g. Recruiter standup"
               }
             />

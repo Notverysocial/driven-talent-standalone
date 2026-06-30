@@ -83,6 +83,33 @@ export async function listSickEntriesForEmployee(
   return (data ?? []) as SickTimeEntry[];
 }
 
+// All sick-time entries joined with employee name, newest first — drives the
+// Excel report. Optionally scoped to a single calendar year.
+export type SickEntryExportRow = SickTimeEntry & {
+  employee_name: string;
+};
+
+export async function listSickEntriesForExport(opts?: {
+  year?: number;
+}): Promise<SickEntryExportRow[]> {
+  const supabase = await createClient();
+  let q = supabase
+    .from("sick_time_entries")
+    .select(`*, employees ( full_name )`)
+    .order("entry_date", { ascending: false });
+  if (opts?.year) {
+    q = q.gte("entry_date", `${opts.year}-01-01`).lte("entry_date", `${opts.year}-12-31`);
+  }
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+
+  type Row = SickTimeEntry & { employees: { full_name: string } | null };
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    ...r,
+    employee_name: r.employees?.full_name ?? "<deleted>",
+  }));
+}
+
 // ---------- LOA ---------------------------------------------------------
 
 export type LoaRow = LeaveOfAbsenceRequest & {

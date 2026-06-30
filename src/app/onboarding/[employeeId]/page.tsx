@@ -7,13 +7,29 @@ import { Badge } from "@/components/Badge";
 import {
   generateWelcomeLetterBody,
   getOnboardingDetail,
+  getPeopleaseForms,
 } from "@/lib/onboarding.server";
 import { ONBOARDING_TEMPLATE, calcProgress } from "@/lib/onboarding";
-import { listEsignatureRequestsForEmployee } from "@/lib/team.server";
+import { listEsignatureRequestsForEmployee, listTeamMembers } from "@/lib/team.server";
+import { listItemMentions } from "@/lib/notifications.server";
+import { CalendlyScheduler } from "@/components/CalendlyScheduler";
+import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
+import {
+  buildCalendlyBookingUrl,
+  CALENDLY_EVENT_TYPES,
+} from "@/lib/integrations/calendly-events";
 import { ItemRow } from "./ItemRow";
+import { OnboardingStatusToggle } from "./OnboardingStatusToggle";
+import { PeopleaseFormsPanel } from "./PeopleaseFormsPanel";
 import { WelcomeLetter } from "./WelcomeLetter";
 import { EsignaturePanel } from "./EsignaturePanel";
-import { addChecklistItem, addDocument, toggleDocument } from "../actions";
+import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
+import {
+  addChecklistItem,
+  addDocument,
+  setEmployeeLanguagePref,
+  toggleDocument,
+} from "../actions";
 import { getActiveEsignProviderInfo } from "../esign-actions";
 
 function fmtDate(d: string | null) {
@@ -31,13 +47,40 @@ export default async function OnboardingDetailPage({
   if (!detail) notFound();
 
   const { employee, checklist, documents, primaryAssignment, welcomeLetter } = detail;
-  const [esignRequests, providerInfo] = await Promise.all([
-    listEsignatureRequestsForEmployee(employeeId),
-    getActiveEsignProviderInfo(),
-  ]);
+  const [esignRequests, providerInfo, peopleaseForms, teamMembers, mentionsByItem] =
+    await Promise.all([
+      listEsignatureRequestsForEmployee(employeeId),
+      getActiveEsignProviderInfo(),
+      getPeopleaseForms(employeeId),
+      listTeamMembers(),
+      listItemMentions(checklist.map((i) => i.id)),
+    ]);
+  // Active teammates only for the @mention picker.
+  const taggableTeam = teamMembers
+    .filter((m) => m.status === "active")
+    .map((m) => ({ id: m.id, full_name: m.full_name, title: m.title }));
   const progress = calcProgress(checklist);
   const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
   const generated = generateWelcomeLetterBody(employee, primaryAssignment);
+
+  // Calendly — book the new-hire orientation, prefilled with the employee's
+  // name/email so the booking reconciles back to them via the webhook.
+  const cal = await getCalendlySchedulingContext();
+  const onboardingOptions = cal.schedulingUrl
+    ? [
+        {
+          key: "onboarding",
+          label: "Schedule Orientation",
+          durationMinutes: CALENDLY_EVENT_TYPES.onboarding.durationMinutes,
+          url: buildCalendlyBookingUrl({
+            schedulingUrl: cal.schedulingUrl,
+            slug: cal.eventSlugs.onboarding,
+            name: employee.full_name,
+            email: employee.email,
+          }),
+        },
+      ]
+    : [];
 
   return (
     <Shell>
@@ -82,6 +125,27 @@ export default async function OnboardingDetailPage({
             {employee.onboarding_in_charge && (
               <Badge tone="warm">In charge: {employee.onboarding_in_charge}</Badge>
             )}
+          </div>
+
+          {/* Active toggle — decoupled from checklist completion (Phase-1 #1).
+              Only shown for the onboarding ⇄ active pair. */}
+          {(employee.status === "onboarding" || employee.status === "active") && (
+            <div style={{ marginTop: 12 }}>
+              <OnboardingStatusToggle
+                employeeId={employee.id}
+                status={employee.status}
+                complete={progress.pct === 100}
+              />
+            </div>
+          )}
+
+          {/* Document-language preference — drives the language onboarding docs
+              are generated in (task 86e20w8yz). */}
+          <div style={{ marginTop: 12 }}>
+            <LanguagePrefSelect
+              current={employee.language_pref}
+              action={setEmployeeLanguagePref.bind(null, employee.id)}
+            />
           </div>
 
           <div
@@ -135,6 +199,41 @@ export default async function OnboardingDetailPage({
         </div>
       </div>
 
+      <div
+        className="dt-card"
+        style={{
+          padding: "16px 22px",
+          marginBottom: 22,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div
+            className="tiny muted"
+            style={{
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              fontWeight: 400,
+            }}
+          >
+            Orientation
+          </div>
+          <div style={{ fontSize: 12.5, color: "var(--dt-warm-500)", marginTop: 4 }}>
+            Book the new-hire onboarding session via Calendly.
+          </div>
+        </div>
+        <CalendlyScheduler
+          connected={cal.connected}
+          options={onboardingOptions}
+          size="sm"
+          emptyHint="Connect Calendly in Integrations to schedule orientation."
+        />
+      </div>
+
       <WelcomeLetter
         employeeId={employee.id}
         initialBody={welcomeLetter?.body ?? null}
@@ -172,6 +271,8 @@ export default async function OnboardingDetailPage({
               status={i.status}
               doneOn={i.done_on}
               notes={i.notes}
+              teamMembers={taggableTeam}
+              mentions={mentionsByItem.get(i.id) ?? []}
             />
           ))}
         </div>
@@ -218,6 +319,9 @@ export default async function OnboardingDetailPage({
           />
         </form>
       </div>
+
+      {/* PEOPLEASE new-hire forms packet (task 86e20w8v9) */}
+      <PeopleaseFormsPanel employeeId={employee.id} forms={peopleaseForms} />
 
       {/* Documents */}
       <div className="dt-card" style={{ marginTop: 22 }}>

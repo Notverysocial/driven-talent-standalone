@@ -5,9 +5,9 @@ import { Badge } from "@/components/Badge";
 import {
   listClientsForPicker,
   listDueReminders,
-  listEmployeesForPicker,
   listTaskAssigneeNames,
   listTasks,
+  listTeamMembersForPicker,
 } from "@/lib/legal-tasks.server";
 import {
   TASK_PRIORITY_LABEL,
@@ -27,6 +27,7 @@ import {
   deleteTask,
   setTaskStatus,
 } from "./actions";
+import { TaskRowActions } from "./TaskRowActions";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
@@ -50,11 +51,11 @@ export default async function TasksPage({
       : "open";
   const filterAssignee = (sp.assignee ?? "").trim() || undefined;
 
-  const [tasks, dueReminders, assigneeNames, employees, clients] = await Promise.all([
+  const [tasks, dueReminders, assigneeNames, teamMembers, clients] = await Promise.all([
     listTasks(),
     listDueReminders(),
     listTaskAssigneeNames(),
-    listEmployeesForPicker(),
+    listTeamMembersForPicker(),
     listClientsForPicker(),
   ]);
 
@@ -320,6 +321,7 @@ export default async function TasksPage({
                           alignItems: "flex-end",
                         }}
                       >
+                        <TaskRowActions task={t} teamMembers={teamMembers} clients={clients} />
                         {t.status === "todo" && (
                           <StatusBtn id={t.id} status="in_progress" label="Start" />
                         )}
@@ -402,12 +404,19 @@ export default async function TasksPage({
             <Field label="Assignee">
               <select name="assignee" className="dt-filter-input" defaultValue="">
                 <option value="">— Unassigned —</option>
-                <optgroup label="Team">
-                  {employees.map((e) => (
-                    <option key={e.id} value={`emp:${e.id}`}>{e.full_name}</option>
+                <optgroup label="Driven Talent team">
+                  {teamMembers.map((m) => (
+                    <option key={m.id} value={m.full_name}>
+                      {m.full_name}{m.title ? ` · ${m.title}` : ""}
+                    </option>
                   ))}
                 </optgroup>
               </select>
+              {teamMembers.length === 0 && (
+                <span className="muted" style={{ fontSize: 10.5, marginTop: 4 }}>
+                  No active team members yet — add them under Admin → Team Members.
+                </span>
+              )}
             </Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <Field label="Priority">

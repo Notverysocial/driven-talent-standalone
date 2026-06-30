@@ -16,6 +16,10 @@
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+# saved Playwright login state (E2E_STORAGE_STATE) - never commit credentials
+auth.json
+*.storage-state.json
+/playwright/.auth/
 
 # next.js
 /.next/
@@ -45,8 +49,9 @@ yarn-error.log*
 .sentryclirc
 .env.sentry-build-plugin
 
-# claude code
-.claude/
+# claude code (ignore local settings, but share project slash commands)
+.claude/*
+!.claude/commands/
 
 # typescript
 *.tsbuildinfo

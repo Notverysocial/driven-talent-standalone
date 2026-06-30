@@ -60,7 +60,8 @@ export function CalendarClient({
       holiday: 0,
       birthday: 1,
       social_post: 2,
-      custom: 3,
+      internal: 3,
+      custom: 4,
     };
     for (const arr of m.values()) {
       arr.sort((a, b) => {

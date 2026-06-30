@@ -1,7 +1,7 @@
 // Client-safe staffing helpers — pure functions, no Supabase imports.
 // Both server pages and client components can import from here.
 
-import type { AttendanceEntry, AttendanceStatus, ScoreBand } from "./supabase/types";
+import type { AttendanceEntry, AttendanceStatus, EmployeeStatus, ScoreBand } from "./supabase/types";
 
 export const POSITIONS = [
   "Forklift Driver",
@@ -41,20 +41,41 @@ export type AttendanceCounts = {
   missed: number;
   noShow: number;
   excused: number;
+  sickDay: number;
   total: number;
 };
 
 export function countAttendance(records: AttendanceEntry[]): AttendanceCounts {
-  let present = 0, late = 0, missed = 0, noShow = 0, excused = 0;
+  let present = 0, late = 0, missed = 0, noShow = 0, excused = 0, sickDay = 0;
   for (const r of records) {
     if (r.status === "present") present++;
     else if (r.status === "late") late++;
     else if (r.status === "missed") missed++;
     else if (r.status === "no_show") noShow++;
     else if (r.status === "excused") excused++;
+    else if (r.status === "sick_day") sickDay++;
   }
-  return { present, late, missed, noShow, excused, total: present + late + missed + noShow + excused };
+  return {
+    present,
+    late,
+    missed,
+    noShow,
+    excused,
+    sickDay,
+    total: present + late + missed + noShow + excused + sickDay,
+  };
 }
+
+// The attendance workflow logs EXCEPTIONS only — these are the statuses an
+// exception entry can take. `present` is intentionally excluded (it's the
+// assumed default and is never logged going forward).
+export const EXCEPTION_STATUSES = [
+  "late",
+  "missed",
+  "no_show",
+  "excused",
+  "sick_day",
+] as const satisfies readonly AttendanceStatus[];
 
 // Weighted attendance %: (present + 0.5×late) / scoreable × 100.
 // Excused days don't count against the rate (protected leave).
@@ -85,7 +106,37 @@ export function bandColor(b: ScoreBand | null): {
   if (b === "green") return { fg: "var(--dt-success)", bg: "var(--dt-success-bg)", tone: "green", label: "Green" };
   if (b === "yellow") return { fg: "var(--dt-warning)", bg: "var(--dt-warning-bg)", tone: "amber", label: "Yellow" };
   if (b === "red") return { fg: "var(--dt-danger)", bg: "var(--dt-danger-bg)", tone: "red", label: "Red" };
-  return { fg: "var(--dt-warm-500)", bg: "var(--dt-warm-100)", tone: "warm", label: "Onboarding" };
+  // No score band yet — this is NOT an employment status. (Previously this
+  // labelled "Onboarding", which made every unscored employee look like they
+  // were onboarding regardless of their real employees.status value.)
+  return { fg: "var(--dt-warm-500)", bg: "var(--dt-warm-100)", tone: "warm", label: "Unscored" };
+}
+
+// Employment status (employees.status enum) → human label. Distinct from the
+// performance score band above; the two are orthogonal.
+export const EMPLOYEE_STATUS_LABEL: Record<EmployeeStatus, string> = {
+  active: "Active",
+  onboarding: "Onboarding",
+  inactive: "Inactive",
+  do_not_return: "Do Not Return",
+  terminated: "Terminated",
+};
+
+export function employeeStatusTone(
+  status: EmployeeStatus,
+): "green" | "amber" | "warm" | "red" | "dark" {
+  switch (status) {
+    case "active":
+      return "green";
+    case "onboarding":
+      return "amber";
+    case "inactive":
+      return "warm";
+    case "do_not_return":
+      return "red";
+    case "terminated":
+      return "dark";
+  }
 }
 
 export const ATTENDANCE_DOT_COLOR: Record<AttendanceStatus, string> = {
@@ -94,14 +145,16 @@ export const ATTENDANCE_DOT_COLOR: Record<AttendanceStatus, string> = {
   missed: "var(--dt-danger)",
   no_show: "var(--dt-danger)",
   excused: "var(--dt-warm-300)",
+  sick_day: "#3E7CB1",
 };
 
 export const ATTENDANCE_LABEL: Record<AttendanceStatus, string> = {
   present: "Present",
   late: "Late",
-  missed: "Missed",
-  no_show: "No-Show",
+  missed: "Missed Work",
+  no_show: "No Show",
   excused: "Excused",
+  sick_day: "Sick Day",
 };
 
 export function attendanceColor(pct: number): string {

@@ -79,6 +79,75 @@ export async function createTask(formData: FormData) {
   revalidatePath("/tasks");
 }
 
+export async function updateTask(id: string, formData: FormData) {
+  const supabase = await createClient();
+
+  const title = (formData.get("title") as string)?.trim();
+  const description = ((formData.get("description") as string) || "").trim() || null;
+  const priority = (formData.get("priority") as TaskPriority) || "normal";
+  const status = (formData.get("status") as TaskStatus) || "todo";
+  const assigneeRaw = ((formData.get("assignee") as string) || "").trim();
+  const dueAt = (formData.get("due_at") as string)?.trim();
+  const startAt = ((formData.get("start_at") as string) || "").trim() || null;
+  const createdBy = ((formData.get("created_by") as string) || "").trim() || null;
+  const clientId = ((formData.get("client_id") as string) || "").trim() || null;
+  const tagsRaw = ((formData.get("tags") as string) || "").trim();
+  const tags = tagsRaw
+    ? tagsRaw.split(",").map((t) => t.trim()).filter(Boolean)
+    : [];
+
+  if (!title) throw new Error("Title is required");
+  if (!dueAt) throw new Error("Due date is required — tasks must be time-bound");
+  if (!PRIORITIES.includes(priority)) throw new Error(`Invalid priority: ${priority}`);
+  if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
+
+  // Assignee carries either an employees.id ("emp:<uuid>") or a free-text
+  // team-member name. Internal team members (CR #10b) are stored by name in
+  // assignee_name since they live in team_members, not employees.
+  let assigneeEmployeeId: string | null = null;
+  let assigneeName: string | null = null;
+  if (assigneeRaw.startsWith("emp:")) {
+    assigneeEmployeeId = assigneeRaw.slice(4) || null;
+  } else if (assigneeRaw) {
+    assigneeName = assigneeRaw;
+  }
+
+  const patch: {
+    title: string;
+    description: string | null;
+    priority: TaskPriority;
+    status: TaskStatus;
+    assignee_name: string | null;
+    assignee_employee_id: string | null;
+    due_at: string;
+    start_at: string | null;
+    created_by: string | null;
+    client_id: string | null;
+    tags: string[];
+    completed_at?: string | null;
+  } = {
+    title,
+    description,
+    priority,
+    status,
+    assignee_name: assigneeName,
+    assignee_employee_id: assigneeEmployeeId,
+    due_at: new Date(dueAt).toISOString(),
+    start_at: startAt ? new Date(startAt).toISOString() : null,
+    created_by: createdBy,
+    client_id: clientId,
+    tags,
+  };
+  // Keep completed_at in sync with the status the operator picks.
+  if (status === "done") patch.completed_at = new Date().toISOString();
+  else patch.completed_at = null;
+
+  const { error } = await supabase.from("tasks").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/tasks");
+}
+
 export async function setTaskStatus(id: string, status: TaskStatus) {
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const supabase = await createClient();

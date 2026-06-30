@@ -4,9 +4,11 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
 import { getInvoice } from "@/lib/invoices.server";
+import { getCompanySettings, contactLine } from "@/lib/company.server";
 import { fmtMoney, fmtPeriod, INVOICE_STATUSES } from "@/lib/invoices";
 import { InvoiceActions } from "./InvoiceActions";
 import { AddLineItemForm, RemoveLineItemButton } from "./AddLineItemForm";
+import { EditInvoiceForm } from "./EditInvoiceForm";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -19,12 +21,13 @@ export default async function InvoiceDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const result = await getInvoice(id);
+  const [result, company] = await Promise.all([getInvoice(id), getCompanySettings()]);
   if (!result) notFound();
   const { invoice: inv, lineItems } = result;
 
   const status = INVOICE_STATUSES.find((s) => s.id === inv.status)!;
   const editable = inv.status === "draft";
+  const accent = company.accent_color || "var(--dt-gold-deep)";
 
   // Group lines by department
   const byDept = new Map<string, typeof lineItems>();
@@ -73,36 +76,38 @@ export default async function InvoiceDetailPage({
                   fontSize: 22,
                   fontWeight: 200,
                   letterSpacing: "0.22em",
-                  color: "var(--dt-gold-deep)",
+                  color: accent,
                   lineHeight: 1,
                   textTransform: "uppercase",
                 }}
               >
-                Driven Talent
+                {company.company_name}
               </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  letterSpacing: "0.32em",
-                  textTransform: "uppercase",
-                  color: "var(--dt-warm-500)",
-                  marginTop: 6,
-                  fontWeight: 300,
-                }}
-              >
-                Workforce · Solutions
-              </div>
+              {company.tagline && (
+                <div
+                  style={{
+                    fontSize: 10,
+                    letterSpacing: "0.32em",
+                    textTransform: "uppercase",
+                    color: "var(--dt-warm-500)",
+                    marginTop: 6,
+                    fontWeight: 300,
+                  }}
+                >
+                  {company.tagline}
+                </div>
+              )}
               <div style={{ fontSize: 11.5, color: "var(--dt-warm-700)", marginTop: 14, lineHeight: 1.6 }}>
-                2200 Mendocino Ave, Suite 4 · Santa Rosa, CA 95403
-                <br />
-                hello@driventalent.co · (707) 555-0144 · EIN 88-1284621
+                {company.address}
+                {company.address && <br />}
+                {contactLine(company)}
               </div>
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontFamily: "var(--dt-display)", fontSize: 28, fontWeight: 300, letterSpacing: "-0.01em" }}>
                 Invoice
               </div>
-              <div className="tab-num" style={{ fontSize: 13.5, color: "var(--dt-gold-deep)", fontWeight: 400, marginTop: 4 }}>
+              <div className="tab-num" style={{ fontSize: 13.5, color: accent, fontWeight: 400, marginTop: 4 }}>
                 № {inv.number}
               </div>
               <div style={{ marginTop: 14, fontSize: 11.5, color: "var(--dt-warm-700)", lineHeight: 1.7 }}>
@@ -116,7 +121,7 @@ export default async function InvoiceDetailPage({
                 </div>
                 <div>
                   <span style={{ color: "var(--dt-warm-500)", letterSpacing: "0.08em" }}>TERMS</span> &nbsp;&nbsp;{" "}
-                  {inv.terms ?? "Net 30"}
+                  {inv.terms ?? company.default_terms ?? "Net 30"}
                 </div>
               </div>
             </div>
@@ -279,7 +284,7 @@ export default async function InvoiceDetailPage({
                     fontFamily: "var(--dt-display)",
                     fontSize: 30,
                     fontWeight: 400,
-                    color: "var(--dt-gold-deep)",
+                    color: accent,
                   }}
                 >
                   ${fmtMoney(Number(inv.total))}
@@ -314,6 +319,17 @@ export default async function InvoiceDetailPage({
               )}
             </div>
           </div>
+          <EditInvoiceForm
+            invoiceId={inv.id}
+            number={inv.number}
+            issuedAt={inv.issued_at}
+            dueAt={inv.due_at}
+            terms={inv.terms ?? company.default_terms ?? "Net 30"}
+            feePct={Number(inv.fee_pct)}
+            tax={Number(inv.tax)}
+            billToOverride={inv.bill_to_client_name ?? ""}
+            notes={inv.notes ?? ""}
+          />
           <div className="dt-card" style={{ padding: 18 }}>
             <div className="tiny muted" style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}>
               Quick Actions

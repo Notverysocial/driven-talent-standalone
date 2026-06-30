@@ -68,6 +68,80 @@ export async function logSickEntry(formData: FormData) {
   revalidatePath(`/employees/${employeeId}`);
 }
 
+// Signed balance impact of an entry: accrual/adjustment add, usage/payout subtract.
+function signedDelta(type: SickEntryType, hours: number): number {
+  return type === "accrual" || type === "adjustment" ? hours : -hours;
+}
+
+// Edit an existing sick-time entry and re-derive the running balance: back out
+// the original entry's effect, then apply the edited one (with the same accrual
+// cap / zero floor as logging).
+export async function updateSickEntry(formData: FormData) {
+  const supabase = await createClient();
+
+  const id = (formData.get("id") as string)?.trim();
+  const employeeId = (formData.get("employee_id") as string)?.trim();
+  const entryType = formData.get("entry_type") as SickEntryType;
+  const hoursRaw = formData.get("hours") as string;
+  const entryDate =
+    (formData.get("entry_date") as string)?.trim() ||
+    new Date().toISOString().slice(0, 10);
+  const notes = (formData.get("notes") as string)?.trim() || null;
+  const createdBy = (formData.get("created_by") as string)?.trim() || null;
+
+  if (!id) throw new Error("Entry id is required");
+  if (!employeeId) throw new Error("Employee is required");
+  if (!VALID.includes(entryType)) throw new Error(`Invalid entry type: ${entryType}`);
+  const hours = Number(hoursRaw);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new Error("Hours must be a positive number");
+  }
+
+  const { data: old, error: oldErr } = await supabase
+    .from("sick_time_entries")
+    .select("hours, entry_type")
+    .eq("id", id)
+    .single();
+  if (oldErr) throw new Error(oldErr.message);
+
+  const { data: emp, error: empErr } = await supabase
+    .from("employees")
+    .select("sick_hours_balance")
+    .eq("id", employeeId)
+    .single();
+  if (empErr) throw new Error(empErr.message);
+
+  const base =
+    Number(emp.sick_hours_balance ?? 0) -
+    signedDelta(old.entry_type as SickEntryType, Number(old.hours));
+  let nextBalance = base + signedDelta(entryType, hours);
+  if (entryType === "accrual" && nextBalance > CA_SICK_ACCRUAL_CAP_HOURS) {
+    nextBalance = CA_SICK_ACCRUAL_CAP_HOURS;
+  }
+  if (nextBalance < 0) nextBalance = 0;
+
+  const { error: updErr } = await supabase
+    .from("sick_time_entries")
+    .update({
+      entry_type: entryType,
+      hours,
+      entry_date: entryDate,
+      notes,
+      created_by: createdBy,
+    })
+    .eq("id", id);
+  if (updErr) throw new Error(updErr.message);
+
+  const { error: balErr } = await supabase
+    .from("employees")
+    .update({ sick_hours_balance: nextBalance })
+    .eq("id", employeeId);
+  if (balErr) throw new Error(balErr.message);
+
+  revalidatePath("/sick-time");
+  revalidatePath(`/employees/${employeeId}`);
+}
+
 export async function deleteSickEntry(entryId: string, employeeId: string) {
   const supabase = await createClient();
   const { data: entry, error: getErr } = await supabase

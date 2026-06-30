@@ -91,3 +91,84 @@ export async function getAttendanceGrid(opts?: {
 
   return { rows, dates, clients: (clientsRes.data ?? []) as Client[] };
 }
+
+// ---------- Exceptions log (redesigned attendance view) ------------------
+
+// A single logged attendance exception, joined with employee + client so the
+// list and the employee profile can render names without extra lookups.
+export type AttendanceExceptionRow = AttendanceEntry & {
+  employee: Pick<Employee, "id" | "full_name">;
+  client: Pick<Client, "id" | "name"> | null;
+};
+
+// One pickable (employee, client) pair from the active roster — drives the
+// "add exception" form so a logged exception always maps to a real assignment
+// and satisfies the (employee_id, client_id, date) unique key.
+export type AssignmentOption = {
+  employee_id: string;
+  employee_name: string;
+  client_id: string;
+  client_name: string;
+};
+
+// List attendance exceptions (everything except `present`) over a recent
+// window, newest first. Search-by-name and status filtering happen client-side
+// to mirror the roster's interaction model.
+export async function listAttendanceExceptions(opts?: {
+  days?: number;
+  clientId?: string;
+}): Promise<AttendanceExceptionRow[]> {
+  const supabase = await createClient();
+  const days = opts?.days ?? 60;
+  const since = isoDaysAgo(days - 1);
+
+  let q = supabase
+    .from("attendance_entries")
+    .select(`*, employees ( id, full_name ), clients ( id, name )`)
+    .neq("status", "present")
+    .gte("date", since)
+    .order("date", { ascending: false });
+  if (opts?.clientId) q = q.eq("client_id", opts.clientId);
+
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+
+  type Row = AttendanceEntry & {
+    employees: Pick<Employee, "id" | "full_name"> | null;
+    clients: Pick<Client, "id" | "name"> | null;
+  };
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    ...r,
+    employee: r.employees ?? { id: r.employee_id, full_name: "<deleted>" },
+    client: r.clients,
+  }));
+}
+
+// Active (employee, client) pairs for the add-exception picker.
+export async function listAssignmentOptions(): Promise<AssignmentOption[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("employee_assignments")
+    .select(`employee_id, client_id, employees ( full_name ), clients ( name )`)
+    .eq("active", true);
+  if (error) throw new Error(error.message);
+
+  type Row = {
+    employee_id: string;
+    client_id: string;
+    employees: { full_name: string } | null;
+    clients: { name: string } | null;
+  };
+  return ((data ?? []) as unknown as Row[])
+    .map((r) => ({
+      employee_id: r.employee_id,
+      employee_name: r.employees?.full_name ?? "—",
+      client_id: r.client_id,
+      client_name: r.clients?.name ?? "—",
+    }))
+    .sort(
+      (a, b) =>
+        a.employee_name.localeCompare(b.employee_name) ||
+        a.client_name.localeCompare(b.client_name),
+    );
+}

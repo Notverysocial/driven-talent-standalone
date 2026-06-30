@@ -42,6 +42,12 @@ export const TRACK_STYLE: Record<CalendarEventKind, TrackStyle> = {
     shape: "square",
     glyph: "S",
   },
+  internal: {
+    label: "Internal Team",
+    color: "#6B5BA6",     // indigo — distinct from client/external tracks
+    shape: "bar",
+    glyph: "T",
+  },
   custom: {
     label: "Event",
     color: "#3D3830",     // dt-warm-700
@@ -54,6 +60,7 @@ export const TRACK_ORDER: CalendarEventKind[] = [
   "birthday",
   "holiday",
   "social_post",
+  "internal",
   "custom",
 ];
 

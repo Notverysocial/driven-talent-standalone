@@ -2,10 +2,42 @@ import "server-only";
 import { createClient } from "./supabase/server";
 import type {
   Client,
+  ClientContact,
+  ClientWorkersCompCode,
   EmployeeAssignment,
   InvoiceLineItem,
   InvoiceStatus,
 } from "./supabase/types";
+
+// Client contacts directory (table from migration 0020, surfaced in the
+// Client section UI). Ordered by name for stable display.
+export async function listClientContacts(
+  clientId: string,
+): Promise<ClientContact[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("client_contacts")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("full_name");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ClientContact[];
+}
+
+// Per-client × position workers-comp code mapping (task 86e20w8tq). Ordered
+// by position for stable display. Empty array when none configured yet.
+export async function listClientWorkersCompCodes(
+  clientId: string,
+): Promise<ClientWorkersCompCode[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("client_workers_comp_codes")
+    .select("*")
+    .eq("client_id", clientId)
+    .order("position");
+  if (error) throw new Error(error.message);
+  return (data ?? []) as ClientWorkersCompCode[];
+}
 
 // One row per client in the margin overview list.
 // `realized*` come from posted invoices (the "what we billed and what

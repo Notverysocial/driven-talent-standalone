@@ -20,6 +20,7 @@ import {
   markContacted,
   toggleContactFavorite,
 } from "./actions";
+import { ContactRowActions } from "./ContactRowActions";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 const ROLES = Object.keys(CONTACT_ROLE_LABEL) as ContactRole[];
@@ -280,6 +281,11 @@ export default async function ContactsPage({
                             <span>{c.favorite ? "Unstar" : "Star"}</span>
                           </button>
                         </form>
+                        <ContactRowActions
+                          contact={c}
+                          clients={clients}
+                          employees={employees}
+                        />
                       </td>
                     </tr>
                   );

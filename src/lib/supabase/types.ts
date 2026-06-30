@@ -1,8 +1,24 @@
 // Hand-written types matching supabase/migrations/0000_init.sql + 0001_ops_workflow.sql.
 
-export type EmployeeStatus = "active" | "onboarding" | "inactive";
+// Matches the `employee_status` enum: created in 0000_init.sql with
+// (active, onboarding, inactive) and extended additively in 0012_team_members.sql
+// with (terminated, do_not_return).
+export type EmployeeStatus = "active" | "onboarding" | "inactive" | "terminated" | "do_not_return";
 export type ScoreBand = "green" | "yellow" | "red";
-export type AttendanceStatus = "present" | "late" | "missed" | "no_show" | "excused";
+// Document-language preference on a person record (migration 0033, task 86e20w8yz).
+// Distinct from the app's UI locale: this is the language their onboarding docs /
+// welcome letter should be generated in.
+export type LanguagePref = "en" | "es";
+// `present` is retained for historical rows; the attendance workflow now logs
+// EXCEPTIONS only (everyone is assumed scheduled/present unless an exception is
+// recorded). `sick_day` was added additively in migration 0027.
+export type AttendanceStatus =
+  | "present"
+  | "late"
+  | "missed"
+  | "no_show"
+  | "excused"
+  | "sick_day";
 // Updated by 0001 — old values were new/screening/interview/placed/inactive.
 export type CandidateStatus = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";
 export type CandidateLifecycleStatus =
@@ -22,6 +38,9 @@ export type OnboardingCategory =
 export type OnboardingStatus = "not_started" | "in_progress" | "done" | "na";
 export type PayrollPeriodStatus = "open" | "audited" | "submitted" | "approved" | "closed";
 export type ClientReportFormat = "standard" | "hours_spent" | "timecard";
+// Client lifecycle status (migration 0034). Distinguishes live accounts from
+// prospects / churned ones in the Client section.
+export type ClientStatus = "active" | "prospect" | "inactive";
 
 export type Client = {
   id: string;
@@ -35,6 +54,44 @@ export type Client = {
   terms: string | null;
   service_fee_pct: number;
   report_format: ClientReportFormat;
+  // Added in 0033 — per-client config from the onboarding backlog (task 86e20w8qy).
+  // `account_manager` is the DT person "in charge" of the account. The
+  // workers_comp_* fields are the client's default WC code/class; per-position
+  // overrides live in `client_workers_comp_codes`.
+  workers_comp_code: string | null;
+  workers_comp_class: string | null;
+  account_manager: string | null;
+  workers_comp_notes: string | null;
+  // Added in 0034 — basic company info for the Client section.
+  phone: string | null;
+  website: string | null;
+  status: ClientStatus;
+  // Added in 0035 — customizable per-client report builder. `report_template_key`
+  // selects a template from the code catalog (src/lib/reports/templates.ts),
+  // falling back to `report_format` when null. `report_options` carries per-client
+  // overrides (granularity, columns, label).
+  report_template_key: string | null;
+  report_options: ReportOptions;
+  created_at: string;
+  updated_at: string;
+};
+
+// Per-client report overrides stored in clients.report_options (migration 0035).
+export type ReportGranularity = "employee_week" | "employee_day" | "hours_spent_matrix";
+export type ReportOptions = {
+  granularity?: ReportGranularity;
+  columns?: string[];
+  label?: string;
+};
+
+// Per-client × position workers-comp code mapping (migration 0033, task 86e20w8tq).
+export type ClientWorkersCompCode = {
+  id: string;
+  client_id: string;
+  position: string;
+  wc_code: string;
+  wc_class: string | null;
+  description: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -56,6 +113,8 @@ export type Employee = {
   onboarding_in_charge: string | null;
   sick_hours_balance: number;
   birthday: string | null;
+  // Added in 0033 — document-language preference (task 86e20w8yz).
+  language_pref: LanguagePref;
   created_at: string;
   updated_at: string;
 };
@@ -74,6 +133,24 @@ export type EmployeeAssignment = {
   bill_rate: number | null;
   branch: string | null;
   active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Do Not Return list (migration 0018 + employee link in 0026) ----
+// Standalone DNR roster, originally seeded from the live spreadsheet. The
+// employee_id link (0026) is set when an active employee is flagged from the
+// roster, so the record can be synced (upsert) rather than duplicated.
+export type DoNotReturnEntry = {
+  id: string;
+  employee_id: string | null;
+  full_name: string;
+  phone: string | null;
+  last_company: string | null;
+  reason: string | null;
+  severity: string | null;
+  date_logged: string | null;
+  reported_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -132,7 +209,7 @@ export type Candidate = {
   recruiter: string | null;
   pandadoc_document_id: string | null;
   pandadoc_document_status: string | null;
-  // Seasonal Talent Pool lifecycle layer (migration 0026).
+  // Seasonal Talent Pool lifecycle layer (migration 0036).
   lifecycle_status: CandidateLifecycleStatus;
   placement_history: PlacementHistoryEntry[];
   last_placement_end: string | null;
@@ -140,6 +217,26 @@ export type Candidate = {
   preferred_location: string | null;
   preferred_shift: string | null;
   do_not_return_reason: string | null;
+  // Added in 0031 — used by the per-recruiter candidate tabs (#14).
+  photo_url: string | null;
+  responded: boolean;
+  // Added in 0033 — document-language preference (task 86e20w8yz).
+  language_pref: LanguagePref;
+  created_at: string;
+  updated_at: string;
+};
+
+// PEOPLEASE new-hire forms tracker (migration 0033, task 86e20w8v9).
+export type PeopleaseFormStatus = "pending" | "in_progress" | "complete" | "na";
+
+export type EmployeePeopleaseForm = {
+  id: string;
+  employee_id: string;
+  form_key: string;
+  label: string;
+  status: PeopleaseFormStatus;
+  completed_on: string | null;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -264,6 +361,25 @@ export type InvoiceRun = {
   notes: string | null;
 };
 
+// Editable company / invoice settings (migration 0028). Single-row table:
+// drives the invoice letterhead, remit/footer text, and format defaults.
+export type CompanySettings = {
+  id: boolean;
+  company_name: string;
+  tagline: string | null;
+  address: string | null;
+  email: string | null;
+  phone: string | null;
+  ein: string | null;
+  invoice_footer: string | null;
+  accent_color: string | null;
+  invoice_number_prefix: string | null;
+  default_terms: string | null;
+  default_fee_pct: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export type InvoiceLineItem = {
   id: string;
   invoice_id: string;
@@ -296,7 +412,12 @@ export type PayrollPeriod = {
 
 // ---- Calendar (migration 0003) -----------------------------------------
 
-export type CalendarEventKind = "birthday" | "holiday" | "social_post" | "custom";
+export type CalendarEventKind =
+  | "birthday"
+  | "holiday"
+  | "social_post"
+  | "internal"
+  | "custom";
 
 export type CalendarEvent = {
   id: string;
@@ -484,20 +605,20 @@ export type ReimbursementCategory =
   | "uniform"
   | "other";
 
-export type ExpenseCategory =
-  | "rent"
-  | "utilities"
-  | "software"
-  | "marketing"
-  | "insurance"
-  | "supplies"
-  | "travel"
-  | "meals"
-  | "professional_services"
-  | "payroll"
-  | "taxes"
-  | "equipment"
-  | "other";
+// Expense category is now a user-managed lookup table (migration 0029),
+// not a fixed enum. The stored value on an expense is the category slug.
+export type ExpenseCategorySlug = string;
+
+export type ExpenseCategoryRow = {
+  id: string;
+  slug: string;
+  label: string;
+  tone: string;            // BadgeTone: warm|gold|green|amber|red|dark
+  sort: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
 
 export type ExpensePaymentMethod =
   | "check"
@@ -534,7 +655,7 @@ export type ReimbursementRequest = {
 
 export type Expense = {
   id: string;
-  category: ExpenseCategory;
+  category: ExpenseCategorySlug;
   amount: number;
   expense_date: string;
   vendor: string | null;
@@ -877,6 +998,75 @@ export type Profile = {
   updated_at: string;
 };
 
+// ---------- Recruiters roster (migration 0034) -------------------------
+// Canonical, self-serve recruiter list driving the per-recruiter candidate
+// tabs. Candidates still link via the free-text candidates.recruiter column.
+export type Recruiter = {
+  id: string;
+  name: string;
+  email: string | null;
+  active: boolean;
+  sort: number;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Client contacts (migration 0020, surfaced in 0034 UI) ------
+export type ClientContact = {
+  id: string;
+  client_id: string;
+  full_name: string;
+  first_name: string | null;
+  last_name: string | null;
+  department: string | null;
+  position: string | null;
+  phone: string | null;
+  email: string | null;
+  shift: string | null;
+  role_type: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// ---------- Wellness / follow-up notes timeline (migration 0034) -------
+// Immutable, append-only case-management entries scoped to an employee.
+export type WellnessEntryType =
+  | "note"
+  | "follow_up"
+  | "wellness_check"
+  | "incident"
+  | "accident"
+  | "return_to_work"
+  | "other";
+
+export type WellnessNote = {
+  id: string;
+  employee_id: string;
+  entry_type: WellnessEntryType;
+  body: string;
+  author_name: string;
+  author_team_member_id: string | null;
+  occurred_at: string;
+  created_at: string;
+};
+
+// ---------- Notifications (team tagging, migration 0034) ----------------
+export type AppNotification = {
+  id: string;
+  recipient_team_member_id: string | null;
+  recipient_name: string;
+  actor_name: string | null;
+  kind: string;
+  body: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  link_path: string | null;
+  meta: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+};
+
 export type BugReport = {
   id: string;
   reporter_name: string | null;
@@ -894,4 +1084,52 @@ export type BugReport = {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// ---------- Payroll/report engine (migration 0035) ----------------------
+
+// One row per roster reconciliation pass (auto add/remove observability).
+export type RosterSyncAction = "added" | "removed" | "flagged";
+export type RosterSyncDetail = {
+  employee_id: string | null;
+  name: string;
+  action: RosterSyncAction;
+  reason: string;
+};
+export type RosterSyncRun = {
+  id: string;
+  ran_at: string;
+  ran_by: string | null;
+  source: "timecards" | "uattend" | "manual";
+  added_count: number;
+  removed_count: number;
+  flagged_count: number;
+  details: RosterSyncDetail[];
+  notes: string | null;
+  created_at: string;
+};
+
+// Per-employee verification row (timecard ↔ invoice ↔ payroll reconciliation).
+export type VerificationDetail = {
+  employee_id: string;
+  name: string;
+  timecard_hours: number;
+  invoice_hours: number;
+  payroll_hours: number;
+  status: "match" | "variance" | "missing";
+  delta_hours: number;
+  note: string | null;
+};
+export type PeriodVerification = {
+  id: string;
+  payroll_period_id: string;
+  verified_by: string | null;
+  verified_at: string;
+  result: "clean" | "variances";
+  employee_count: number;
+  variance_count: number;
+  deduction_zero_ok: boolean;
+  details: VerificationDetail[];
+  notes: string | null;
+  created_at: string;
 };

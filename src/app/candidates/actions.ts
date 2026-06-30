@@ -11,7 +11,25 @@ import { seedTemplateForEmployee } from "@/lib/onboarding.server";
 import type {
   CandidateCriterion,
   CandidateStatus,
+  LanguagePref,
 } from "@/lib/supabase/types";
+
+const LANGUAGE_PREFS: LanguagePref[] = ["en", "es"];
+
+// Document-language preference on the applicant (candidate) record (task 86e20w8yz).
+export async function setCandidateLanguagePref(
+  candidateId: string,
+  next: LanguagePref,
+) {
+  if (!LANGUAGE_PREFS.includes(next)) throw new Error(`Invalid language: ${next}`);
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("candidates")
+    .update({ language_pref: next })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/candidates/${candidateId}`);
+}
 
 export async function createCandidate(formData: FormData) {
   const supabase = await createClient();
@@ -149,6 +167,9 @@ export async function advanceToPlacement(candidateId: string) {
       status:    "onboarding",
       score:     0,
       recruiter: cand.recruiter,
+      // Carry the applicant's document-language choice onto the employee
+      // record so onboarding docs default to their language (task 86e20w8yz).
+      language_pref: cand.language_pref ?? "en",
     })
     .select("id")
     .single();

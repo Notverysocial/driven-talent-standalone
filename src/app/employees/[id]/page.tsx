@@ -4,7 +4,11 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { EmployeeManageBar } from "./EmployeeManageBar";
+import { WellnessTimeline } from "./WellnessTimeline";
 import { getEmployeeProfile } from "@/lib/employees.server";
+import { listWellnessNotes } from "@/lib/wellness.server";
+import { getCurrentUser } from "@/lib/auth.server";
 import {
   attendanceColor,
   bandColor,
@@ -13,7 +17,10 @@ import {
   weightedAttendancePct,
   ATTENDANCE_LABEL,
   ATTENDANCE_DOT_COLOR,
+  EMPLOYEE_STATUS_LABEL,
+  employeeStatusTone,
 } from "@/lib/staffing";
+import { SICK_ENTRY_LABEL, SICK_ENTRY_TONE } from "@/lib/hr";
 import type { OnboardingCategory } from "@/lib/supabase/types";
 
 function fmtDate(d: string | null) {
@@ -34,7 +41,14 @@ export default async function EmployeeDetailPage({
   const profile = await getEmployeeProfile(id);
   if (!profile) notFound();
 
-  const { employee, assignments, attendance, checklist, documents } = profile;
+  const { employee, assignments, attendance, checklist, documents, sickEntries, sickBalance } = profile;
+  const [wellnessNotes, me] = await Promise.all([
+    listWellnessNotes(id),
+    getCurrentUser(),
+  ]);
+  const sickYtdUsed = sickEntries
+    .filter((e) => (e.entry_type === "usage" || e.entry_type === "payout") && e.entry_date >= `${new Date().getFullYear()}-01-01`)
+    .reduce((s, e) => s + Number(e.hours), 0);
   const band = employee.band ?? bandFromScore(employee.score);
   const tone = bandColor(band);
   const totals = countAttendance(attendance);
@@ -59,6 +73,10 @@ export default async function EmployeeDetailPage({
   const docsDone = documents.filter((d) => d.received).length;
 
   const activeAssignments = assignments.filter((a) => a.active);
+  // Most relevant "last company" for the DNR record: the active client, else
+  // the most recent assignment's client.
+  const lastCompany =
+    activeAssignments[0]?.client.name ?? assignments[0]?.client.name ?? null;
 
   return (
     <Shell>
@@ -107,7 +125,10 @@ export default async function EmployeeDetailPage({
                 : `Rank ${employee.rank ?? "—"}`}
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-              <Badge tone={tone.tone}>{tone.label}</Badge>
+              <Badge tone={employeeStatusTone(employee.status)}>
+                {EMPLOYEE_STATUS_LABEL[employee.status]}
+              </Badge>
+              {band && <Badge tone={tone.tone}>{tone.label}</Badge>}
               {activeAssignments.length > 1 && (
                 <Badge tone="gold">{activeAssignments.length} clients</Badge>
               )}
@@ -139,6 +160,15 @@ export default async function EmployeeDetailPage({
           </div>
         </div>
       </div>
+
+      {/* Management controls — edit, status toggle, DNR, delete */}
+      <EmployeeManageBar
+        employeeId={employee.id}
+        status={employee.status}
+        fullName={employee.full_name}
+        phone={employee.phone}
+        lastCompany={lastCompany}
+      />
 
       {/* KPI strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 22 }}>
@@ -365,6 +395,61 @@ export default async function EmployeeDetailPage({
         </div>
       </div>
 
+      {/* Sick time history */}
+      <div className="dt-card" style={{ marginTop: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Sick Time</h3>
+            <div className="sub">
+              Balance {sickBalance.toFixed(1)} hr · {sickYtdUsed.toFixed(1)} hr used YTD
+            </div>
+          </div>
+          <Link href={`/sick-time?employee=${employee.id}`} className="dt-btn dt-btn-ghost tiny">
+            Manage →
+          </Link>
+        </div>
+        <div className="dt-table-wrap">
+          <table className="dt-table">
+            <thead>
+              <tr>
+                <th style={{ paddingLeft: 22 }}>Date</th>
+                <th>Type</th>
+                <th style={{ textAlign: "right" }}>Hours</th>
+                <th style={{ paddingRight: 22 }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sickEntries.slice(0, 50).map((e) => (
+                <tr key={e.id}>
+                  <td style={{ paddingLeft: 22 }} className="tab-num">
+                    {fmtDate(e.entry_date)}
+                  </td>
+                  <td>
+                    <Badge tone={SICK_ENTRY_TONE[e.entry_type]}>
+                      {SICK_ENTRY_LABEL[e.entry_type]}
+                    </Badge>
+                  </td>
+                  <td className="tab-num" style={{ textAlign: "right", fontWeight: 400 }}>
+                    {e.entry_type === "accrual" || e.entry_type === "adjustment" ? "+" : "−"}
+                    {Number(e.hours).toFixed(1)}
+                  </td>
+                  <td style={{ paddingRight: 22, fontSize: 11.5, color: "var(--dt-warm-500)" }}>
+                    {e.notes ?? "—"}
+                  </td>
+                </tr>
+              ))}
+              {sickEntries.length === 0 && (
+                <tr>
+                  <td colSpan={4} style={{ textAlign: "center", padding: "32px 22px", color: "var(--dt-warm-500)", fontStyle: "italic" }}>
+                    No sick-time entries recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {employee.notes && (
         <div className="dt-card" style={{ marginTop: 22, padding: "18px 24px" }}>
           <div
@@ -378,6 +463,14 @@ export default async function EmployeeDetailPage({
           </div>
         </div>
       )}
+
+      {/* Wellness / follow-up timeline — immutable case record (Phase-1 #6) */}
+      <WellnessTimeline
+        employeeId={employee.id}
+        employeeName={employee.full_name}
+        notes={wellnessNotes}
+        defaultAuthor={me?.profile.full_name ?? me?.email ?? ""}
+      />
     </Shell>
   );
 }

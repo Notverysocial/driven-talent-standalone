@@ -1,14 +1,58 @@
 import "server-only";
 import { createClient } from "./supabase/server";
 import { ONBOARDING_TEMPLATE } from "./onboarding";
+import { PEOPLEASE_FORMS } from "./peoplease-forms";
 import type {
   Client,
   Employee,
   EmployeeAssignment,
+  EmployeePeopleaseForm,
   OnboardingChecklistItem,
   OnboardingDocument,
   WelcomeLetterDraft,
 } from "./supabase/types";
+
+// PEOPLEASE new-hire forms tracker (task 86e20w8v9). Self-heals: materializes
+// the PEOPLEASE_FORMS template for the employee on first access, idempotently
+// (mirrors the checklist self-heal in getOnboardingDetail). Returns rows
+// ordered by the template sequence.
+export async function getPeopleaseForms(
+  employeeId: string,
+): Promise<EmployeePeopleaseForm[]> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("employee_peoplease_forms")
+    .select("*")
+    .eq("employee_id", employeeId);
+  if (error) throw new Error(error.message);
+
+  let forms = (data ?? []) as EmployeePeopleaseForm[];
+
+  // Materialize any template forms this employee doesn't have yet. Covers both
+  // brand-new employees (empty) and template additions after seeding.
+  const haveKeys = new Set(forms.map((f) => f.form_key));
+  const missing = PEOPLEASE_FORMS.filter((t) => !haveKeys.has(t.key));
+  if (missing.length > 0) {
+    const { data: created, error: insErr } = await supabase
+      .from("employee_peoplease_forms")
+      .insert(
+        missing.map((t) => ({
+          employee_id: employeeId,
+          form_key: t.key,
+          label: t.label,
+          status: "pending" as const,
+        })),
+      )
+      .select();
+    if (insErr) throw new Error(insErr.message);
+    forms = forms.concat((created ?? []) as EmployeePeopleaseForm[]);
+  }
+
+  const orderByKey = new Map(PEOPLEASE_FORMS.map((t) => [t.key, t.ord]));
+  forms.sort((a, b) => (orderByKey.get(a.form_key) ?? 999) - (orderByKey.get(b.form_key) ?? 999));
+  return forms;
+}
 
 export type OnboardingSummary = {
   employee: Employee;
@@ -19,11 +63,32 @@ export type OnboardingSummary = {
 
 export async function listOnboardingSummaries(): Promise<OnboardingSummary[]> {
   const supabase = await createClient();
-  const { data: employees, error } = await supabase
-    .from("employees")
-    .select("*")
-    .eq("status", "onboarding")
-    .order("hire_date", { ascending: false });
+
+  // Phase-1 #1: the Active flag is decoupled from onboarding completion. Show
+  // every employee whose status is still 'onboarding', PLUS anyone who was
+  // marked 'active' early but still has incomplete checklist steps. The latter
+  // is found via the (naturally small) set of not-done items, so we don't scan
+  // every active employee.
+  const { data: incompleteRows } = await supabase
+    .from("onboarding_checklist_items")
+    .select("employee_id")
+    .in("status", ["not_started", "in_progress"]);
+  const incompleteIds = Array.from(
+    new Set(
+      (incompleteRows ?? []).map(
+        (r) => (r as { employee_id: string }).employee_id,
+      ),
+    ),
+  );
+
+  let query = supabase.from("employees").select("*");
+  query =
+    incompleteIds.length > 0
+      ? query.or(`status.eq.onboarding,id.in.(${incompleteIds.join(",")})`)
+      : query.eq("status", "onboarding");
+  const { data: employees, error } = await query.order("hire_date", {
+    ascending: false,
+  });
   if (error) throw new Error(error.message);
   if (!employees || employees.length === 0) return [];
 

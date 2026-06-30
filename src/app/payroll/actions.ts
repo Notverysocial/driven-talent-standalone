@@ -4,7 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { computeFlags } from "@/lib/payroll";
-import { commitInvoicesForPeriod } from "@/lib/payroll-invoicing.server";
+import {
+  commitInvoicesForPeriod,
+  regenerateDraftInvoicesForPeriod,
+} from "@/lib/payroll-invoicing.server";
 import type {
   PayrollPeriodStatus,
   TimecardDays,
@@ -115,6 +118,22 @@ export async function generateInvoicesForPeriod(
   ranBy?: string,
 ) {
   const result = await commitInvoicesForPeriod(periodId, ranBy);
+  revalidatePath(`/payroll/${periodId}`);
+  revalidatePath("/payroll");
+  revalidatePath("/invoices");
+  revalidatePath("/dashboard");
+  return result;
+}
+
+// Idempotent draft refresh: re-derive draft invoices from the CURRENT hours
+// without closing the period. Enter a correction on a time card, click this,
+// and the invoice updates in place — no duplicate numbers, no manual delete-add.
+// Locked (sent/paid) invoices are never touched.
+export async function regenerateInvoicesForPeriod(
+  periodId: string,
+  ranBy?: string,
+) {
+  const result = await regenerateDraftInvoicesForPeriod(periodId, ranBy);
   revalidatePath(`/payroll/${periodId}`);
   revalidatePath("/payroll");
   revalidatePath("/invoices");

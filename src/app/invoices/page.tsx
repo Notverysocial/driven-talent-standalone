@@ -27,9 +27,14 @@ export default async function InvoicesListPage() {
         scriptWord={tb.scriptWord}
         title={tb.title}
         actions={
-          <Link href="/invoices/new" className="dt-btn dt-btn-gold">
-            <span>+ New Invoice</span>
-          </Link>
+          <>
+            <Link href="/invoices/settings" className="dt-btn">
+              Settings
+            </Link>
+            <Link href="/invoices/new" className="dt-btn dt-btn-gold">
+              <span>+ New Invoice</span>
+            </Link>
+          </>
         }
       />
 

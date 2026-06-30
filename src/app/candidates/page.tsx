@@ -14,8 +14,33 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export default async function CandidatesListPage() {
-  const candidates = await listCandidates();
+export default async function CandidatesListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; pos?: string }>;
+}) {
+  const sp = await searchParams;
+  const nameQuery = (sp.q ?? "").trim();
+  const posQuery = (sp.pos ?? "").trim();
+
+  const allCandidates = await listCandidates();
+
+  // Phase-1 #2 — filter the pipeline by candidate name and by position
+  // (applied_for is free text, so a case-insensitive substring match).
+  const nq = nameQuery.toLowerCase();
+  const pq = posQuery.toLowerCase();
+  const candidates = allCandidates.filter((c) => {
+    const nameOk = !nq || c.full_name.toLowerCase().includes(nq);
+    const posOk = !pq || (c.applied_for ?? "").toLowerCase().includes(pq);
+    return nameOk && posOk;
+  });
+
+  // Distinct positions for the filter datalist (from the unfiltered set).
+  const positions = Array.from(
+    new Set(allCandidates.map((c) => c.applied_for).filter((p): p is string => !!p)),
+  ).sort();
+
+  const filtering = nameQuery !== "" || posQuery !== "";
 
   const byStatus = new Map<CandidateStatus, Candidate[]>();
   for (const s of CANDIDATE_STATUSES) byStatus.set(s.id, []);
@@ -73,6 +98,69 @@ export default async function CandidatesListPage() {
           );
         })}
       </div>
+
+      {/* Phase-1 #2 — filter by name + position (GET form → searchParams) */}
+      <form
+        method="get"
+        className="dt-card"
+        style={{
+          padding: "14px 16px",
+          marginBottom: 18,
+          display: "flex",
+          gap: 10,
+          alignItems: "flex-end",
+          flexWrap: "wrap",
+        }}
+      >
+        <label className="dt-filter" style={{ flex: "1 1 220px" }}>
+          <span className="dt-filter-label">Name</span>
+          <input
+            name="q"
+            type="text"
+            defaultValue={nameQuery}
+            placeholder="Search candidate name…"
+            className="dt-filter-input"
+          />
+        </label>
+        <label className="dt-filter" style={{ flex: "1 1 220px" }}>
+          <span className="dt-filter-label">Position</span>
+          <input
+            name="pos"
+            type="text"
+            defaultValue={posQuery}
+            placeholder="Filter by position…"
+            className="dt-filter-input"
+            list="candidate-positions"
+          />
+          <datalist id="candidate-positions">
+            {positions.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
+        </label>
+        <button type="submit" className="dt-btn dt-btn-primary">
+          Filter
+        </button>
+        {filtering && (
+          <Link href="/candidates" className="dt-btn">
+            Clear
+          </Link>
+        )}
+      </form>
+
+      {filtering && (
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--dt-warm-500)",
+            marginBottom: 14,
+          }}
+        >
+          {candidates.length} {candidates.length === 1 ? "match" : "matches"}
+          {nameQuery && ` · name “${nameQuery}”`}
+          {posQuery && ` · position “${posQuery}”`}
+        </div>
+      )}
 
       {CANDIDATE_STATUSES.map((s) => {
         const rows = byStatus.get(s.id) ?? [];
@@ -176,10 +264,21 @@ export default async function CandidatesListPage() {
             color: "var(--dt-warm-500)",
           }}
         >
-          No candidates yet.{" "}
-          <Link href="/candidates/new" style={{ color: "var(--dt-gold-deep)" }}>
-            Add the first one →
-          </Link>
+          {filtering ? (
+            <>
+              No candidates match this filter.{" "}
+              <Link href="/candidates" style={{ color: "var(--dt-gold-deep)" }}>
+                Clear filter →
+              </Link>
+            </>
+          ) : (
+            <>
+              No candidates yet.{" "}
+              <Link href="/candidates/new" style={{ color: "var(--dt-gold-deep)" }}>
+                Add the first one →
+              </Link>
+            </>
+          )}
         </div>
       )}
     </Shell>

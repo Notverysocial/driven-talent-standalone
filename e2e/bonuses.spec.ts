@@ -35,6 +35,18 @@ test.describe("Bonuses — recruiter submit without placed-employee", () => {
 
     await page.goto("/bonuses");
 
+    // The /bonuses route is behind login in production. With no authenticated
+    // session the app redirects to /login (no bonus form). Skip rather than
+    // fail, matching the signal the other live specs use to tell "no
+    // seeded/authenticated backend" apart from a real regression.
+    if (/\/login(\?|$)/.test(page.url())) {
+      test.skip(
+        true,
+        "Redirected to /login - provide an authenticated session (E2E_STORAGE_STATE) to run this flow.",
+      );
+      return;
+    }
+
     // Sanity: initial render succeeded.
     await expect(page.getByRole("heading", { name: /log bonus/i })).toBeVisible();
 

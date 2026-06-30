@@ -1,5 +1,13 @@
 "use server";
 
+// TODO [GATED — PandaDoc integration, scheduled session]
+// Full PandaDoc signature-request + dashboard onboarding-link integration is
+// deferred to a scheduled session with live PandaDoc account access. The
+// provider abstraction below already supports a "pandadoc" key; wiring the
+// live API (templates, document creation, status webhooks, dashboard links)
+// is blocked on credentials. Do NOT implement against PandaDoc until the live
+// account is connected. Documenso remains the default e-sign provider.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveProvider, getProvider } from "@/lib/esign/provider";
