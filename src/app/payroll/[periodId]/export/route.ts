@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/lib/supabase/server";
 import { getPayrollPeriodDetail } from "@/lib/payroll.server";
 import { fmtPeriodRange } from "@/lib/payroll";
 
@@ -49,6 +50,97 @@ export async function GET(
       ].join(","));
     }
     return csvResponse(lines, `${filenameBase}-peoplease.csv`);
+  }
+
+  // PEO hours-by-department: one row per (department × employee), formatted for
+  // upload to PEOPLEASE / PrismHR. Department is resolved from the employee's
+  // active assignment; rows are sorted by department then employee so the file
+  // mirrors how PrismHR groups payroll import.
+  if (format === "peo_department") {
+    const sb = await createClient();
+    const empIds = Array.from(new Set(detail.timecards.map((t) => t.employees.id)));
+
+    const deptByEmpClient = new Map<string, { department: string; branch: string | null }>();
+    const legacyByEmp = new Map<string, string | null>();
+    if (empIds.length > 0) {
+      const [{ data: aData }, { data: eData }] = await Promise.all([
+        sb
+          .from("employee_assignments")
+          .select("employee_id, client_id, department, branch")
+          .in("employee_id", empIds)
+          .eq("active", true),
+        sb.from("employees").select("id, legacy_id").in("id", empIds),
+      ]);
+      for (const a of (aData ?? []) as { employee_id: string; client_id: string; department: string; branch: string | null }[]) {
+        deptByEmpClient.set(`${a.employee_id}::${a.client_id}`, {
+          department: (a.department || "General").trim() || "General",
+          branch: a.branch,
+        });
+      }
+      for (const e of (eData ?? []) as { id: string; legacy_id: string | null }[]) {
+        legacyByEmp.set(e.id, e.legacy_id);
+      }
+    }
+
+    type Agg = {
+      department: string;
+      branch: string | null;
+      name: string;
+      legacy: string | null;
+      reg: number;
+      ot: number;
+      holiday: number;
+      sick: number;
+    };
+    const agg = new Map<string, Agg>();
+    for (const t of detail.timecards) {
+      const meta = deptByEmpClient.get(`${t.employees.id}::${t.clients.id}`);
+      const department = meta?.department ?? "General";
+      const key = `${department}::${t.employees.id}`;
+      const row =
+        agg.get(key) ??
+        {
+          department,
+          branch: meta?.branch ?? null,
+          name: t.employees.full_name,
+          legacy: legacyByEmp.get(t.employees.id) ?? null,
+          reg: 0,
+          ot: 0,
+          holiday: 0,
+          sick: 0,
+        };
+      row.reg += Number(t.reg_hours) || 0;
+      row.ot += Number(t.ot_hours) || 0;
+      row.holiday += Number(t.holiday_hours) || 0;
+      row.sick += Number(t.sick_hours) || 0;
+      agg.set(key, row);
+    }
+
+    const sorted = Array.from(agg.values()).sort(
+      (a, b) => a.department.localeCompare(b.department) || a.name.localeCompare(b.name),
+    );
+    const lines = [
+      ["Department", "Location", "Employee", "Employee ID", "Regular Hours", "OT Hours", "Holiday Hours", "Sick Hours", "Total Hours"]
+        .map(csv)
+        .join(","),
+    ];
+    for (const r of sorted) {
+      const total = r.reg + r.ot + r.holiday + r.sick;
+      lines.push(
+        [
+          csv(r.department),
+          csv(r.branch ?? ""),
+          csv(r.name),
+          csv(r.legacy ?? ""),
+          csv(r.reg.toFixed(2)),
+          csv(r.ot.toFixed(2)),
+          csv(r.holiday.toFixed(2)),
+          csv(r.sick.toFixed(2)),
+          csv(total.toFixed(2)),
+        ].join(","),
+      );
+    }
+    return csvResponse(lines, `${filenameBase}-peo-by-department.csv`);
   }
 
   // Per-client: pick format based on client.report_format.

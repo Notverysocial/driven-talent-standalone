@@ -60,8 +60,22 @@ export type Client = {
   phone: string | null;
   website: string | null;
   status: ClientStatus;
+  // Added in 0035 — customizable per-client report builder. `report_template_key`
+  // selects a template from the code catalog (src/lib/reports/templates.ts),
+  // falling back to `report_format` when null. `report_options` carries per-client
+  // overrides (granularity, columns, label).
+  report_template_key: string | null;
+  report_options: ReportOptions;
   created_at: string;
   updated_at: string;
+};
+
+// Per-client report overrides stored in clients.report_options (migration 0035).
+export type ReportGranularity = "employee_week" | "employee_day" | "hours_spent_matrix";
+export type ReportOptions = {
+  granularity?: ReportGranularity;
+  columns?: string[];
+  label?: string;
 };
 
 // Per-client × position workers-comp code mapping (migration 0033, task 86e20w8tq).
@@ -1045,4 +1059,52 @@ export type BugReport = {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+// ---------- Payroll/report engine (migration 0035) ----------------------
+
+// One row per roster reconciliation pass (auto add/remove observability).
+export type RosterSyncAction = "added" | "removed" | "flagged";
+export type RosterSyncDetail = {
+  employee_id: string | null;
+  name: string;
+  action: RosterSyncAction;
+  reason: string;
+};
+export type RosterSyncRun = {
+  id: string;
+  ran_at: string;
+  ran_by: string | null;
+  source: "timecards" | "uattend" | "manual";
+  added_count: number;
+  removed_count: number;
+  flagged_count: number;
+  details: RosterSyncDetail[];
+  notes: string | null;
+  created_at: string;
+};
+
+// Per-employee verification row (timecard ↔ invoice ↔ payroll reconciliation).
+export type VerificationDetail = {
+  employee_id: string;
+  name: string;
+  timecard_hours: number;
+  invoice_hours: number;
+  payroll_hours: number;
+  status: "match" | "variance" | "missing";
+  delta_hours: number;
+  note: string | null;
+};
+export type PeriodVerification = {
+  id: string;
+  payroll_period_id: string;
+  verified_by: string | null;
+  verified_at: string;
+  result: "clean" | "variances";
+  employee_count: number;
+  variance_count: number;
+  deduction_zero_ok: boolean;
+  details: VerificationDetail[];
+  notes: string | null;
+  created_at: string;
 };

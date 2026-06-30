@@ -42,6 +42,8 @@ export const en = {
     safety: "Safety / Warnings",
     timecards: "Timecards",
     payroll: "Payroll",
+    reports: "Reports",
+    reconciliation: "Verification",
     invoices: "Invoices",
     clients: "Clients",
     bonuses: "Bonuses",

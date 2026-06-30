@@ -55,6 +55,12 @@ export default async function PayrollPeriodDetailPage({
             >
               PEOPLEASE Export
             </Link>
+            <Link
+              href={`/payroll/${detail.period.id}/export?format=peo_department`}
+              className="dt-btn"
+            >
+              PEO by Dept
+            </Link>
             <PeriodActions periodId={detail.period.id} status={detail.period.status} />
           </>
         }
