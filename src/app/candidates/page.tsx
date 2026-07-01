@@ -5,6 +5,8 @@ import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import { CANDIDATE_STATUSES, scoreColor, tierLabel } from "@/lib/candidates";
 import { listCandidates } from "@/lib/candidates.server";
+import { listClientsForPicker } from "@/lib/legal-tasks.server";
+import { textMatches, idMatches } from "@/lib/filters";
 import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { CandidateStageMenu } from "./CandidateStageMenu";
@@ -17,30 +19,37 @@ function fmtDate(d: string | null) {
 export default async function CandidatesListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pos?: string }>;
+  searchParams: Promise<{ q?: string; pos?: string; client?: string }>;
 }) {
   const sp = await searchParams;
   const nameQuery = (sp.q ?? "").trim();
   const posQuery = (sp.pos ?? "").trim();
+  const clientQuery = (sp.client ?? "").trim();
 
-  const allCandidates = await listCandidates();
+  const [allCandidates, clients] = await Promise.all([
+    listCandidates(),
+    listClientsForPicker(),
+  ]);
 
-  // Phase-1 #2 — filter the pipeline by candidate name and by position
-  // (applied_for is free text, so a case-insensitive substring match).
-  const nq = nameQuery.toLowerCase();
-  const pq = posQuery.toLowerCase();
-  const candidates = allCandidates.filter((c) => {
-    const nameOk = !nq || c.full_name.toLowerCase().includes(nq);
-    const posOk = !pq || (c.applied_for ?? "").toLowerCase().includes(pq);
-    return nameOk && posOk;
-  });
+  // Filter the pipeline by candidate name + position (case-insensitive
+  // substring, standardized in src/lib/filters.ts) and by client (exact
+  // client_id). All three compose with AND.
+  const candidates = allCandidates.filter(
+    (c) =>
+      textMatches(c.full_name, nameQuery) &&
+      textMatches(c.applied_for, posQuery) &&
+      idMatches(c.client_id, clientQuery),
+  );
+  const clientName =
+    clients.find((cl) => cl.id === clientQuery)?.name ?? clientQuery;
 
   // Distinct positions for the filter datalist (from the unfiltered set).
   const positions = Array.from(
     new Set(allCandidates.map((c) => c.applied_for).filter((p): p is string => !!p)),
   ).sort();
 
-  const filtering = nameQuery !== "" || posQuery !== "";
+  const filtering =
+    nameQuery !== "" || posQuery !== "" || clientQuery !== "";
 
   const byStatus = new Map<CandidateStatus, Candidate[]>();
   for (const s of CANDIDATE_STATUSES) byStatus.set(s.id, []);
@@ -138,6 +147,21 @@ export default async function CandidatesListPage({
             ))}
           </datalist>
         </label>
+        <label className="dt-filter" style={{ flex: "1 1 220px" }}>
+          <span className="dt-filter-label">Client</span>
+          <select
+            name="client"
+            defaultValue={clientQuery}
+            className="dt-filter-input"
+          >
+            <option value="">All clients</option>
+            {clients.map((cl) => (
+              <option key={cl.id} value={cl.id}>
+                {cl.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <button type="submit" className="dt-btn dt-btn-primary">
           Filter
         </button>
@@ -159,6 +183,7 @@ export default async function CandidatesListPage({
           {candidates.length} {candidates.length === 1 ? "match" : "matches"}
           {nameQuery && ` · name “${nameQuery}”`}
           {posQuery && ` · position “${posQuery}”`}
+          {clientQuery && ` · client “${clientName}”`}
         </div>
       )}
 

@@ -11,6 +11,7 @@ import {
 import { IntakeCard, type IntakeCalendlyContext } from "./IntakeCard";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
+import { textMatches } from "@/lib/filters";
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -90,7 +91,9 @@ export default async function ApplicationsPage({
     if (filterDay && (!i.created_at || i.created_at.slice(0, 10) !== filterDay)) return false;
     if (validStatus && i.status !== validStatus) return false;
     if (filterSource && i.source !== filterSource) return false;
-    if (filterPosition && i.position_of_interest !== filterPosition) return false;
+    // Standardized position match: case-insensitive substring (shared with
+    // candidates + recruiters via src/lib/filters.ts) instead of exact match.
+    if (!textMatches(i.position_of_interest, filterPosition)) return false;
     if (filterCity && i.city !== filterCity) return false;
     if (filterMinExp !== null && !Number.isNaN(filterMinExp)) {
       if (i.experience_years == null || i.experience_years < filterMinExp) return false;

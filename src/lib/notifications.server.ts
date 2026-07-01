@@ -63,3 +63,34 @@ export async function listMyNotifications(): Promise<{
   const unread = notifications.filter((n) => !n.read_at).length;
   return { notifications, unread, viewerName };
 }
+
+// Lightweight unread count for the sidebar badge. Count-only (head:true, no
+// rows fetched) and error-safe — returns 0 on any failure (missing table, no
+// viewer) so the Shell never breaks a page over a notification lookup. Mirrors
+// the recipient matching in listMyNotifications().
+export async function countUnreadNotifications(): Promise<number> {
+  try {
+    const me = await getCurrentUser();
+    const viewerName = me?.profile.full_name ?? me?.email ?? "";
+    const teamMemberId = me?.profile.team_member_id ?? null;
+    if (!teamMemberId && !viewerName) return 0;
+
+    const sb = await createClient();
+    let query = sb
+      .from("notifications")
+      .select("*", { count: "exact", head: true })
+      .is("read_at", null);
+    if (teamMemberId) {
+      query = query.or(
+        `recipient_team_member_id.eq.${teamMemberId},recipient_name.ilike.${viewerName}`,
+      );
+    } else {
+      query = query.ilike("recipient_name", viewerName);
+    }
+    const { count, error } = await query;
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}
