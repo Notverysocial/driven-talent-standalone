@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "./supabase/server";
 import { getCurrentUser } from "./auth.server";
+import { sendEmail } from "./email/resend.server";
 import type { AppNotification } from "./supabase/types";
 
 // In-app notifications (migration 0034). Backs the team-tagging (@mention)
@@ -62,6 +63,81 @@ export async function listMyNotifications(): Promise<{
   const notifications = (data ?? []) as AppNotification[];
   const unread = notifications.filter((n) => !n.read_at).length;
   return { notifications, unread, viewerName };
+}
+
+// ---- Email notification (Resend) ----------------------------------------
+// Sends a real email when a teammate is mentioned/notified, so they're alerted
+// without living in the app. FAIL-SAFE end to end: skips cleanly if there's no
+// recipient email or no RESEND_API_KEY, and never throws (delegates to the
+// fail-safe sendEmail). Call this on notification CREATION only — never batch
+// over existing rows.
+
+function appBaseUrl(): string {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    "https://driven-talent-standalone.vercel.app"
+  ).replace(/\/+$/, "");
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export async function sendMentionEmail(args: {
+  toEmail: string | null | undefined;
+  toName: string;
+  actorName: string;
+  message: string;
+  taskLabel?: string | null;
+  linkPath: string;
+}): Promise<void> {
+  const to = (args.toEmail ?? "").trim();
+  if (!to) return; // no email on file → skip silently
+
+  try {
+    const path = args.linkPath.startsWith("/")
+      ? args.linkPath
+      : `/${args.linkPath}`;
+    const url = `${appBaseUrl()}${path}`;
+    const ctx = args.taskLabel ? ` on “${args.taskLabel}”` : "";
+    const subject = `${args.actorName} mentioned you${ctx} · Driven Talent`;
+
+    const html = `
+      <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;color:#1a1a1a;line-height:1.5">
+        <p><strong>${escapeHtml(args.actorName)}</strong> mentioned you${
+          args.taskLabel ? ` on <strong>${escapeHtml(args.taskLabel)}</strong>` : ""
+        }:</p>
+        <blockquote style="margin:12px 0;padding:10px 14px;border-left:3px solid #C9A227;background:#faf7ef;color:#333">
+          ${escapeHtml(args.message)}
+        </blockquote>
+        <p style="margin-top:18px">
+          <a href="${url}" style="display:inline-block;background:#C9A227;color:#0a0a0a;text-decoration:none;font-weight:600;padding:9px 16px;border-radius:4px">Open in Driven Talent →</a>
+        </p>
+        <p style="margin-top:16px;font-size:12px;color:#888">
+          You’re receiving this because you were tagged in the Driven Talent dashboard.
+        </p>
+      </div>`;
+
+    const text =
+      `${args.actorName} mentioned you${ctx}:\n\n` +
+      `"${args.message}"\n\n` +
+      `Open in Driven Talent: ${url}\n`;
+
+    // sendEmail is itself fail-safe; the extra try/catch guarantees this can
+    // never bubble up and break the notification insert.
+    await sendEmail({ to, subject, html, text });
+  } catch (e) {
+    console.error(
+      "[notifications] sendMentionEmail failed (non-fatal):",
+      e instanceof Error ? e.message : String(e),
+    );
+  }
 }
 
 // Lightweight unread count for the sidebar badge. Count-only (head:true, no

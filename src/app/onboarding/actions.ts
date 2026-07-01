@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser } from "@/lib/auth.server";
+import { sendMentionEmail } from "@/lib/notifications.server";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import type {
   LanguagePref,
@@ -98,27 +99,43 @@ export async function mentionTeammateOnItem(
 
   const supabase = await createClient();
   const [tmRes, itemRes, me] = await Promise.all([
-    supabase.from("team_members").select("full_name").eq("id", teamMemberId).maybeSingle(),
+    supabase.from("team_members").select("full_name, email").eq("id", teamMemberId).maybeSingle(),
     supabase.from("onboarding_checklist_items").select("label").eq("id", itemId).maybeSingle(),
     getCurrentUser(),
   ]);
-  const teammateName = (tmRes.data as { full_name: string } | null)?.full_name;
+  const teammate = tmRes.data as { full_name: string; email: string | null } | null;
+  const teammateName = teammate?.full_name;
   if (!teammateName) throw new Error("Teammate not found");
+  const teammateEmail = teammate?.email ?? null;
   const itemLabel = (itemRes.data as { label: string } | null)?.label ?? "an onboarding task";
   const actor = me?.profile.full_name ?? me?.email ?? "A teammate";
+  const linkPath = `/onboarding/${employeeId}`;
 
   const { error } = await supabase.from("notifications").insert({
     recipient_team_member_id: teamMemberId,
     recipient_name: teammateName,
+    recipient_email: teammateEmail,
     actor_name: actor,
     kind: "mention",
     body: message,
     entity_type: "onboarding_checklist_item",
     entity_id: itemId,
-    link_path: `/onboarding/${employeeId}`,
+    link_path: linkPath,
     meta: { task: itemLabel },
   });
   if (error) throw new Error(error.message);
+
+  // Real email alert via Resend. Fail-safe: skips if the teammate has no email
+  // on file or RESEND_API_KEY is unset, and never throws — the in-app
+  // notification above is the source of truth regardless of email outcome.
+  await sendMentionEmail({
+    toEmail: teammateEmail,
+    toName: teammateName,
+    actorName: actor,
+    message,
+    taskLabel: itemLabel,
+    linkPath,
+  });
 
   revalidatePath(`/onboarding/${employeeId}`);
 }
