@@ -114,7 +114,6 @@ export async function mentionTeammateOnItem(
   const { error } = await supabase.from("notifications").insert({
     recipient_team_member_id: teamMemberId,
     recipient_name: teammateName,
-    recipient_email: teammateEmail,
     actor_name: actor,
     kind: "mention",
     body: message,
