@@ -93,6 +93,7 @@ export function Sidebar({
   viewer,
   authEnabled = true,
   newApplicationsCount = 0,
+  unreadNotifications = 0,
 }: {
   viewer: SidebarViewer | null;
   // When false, the global AUTH_ENABLED flag is off — hide the Sign out
@@ -101,6 +102,9 @@ export function Sidebar({
   // Number of application intakes with status "new" from the last 24h.
   // Rendered as "Applications (N new)" inline on the nav row.
   newApplicationsCount?: number;
+  // Unread @mention notifications for the viewer. Rendered as a count badge
+  // on the Notifications nav row so mentions are visible without opening it.
+  unreadNotifications?: number;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -208,6 +212,24 @@ export function Sidebar({
                     }}
                   >
                     {newApplicationsCount} new
+                  </span>
+                )}
+                {entry.id === "notifications" && unreadNotifications > 0 && (
+                  <span
+                    aria-label={`${unreadNotifications} unread notifications`}
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      letterSpacing: "0.05em",
+                      color: "#fff",
+                      background: "var(--dt-danger, #b23a3a)",
+                      padding: "2px 6px",
+                      borderRadius: 999,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    {unreadNotifications > 99 ? "99+" : unreadNotifications}
                   </span>
                 )}
               </span>
