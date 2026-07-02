@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPayrollPeriodDetail } from "@/lib/payroll.server";
 import { fmtPeriodRange } from "@/lib/payroll";
+import { buildPeopleaseExportRows } from "@/lib/peoplease-export.server";
+import {
+  buildPeopleaseCsv,
+  isPeopleaseExportProfile,
+  PEOPLEASE_EXPORT_PROFILES,
+} from "@/lib/peoplease-export";
 
 function csv(s: string | number | null | undefined): string {
   if (s === null || s === undefined) return "";
@@ -17,6 +23,24 @@ export async function GET(
   const url = new URL(request.url);
   const format = url.searchParams.get("format") ?? "peoplease";
   const clientFilter = url.searchParams.get("client");
+
+  // Configurable Peoplease payroll export (+ plain standard-hours export). The
+  // column set / labels / order live in src/lib/peoplease-export.ts so matching
+  // Peoplease's confirmed PrismHR import spec is a one-file edit. Handled before
+  // the generic detail fetch below (the builder loads what it needs).
+  if (isPeopleaseExportProfile(format)) {
+    const bundle = await buildPeopleaseExportRows(periodId);
+    if (!bundle) return new NextResponse("Not found", { status: 404 });
+    const profile = PEOPLEASE_EXPORT_PROFILES[format];
+    const body = buildPeopleaseCsv(bundle.rows, profile.columns);
+    return new NextResponse(body, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="payroll-${bundle.periodStart}-${profile.filenameSuffix}.csv"`,
+      },
+    });
+  }
 
   const detail = await getPayrollPeriodDetail(periodId);
   if (!detail) return new NextResponse("Not found", { status: 404 });
