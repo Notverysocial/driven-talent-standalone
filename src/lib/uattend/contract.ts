@@ -21,8 +21,12 @@ export const UATTEND_BASE = "https://api.workwelltech.com";
 export const UATTEND_API_KEY_HEADER = "x-api-key";
 
 export const UATTEND_ENDPOINTS = {
-  employees: "/employee",
-  timecards: "/timecards",
+  // Corrected 2026-07-02 against the official uAttend "Exposed API" docs +
+  // an empirical probe: the real endpoints are /user, /timecard, /reports/punch
+  // (POST, JSON body, header x-api-key). Previously /employee + /timecards (GET)
+  // which do not exist on api.workwelltech.com.
+  employees: "/user",
+  timecards: "/timecard",
   punchReport: "/reports/punch",
 } as const;
 
@@ -72,6 +76,7 @@ export type UattendPunch = {
   punchOut: string | null;
   department: string | null;
   hours: number;
+  paycodeId: number | null; // 1=Regular, 2=Vac, 3=Sick, 4=Holiday, 5=Other, 6=break, 7=lunch
 };
 
 export type UattendDateRange = { startDate: string; endDate: string };
@@ -168,22 +173,22 @@ export function mondayOf(dateYmd: string): string {
 // ---------------------------------------------------------------------------
 
 export function normalizeEmployee(raw: RawUattendEmployee): UattendEmployee | null {
-  const id = s(raw.employeeId, raw.employee_id, raw.id, raw.userId, raw.user_id);
+  const id = s(raw.UserId, raw.employeeId, raw.employee_id, raw.id, raw.userId, raw.user_id);
   if (!id) return null;
-  const first = s(raw.firstName, raw.first_name, raw.fname) ?? "";
-  const last = s(raw.lastName, raw.last_name, raw.lname) ?? "";
+  const first = s(raw.FirstName, raw.firstName, raw.first_name, raw.fname) ?? "";
+  const last = s(raw.LastName, raw.lastName, raw.last_name, raw.lname) ?? "";
   const fullName = s(raw.fullName, raw.full_name, raw.name) ?? `${first} ${last}`.trim();
   return {
     uattendId: id,
     firstName: first,
     lastName: last,
     fullName: fullName || id,
-    email: s(raw.email, raw.emailAddress, raw.email_address),
-    department: s(raw.department, raw.departmentName, raw.department_name, raw.dept),
-    clientCode: s(raw.clientCode, raw.client_code, raw.company, raw.companyCode, raw.location),
+    email: s(raw.Email, raw.email, raw.emailAddress, raw.email_address),
+    department: s(raw.DepartmentName, raw.DepartmentId, raw.department, raw.departmentName, raw.department_name, raw.dept),
+    clientCode: s(raw.clientCode, raw.client_code, raw.company, raw.companyCode, raw.location, raw.DepartmentName),
     payRate: n(raw.payRate, raw.pay_rate, raw.wage, raw.hourlyRate, raw.hourly_rate),
-    active: bool(raw.active, raw.status, raw.isActive, raw.is_active) ?? true,
-    badge: s(raw.badge, raw.pin, raw.badgeNumber, raw.badge_number),
+    active: bool(raw.IsActive, raw.active, raw.status, raw.isActive, raw.is_active) ?? true,
+    badge: s(raw.PayrollNumber, raw.badge, raw.pin, raw.badgeNumber, raw.badge_number),
   };
 }
 
@@ -233,15 +238,17 @@ export function normalizeTimecard(raw: RawUattendTimecard): UattendTimecard | nu
 }
 
 export function normalizePunch(raw: RawUattendPunch): UattendPunch | null {
-  const id = s(raw.employeeId, raw.employee_id, raw.id, raw.userId);
-  const date = ymd(raw.date ?? raw.workDate ?? raw.punchDate);
+  const id = s(raw.UserId, raw.employeeId, raw.employee_id, raw.id, raw.userId);
+  const date = ymd(raw.PunchDate ?? raw.date ?? raw.workDate ?? raw.punchDate ?? raw.InDate);
   if (!id || !date) return null;
   return {
     uattendId: id,
     date,
-    punchIn: hm(raw.punchIn ?? raw.punch_in ?? raw.in ?? raw.timeIn),
-    punchOut: hm(raw.punchOut ?? raw.punch_out ?? raw.out ?? raw.timeOut),
-    department: s(raw.department, raw.departmentName, raw.dept),
-    hours: n(raw.hours, raw.totalHours, raw.total_hours) ?? 0,
+    punchIn: hm(raw.InTime ?? raw.punchIn ?? raw.punch_in ?? raw.in ?? raw.timeIn),
+    punchOut: hm(raw.OutTime ?? raw.punchOut ?? raw.punch_out ?? raw.out ?? raw.timeOut),
+    department: s(raw.DepartmentName, raw.department, raw.departmentName, raw.dept),
+    // "Tot" is decimal hours in the real /reports/punch line item (e.g. "8.37").
+    hours: n(raw.Tot, raw.hours, raw.totalHours, raw.total_hours) ?? 0,
+    paycodeId: n(raw.PaycodeId, raw.paycodeId, raw.paycode_id),
   };
 }
