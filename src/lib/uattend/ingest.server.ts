@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { DAYS, emptyDays, rollupTotals } from "@/lib/timecards";
+import { DAYS, emptyDays, rollupTotals, type DayKey } from "@/lib/timecards";
 import { getUattendAdapter } from "./adapter.server";
 import { getIntegration } from "@/lib/integrations/db";
 import { mondayOf, type UattendEmployee } from "./contract";
@@ -46,7 +46,7 @@ function normName(v: string): string {
 const keyLF = (first: string, last: string) => normName(`${last} ${first}`);
 const keyFL = (first: string, last: string) => normName(`${first} ${last}`);
 
-function dayKeyFor(weekStart: string, dateYmd: string): (typeof DAYS)[number] | null {
+function dayKeyFor(weekStart: string, dateYmd: string): DayKey | null {
   const idx = Math.round(
     (new Date(`${dateYmd}T00:00:00`).getTime() - new Date(`${weekStart}T00:00:00`).getTime()) /
       86_400_000,
@@ -104,7 +104,7 @@ export async function importUattendTimecards(opts: {
   }
 
   // Group Regular punches per uAttend user per day.
-  type Agg = { name: string; byDay: Map<string, { reg: number; in: string | null; out: string | null }>; total: number };
+  type Agg = { name: string; byDay: Map<DayKey, { reg: number; in: string | null; out: string | null }>; total: number };
   const byUid = new Map<string, Agg>();
   for (const p of punches) {
     if (p.paycodeId != null && p.paycodeId !== 1) continue; // Regular only (exclude lunch/break)
