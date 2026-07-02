@@ -8,7 +8,7 @@ import {
   listEmployeesForPicker,
   listSections,
 } from "@/lib/terminations.server";
-import { computeProgress } from "@/lib/terminations";
+import { computeProgress, daysSinceTerm } from "@/lib/terminations";
 import { TerminationRecordForm } from "../TerminationRecordForm";
 import { archiveTerminationRecord, updateTerminationRecord } from "../actions";
 
@@ -29,6 +29,7 @@ export default async function TerminationRecordPage({
   if (!record) notFound();
 
   const prog = computeProgress(sections, record.values);
+  const daysSince = daysSinceTerm(record.values["termination_date"]);
 
   return (
     <Shell>
@@ -89,6 +90,21 @@ export default async function TerminationRecordPage({
         <div className="tab-num" style={{ fontSize: 12.5 }}>
           {prog.filled}/{prog.total} · {prog.pct}%
         </div>
+        {daysSince !== null && (
+          <div
+            style={{
+              marginLeft: "auto",
+              fontSize: 12.5,
+              color: "var(--dt-warm-500)",
+            }}
+            title="Computed from Termination Date — not editable"
+          >
+            Days since term:{" "}
+            <span className="tab-num" style={{ color: "var(--dt-black)" }}>
+              {daysSince}
+            </span>
+          </div>
+        )}
       </div>
 
       <TerminationRecordForm

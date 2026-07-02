@@ -25,6 +25,7 @@ test.describe("terminations config helpers", () => {
   test("isTerminationFieldType guards the enum", () => {
     expect(isTerminationFieldType("dropdown")).toBe(true);
     expect(isTerminationFieldType("yes_no")).toBe(true);
+    expect(isTerminationFieldType("textarea")).toBe(true);
     expect(isTerminationFieldType("richtext")).toBe(false);
   });
 

@@ -17,7 +17,7 @@
 do $$
 begin
   if not exists (select 1 from pg_type where typname = 'termination_field_type') then
-    create type termination_field_type as enum ('text', 'date', 'yes_no', 'dropdown', 'number');
+    create type termination_field_type as enum ('text', 'textarea', 'date', 'yes_no', 'dropdown', 'number');
   end if;
 end $$;
 
@@ -93,39 +93,65 @@ create policy "open" on termination_fields for all to public using (true) with c
 drop policy if exists "open" on termination_records;
 create policy "open" on termination_records for all to public using (true) with check (true);
 
--- ---------- SEED: Estefany's 5-area structure (guarded) -----------------
+-- ---------- SEED: Estefany's structure, matched to the real "5. Terminations"
+-- tab grouping (Employee Info / Termination Details / Documents / Payment /
+-- Status & Owner / Notes). Guarded so re-runs never double-insert. The team can
+-- rename / reorder / add / remove any of this from the UI afterward.
+-- NOTE: "Days Since Term" is NOT seeded as a field — it's a COMPUTED,
+-- display-only value derived from Termination Date in the UI (never manual).
 do $$
 declare
-  s_intake uuid; s_emp uuid; s_pay uuid; s_doc uuid; s_status uuid;
+  s_intake uuid; s_emp uuid; s_details uuid; s_doc uuid; s_pay uuid; s_status uuid; s_notes uuid;
 begin
   if not exists (select 1 from termination_sections) then
-    insert into termination_sections (title, sort_order) values ('Intake', 0)                returning id into s_intake;
-    insert into termination_sections (title, sort_order) values ('Employee Information', 1)  returning id into s_emp;
-    insert into termination_sections (title, sort_order) values ('Payment Workflow', 2)      returning id into s_pay;
-    insert into termination_sections (title, sort_order) values ('Document Workflow', 3)     returning id into s_doc;
-    insert into termination_sections (title, sort_order) values ('Overall Status', 4)        returning id into s_status;
+    insert into termination_sections (title, sort_order) values ('Intake', 0)               returning id into s_intake;
+    insert into termination_sections (title, sort_order) values ('Employee Information', 1) returning id into s_emp;
+    insert into termination_sections (title, sort_order) values ('Termination Details', 2)  returning id into s_details;
+    insert into termination_sections (title, sort_order) values ('Document Workflow', 3)    returning id into s_doc;
+    insert into termination_sections (title, sort_order) values ('Payment Workflow', 4)     returning id into s_pay;
+    insert into termination_sections (title, sort_order) values ('Overall Status', 5)       returning id into s_status;
+    insert into termination_sections (title, sort_order) values ('Notes', 6)                returning id into s_notes;
 
     insert into termination_fields (section_id, field_key, label, field_type, options, sort_order) values
+      -- Intake / owner
       (s_intake, 'termination_taken_by', 'Termination taken by', 'dropdown', '["Leangel","Rocio","Estefany"]'::jsonb, 0),
 
-      (s_emp, 'peo_id',            'PEO ID',                    'text',     '[]'::jsonb, 0),
-      (s_emp, 'company',           'Company',                   'text',     '[]'::jsonb, 1),
-      (s_emp, 'employee_name',     'Employee Name',             'text',     '[]'::jsonb, 2),
-      (s_emp, 'phone',             'Phone',                     'text',     '[]'::jsonb, 3),
-      (s_emp, 'email',             'Email',                     'text',     '[]'::jsonb, 4),
-      (s_emp, 'termination_date',  'Termination Date',          'date',     '[]'::jsonb, 5),
-      (s_emp, 'termination_reason','Termination Reason',        'text',     '[]'::jsonb, 6),
-      (s_emp, 'rehire_or_dnt',     'Apply to rehire or DNT',    'dropdown', '["Rehire","DNT"]'::jsonb, 7),
+      -- Employee Information (identity)
+      (s_emp, 'peo_id',        'PEO ID',        'text', '[]'::jsonb, 0),
+      (s_emp, 'company',       'Company',       'text', '[]'::jsonb, 1),
+      (s_emp, 'employee_name', 'Employee Name', 'text', '[]'::jsonb, 2),
+      (s_emp, 'phone',         'Phone',         'text', '[]'::jsonb, 3),
+      (s_emp, 'email',         'Email',         'text', '[]'::jsonb, 4),
 
-      (s_pay, 'payment_type',      'Payment Type',              'dropdown', '["DD","Check"]'::jsonb, 0),
-      (s_pay, 'payment_received',  'Payment Received',          'yes_no',   '[]'::jsonb, 1),
+      -- Termination Details
+      (s_details, 'termination_date',     'Termination Date',       'date',     '[]'::jsonb, 0),
+      (s_details, 'termination_reason',   'Termination Reason',     'text',     '[]'::jsonb, 1),
+      (s_details, 'change_of_relationship','Change of Relationship','dropdown', '["Voluntary","Involuntary","Layoff","End of Assignment","Other"]'::jsonb, 2),
+      (s_details, 'rehire_or_dnt',        'Apply to rehire or DNT', 'dropdown', '["Rehire","DNT"]'::jsonb, 3),
+      (s_details, 'reference_source',     'Reference / Source',     'text',     '[]'::jsonb, 4),
 
-      (s_doc, 'internal_term_email_sent', 'Internal Termination Email sent', 'yes_no', '[]'::jsonb, 0),
-      (s_doc, 'termination_acknowledged', 'Termination acknowledged (sign)', 'yes_no', '[]'::jsonb, 1),
-      (s_doc, 'peoplease_status_term',    'Peoplease Status (term)',         'text',   '[]'::jsonb, 2),
+      -- Document Workflow
+      (s_doc, 'internal_term_email_sent', 'Internal Termination Email sent', 'yes_no',   '[]'::jsonb, 0),
+      (s_doc, 'eos_email_sent',           'EOS Email Sent',                  'yes_no',   '[]'::jsonb, 1),
+      (s_doc, 'edd_document',             'EDD Document',                    'yes_no',   '[]'::jsonb, 2),
+      (s_doc, 'termination_acknowledged', 'Termination acknowledged (sign)', 'yes_no',   '[]'::jsonb, 3),
+      (s_doc, 'employee_acceptance',      'Employee Acceptance',             'dropdown', '["Accepted","Pending","Declined"]'::jsonb, 4),
+      (s_doc, 'pandadoc_status',          'PandaDoc Status',                 'dropdown', '["Not Sent","Sent","Viewed","Completed","Declined"]'::jsonb, 5),
+      (s_doc, 'pandadoc_link',            'PandaDoc Link',                   'text',     '[]'::jsonb, 6),
+      (s_doc, 'peoplease_status_term',    'Peoplease Status (term)',         'text',     '[]'::jsonb, 7),
 
-      (s_status, 'overall_progress',        'Overall Progress',          'dropdown', '["Not Started","In Progress","Complete"]'::jsonb, 0),
-      (s_status, 'files_moved_inactive',    'Files Moved to Inactive',   'yes_no',   '[]'::jsonb, 1),
-      (s_status, 'docs_in_inactive_folder', 'Docs in Inactive Folder',   'yes_no',   '[]'::jsonb, 2);
+      -- Payment Workflow
+      (s_pay, 'payment_type',      'Payment Type',      'dropdown', '["DD","Check"]'::jsonb, 0),
+      (s_pay, 'payment_received',  'Payment Received',  'yes_no',   '[]'::jsonb, 1),
+      (s_pay, 'payment_confirmed', 'Payment Confirmed', 'yes_no',   '[]'::jsonb, 2),
+      (s_pay, 'manual_payment',    'Manual Payment',    'yes_no',   '[]'::jsonb, 3),
+
+      -- Overall Status & Owner
+      (s_status, 'overall_progress',        'Overall Progress',        'dropdown', '["Not Started","In Progress","Complete"]'::jsonb, 0),
+      (s_status, 'files_moved_inactive',    'Files Moved to Inactive', 'yes_no',   '[]'::jsonb, 1),
+      (s_status, 'docs_in_inactive_folder', 'Docs in Inactive Folder', 'yes_no',   '[]'::jsonb, 2),
+
+      -- Notes
+      (s_notes, 'notes', 'Notes', 'textarea', '[]'::jsonb, 0);
   end if;
 end $$;

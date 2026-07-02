@@ -18,6 +18,14 @@ function FieldInput({
       return <input type="date" {...common} />;
     case "number":
       return <input type="number" step="any" {...common} />;
+    case "textarea":
+      return (
+        <textarea
+          {...common}
+          rows={3}
+          style={{ resize: "vertical", minHeight: 64 }}
+        />
+      );
     case "yes_no":
       return (
         <select {...common}>

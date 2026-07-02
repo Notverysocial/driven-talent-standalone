@@ -5,6 +5,7 @@
 
 export type TerminationFieldType =
   | "text"
+  | "textarea"
   | "date"
   | "yes_no"
   | "dropdown"
@@ -43,6 +44,7 @@ export type TerminationRecord = {
 
 export const FIELD_TYPES: TerminationFieldType[] = [
   "text",
+  "textarea",
   "date",
   "yes_no",
   "dropdown",
@@ -51,6 +53,7 @@ export const FIELD_TYPES: TerminationFieldType[] = [
 
 export const FIELD_TYPE_LABELS: Record<TerminationFieldType, string> = {
   text: "Text",
+  textarea: "Long text",
   date: "Date",
   yes_no: "Yes / No",
   dropdown: "Dropdown",
@@ -102,4 +105,17 @@ export function displayValue(
     return v === "yes" ? "Yes" : v === "no" ? "No" : v;
   }
   return v;
+}
+
+// COMPUTED, display-only: whole days between the termination date and today.
+// Never stored / never manually entered. Null when no valid date is set.
+export function daysSinceTerm(
+  terminationDate: string | undefined | null,
+): number | null {
+  const raw = (terminationDate ?? "").trim();
+  if (!raw) return null;
+  const d = new Date(raw.length <= 10 ? `${raw}T00:00:00` : raw);
+  if (Number.isNaN(d.getTime())) return null;
+  const ms = Date.now() - d.getTime();
+  return Math.max(0, Math.floor(ms / 86_400_000));
 }
