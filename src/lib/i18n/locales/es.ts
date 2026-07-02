@@ -38,6 +38,7 @@ export const es: Dictionary = {
     sickTime: "Días por enfermedad",
     loa: "Licencia de ausencia",
     safety: "Seguridad / Advertencias",
+    terminations: "Terminaciones",
     timecards: "Tarjetas de tiempo",
     payroll: "Nómina",
     reports: "Reportes",

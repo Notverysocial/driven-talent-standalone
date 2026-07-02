@@ -40,6 +40,7 @@ export const en = {
     sickTime: "Sick Time",
     loa: "Leave of Absence",
     safety: "Safety / Warnings",
+    terminations: "Terminations",
     timecards: "Timecards",
     payroll: "Payroll",
     reports: "Reports",

@@ -52,6 +52,7 @@ const NAV: NavEntry[] = [
   { id: "sick-time",  labelKey: "sickTime",   icon: "check",    href: "/sick-time" },
   { id: "loa",        labelKey: "loa",        icon: "file",     href: "/loa" },
   { id: "safety",     labelKey: "safety",     icon: "building", href: "/safety" },
+  { id: "terminations", labelKey: "terminations", icon: "clipboard", href: "/terminations" },
 
   { sectionKey: "payrollFinance" },
   { id: "timecards",  labelKey: "timecards", icon: "clock", href: "/timecards" },
