@@ -38,11 +38,16 @@ export function UattendPullButton({ weekStart }: { weekStart: string }) {
           >
             {summary.mode === "live" ? "LIVE" : "MOCK"}
           </span>{" "}
-          · {summary.timecardsUpserted} time cards · {summary.employeesCreated.length} new employees
-          {summary.assignmentsCreated > 0 ? ` · ${summary.assignmentsCreated} assignments` : ""}
-          {summary.unmatchedClients.length > 0 && (
+          · {summary.timecardsUpserted} time cards · {summary.matchedByMap + summary.matchedByName} matched
+          {summary.matchedByName > 0 ? ` (${summary.matchedByName} by name)` : ""}
+          {summary.unmatched.length > 0 && (
             <span style={{ color: "var(--dt-warning)" }}>
-              {" "}· unmatched: {summary.unmatchedClients.join(", ")}
+              {" "}· unmatched ({summary.unmatched.length}): {summary.unmatched.map((u) => u.name).join(", ")}
+            </span>
+          )}
+          {summary.unassigned.length > 0 && (
+            <span style={{ color: "var(--dt-warning)" }}>
+              {" "}· unassigned ({summary.unassigned.length}): {summary.unassigned.map((u) => u.name).join(", ")}
             </span>
           )}
         </div>
