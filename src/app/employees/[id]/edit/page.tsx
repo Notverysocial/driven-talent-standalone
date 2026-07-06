@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { getEmployeeProfile } from "@/lib/employees.server";
+import { listClientsForPicker } from "@/lib/hr.server";
+import { listTeamMembersForPicker } from "@/lib/legal-tasks.server";
 import { POSITIONS, DEPARTMENTS, SHIFTS } from "@/lib/staffing";
-import { updateEmployee } from "@/app/roster/actions";
+import { addAssignment, updateEmployee } from "@/app/roster/actions";
 
 export default async function EditEmployeePage({
   params,
@@ -19,6 +21,12 @@ export default async function EditEmployeePage({
   // Edit pay rate / position against the primary active assignment (falls
   // back to the most recent assignment when none are active).
   const primary = assignments.find((a) => a.active) ?? assignments[0] ?? null;
+  const hasActiveAssignment = assignments.some((a) => a.active);
+
+  const [clients, teamMembers] = await Promise.all([
+    listClientsForPicker(),
+    listTeamMembersForPicker(),
+  ]);
 
   return (
     <Shell>
@@ -46,6 +54,21 @@ export default async function EditEmployeePage({
           <Field label="Email" name="email" type="email" defaultValue={employee.email ?? ""} />
           <Field label="Phone" name="phone" defaultValue={employee.phone ?? ""} />
           <Field label="City" name="city" defaultValue={employee.city ?? ""} placeholder="e.g. Stockton, CA" />
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={labelStyle}>Onboarding In Charge</span>
+            <input
+              name="onboarding_in_charge"
+              defaultValue={employee.onboarding_in_charge ?? ""}
+              list="team-members-list"
+              placeholder="Pick a teammate or type a name…"
+              className="dt-filter-input"
+            />
+            <datalist id="team-members-list">
+              {teamMembers.map((t) => (
+                <option key={t.id} value={t.full_name} />
+              ))}
+            </datalist>
+          </label>
         </div>
 
         {primary ? (
@@ -86,7 +109,9 @@ export default async function EditEmployeePage({
           </>
         ) : (
           <p style={{ marginTop: 22, fontSize: 12.5, color: "var(--dt-warm-500)" }}>
-            No assignment to edit. Add one from the profile to set pay rate and position.
+            No active assignment yet. Use{" "}
+            <strong>“Assign to a company”</strong> below to place this employee —
+            that also makes them appear under Active Employees.
           </p>
         )}
 
@@ -117,6 +142,57 @@ export default async function EditEmployeePage({
             <span>Save Changes</span>
           </button>
         </div>
+      </form>
+
+      {/* Assign to a company — the previously-missing UI over the existing
+          addAssignment action. Creating an active assignment is what makes an
+          onboarding employee appear under Active Employees. Separate form
+          because addAssignment is its own server action. */}
+      <form
+        action={addAssignment.bind(null, employee.id)}
+        className="dt-card"
+        style={{ padding: "24px 32px", maxWidth: 820, marginTop: 22 }}
+      >
+        <h3 style={{ marginBottom: 4, fontFamily: "var(--dt-display)", fontSize: 16, fontWeight: 400 }}>
+          Assign to a company
+        </h3>
+        <p style={{ fontSize: 12, color: "var(--dt-warm-500)", marginBottom: 16 }}>
+          {hasActiveAssignment
+            ? "Add another active client assignment for this employee."
+            : "Place this employee at a client. An active assignment is required for them to count as an Active Employee."}
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <span style={labelStyle}>
+              Company<span style={{ color: "var(--dt-danger)" }}> *</span>
+            </span>
+            <select name="client_id" required className="dt-filter-input" defaultValue="">
+              <option value="" disabled>
+                Select a client…
+              </option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <SelectField label="Position" name="position" options={dedupeOptions([...POSITIONS])} defaultValue={POSITIONS[0]} />
+          <SelectField label="Department" name="department" options={dedupeOptions([...DEPARTMENTS])} defaultValue={DEPARTMENTS[0]} />
+          <SelectField label="Shift" name="shift" options={dedupeOptions([...SHIFTS])} defaultValue={SHIFTS[0]} />
+          <Field label="Pay Rate ($/hr)" name="hourly_rate" type="number" step="0.25" defaultValue="20" />
+          <Field label="Start Date" name="start_date" type="date" defaultValue="" />
+        </div>
+        <div style={{ marginTop: 22, display: "flex", justifyContent: "flex-end" }}>
+          <button type="submit" className="dt-btn dt-btn-gold" disabled={clients.length === 0}>
+            <span>+ Assign to company</span>
+          </button>
+        </div>
+        {clients.length === 0 && (
+          <p style={{ marginTop: 10, fontSize: 12, color: "var(--dt-danger)" }}>
+            No clients found. Add a client first under Clients.
+          </p>
+        )}
       </form>
     </Shell>
   );

@@ -70,6 +70,8 @@ export async function addAssignment(employeeId: string, formData: FormData) {
   if (error) throw new Error(error.message);
   revalidatePath(`/employees/${employeeId}`);
   revalidatePath("/roster");
+  revalidatePath("/dashboard");
+  redirect(`/employees/${employeeId}`);
 }
 
 export async function endAssignment(assignmentId: string, employeeId: string) {
@@ -102,6 +104,8 @@ export async function updateEmployee(employeeId: string, formData: FormData) {
       email: (formData.get("email") as string)?.trim() || null,
       phone: (formData.get("phone") as string)?.trim() || null,
       city: (formData.get("city") as string)?.trim() || null,
+      onboarding_in_charge:
+        (formData.get("onboarding_in_charge") as string)?.trim() || null,
       notes: (formData.get("notes") as string)?.trim() || null,
     })
     .eq("id", employeeId);

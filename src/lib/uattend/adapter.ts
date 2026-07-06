@@ -6,8 +6,15 @@
 //   * MockUattendAdapter  — returns realistic seed data through the same
 //                           normalizers.
 // `resolveUattendAdapter({ apiKey })` returns the live adapter when an API key
-// is present, otherwise the mock. Connecting the real key Monday is therefore a
-// CONFIG step (paste the key on /integrations → uAttend), not a code change.
+// is present, otherwise the mock.
+//
+// 2026-07-02: the live adapter was corrected against the official uAttend
+// "Exposed API" docs + an empirical probe. The API is POST + JSON body with
+// header `x-api-key`; endpoints are /user, /timecard, /reports/punch. The punch
+// report response is wrapped as { Product, Body: { PunchReportLineItems: [...] } }
+// and returns ALL account punches for a date range when UserIds is omitted.
+// Timecards are derived from the punch report (the /timecard endpoint is
+// per-user; the punch report is the bulk source).
 
 import {
   UATTEND_BASE,
@@ -32,6 +39,14 @@ export interface UattendAdapter {
   getPunchReport(range: UattendDateRange): Promise<UattendPunch[]>;
 }
 
+// Pull the nested Body payload out of the real uAttend envelope, if present.
+function unwrapBody(json: unknown): unknown {
+  if (json && typeof json === "object" && "Body" in (json as Record<string, unknown>)) {
+    return (json as Record<string, unknown>).Body;
+  }
+  return json;
+}
+
 // --------------------------------------------------------------------------
 // Live adapter
 // --------------------------------------------------------------------------
@@ -46,45 +61,78 @@ export class LiveUattendAdapter implements UattendAdapter {
     this.base = (opts.apiBase || UATTEND_BASE).replace(/\/+$/, "");
   }
 
-  private async get(path: string, query?: Record<string, string>): Promise<unknown> {
-    const url = new URL(`${this.base}${path}`);
-    for (const [k, v] of Object.entries(query ?? {})) url.searchParams.set(k, v);
-    const res = await fetch(url.toString(), {
-      method: "GET",
-      headers: { [UATTEND_API_KEY_HEADER]: this.apiKey, Accept: "application/json" },
+  // The uAttend API is POST + JSON body (an empty body returns the whole account).
+  private async post(path: string, body: Record<string, unknown> = {}): Promise<unknown> {
+    const res = await fetch(`${this.base}${path}`, {
+      method: "POST",
+      headers: {
+        [UATTEND_API_KEY_HEADER]: this.apiKey,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`uAttend ${res.status} ${path}: ${body.slice(0, 200) || "no body"}`);
+      const b = await res.text().catch(() => "");
+      throw new Error(`uAttend ${res.status} ${path}: ${b.slice(0, 200) || "no body"}`);
     }
     return res.json();
   }
 
   async getEmployees(): Promise<UattendEmployee[]> {
-    const json = await this.get(UATTEND_ENDPOINTS.employees);
-    return unwrapList(json, "employees")
+    // POST /user with an empty body → all users for the account.
+    const json = await this.post(UATTEND_ENDPOINTS.employees, {});
+    return unwrapList(unwrapBody(json), "Users", "users", "employees")
       .map(normalizeEmployee)
       .filter((e): e is UattendEmployee => e !== null);
   }
 
-  async getTimecards(range: UattendDateRange): Promise<UattendTimecard[]> {
-    const json = await this.get(UATTEND_ENDPOINTS.timecards, {
-      startDate: range.startDate,
-      endDate: range.endDate,
-    });
-    return unwrapList(json, "timecards")
-      .map(normalizeTimecard)
-      .filter((t): t is UattendTimecard => t !== null);
-  }
-
   async getPunchReport(range: UattendDateRange): Promise<UattendPunch[]> {
-    const json = await this.get(UATTEND_ENDPOINTS.punchReport, {
-      startDate: range.startDate,
-      endDate: range.endDate,
+    // POST /reports/punch → { Body: { PunchReportLineItems: [...] } }.
+    const json = await this.post(UATTEND_ENDPOINTS.punchReport, {
+      StartDate: range.startDate,
+      EndDate: range.endDate,
+      UsePaging: false,
     });
-    return unwrapList(json, "punches")
+    return unwrapList(unwrapBody(json), "PunchReportLineItems", "punches")
       .map(normalizePunch)
       .filter((p): p is UattendPunch => p !== null);
+  }
+
+  // Timecards are built from the punch report (bulk), grouping Regular punches
+  // per user per day. The /timecard endpoint is per-user; the punch report is
+  // the single bulk source for a whole week.
+  async getTimecards(range: UattendDateRange): Promise<UattendTimecard[]> {
+    const punches = await this.getPunchReport(range);
+    const weekStart = mondayOf(range.startDate);
+    const byUid = new Map<string, UattendTimecard>();
+    for (const p of punches) {
+      if (p.paycodeId != null && p.paycodeId !== 1) continue; // Regular only
+      let tc = byUid.get(p.uattendId);
+      if (!tc) {
+        tc = {
+          uattendId: p.uattendId,
+          weekStart,
+          department: p.department,
+          clientCode: p.department,
+          days: [],
+          regularHours: 0,
+          overtimeHours: 0,
+          holidayHours: 0,
+        };
+        byUid.set(p.uattendId, tc);
+      }
+      let day = tc.days.find((d) => d.date === p.date);
+      if (!day) {
+        day = { date: p.date, regular: 0, overtime: 0, holiday: 0, in: p.punchIn, out: p.punchOut };
+        tc.days.push(day);
+      }
+      day.regular += p.hours || 0;
+      day.in = day.in ?? p.punchIn;
+      if (p.punchOut) day.out = p.punchOut;
+      tc.regularHours += p.hours || 0;
+    }
+    return Array.from(byUid.values());
   }
 }
 

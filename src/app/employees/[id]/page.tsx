@@ -193,6 +193,15 @@ export default async function EmployeeDetailPage({
                 {activeAssignments.length} active · {assignments.length - activeAssignments.length} archived
               </div>
             </div>
+            <Link
+              href={`/employees/${employee.id}/edit`}
+              className="dt-btn dt-btn-gold"
+              style={{ fontSize: 11.5, padding: "6px 12px" }}
+            >
+              {activeAssignments.length === 0
+                ? "+ Assign to a company"
+                : "Manage assignments"}
+            </Link>
           </div>
           <div className="dt-table-wrap">
             <table className="dt-table">

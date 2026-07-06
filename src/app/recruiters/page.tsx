@@ -4,6 +4,7 @@ import { Topbar } from "@/components/Topbar";
 import { listRecruiterCandidates } from "@/lib/candidates.server";
 import { listClientsForPicker } from "@/lib/legal-tasks.server";
 import { listRecruiters } from "@/lib/recruiters.server";
+import { textMatches, idMatches } from "@/lib/filters";
 import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
 import { canonicalRecruiter } from "./constants";
 import { createRecruiterCandidate } from "./actions";
@@ -15,12 +16,13 @@ const UNASSIGNED = "__unassigned__";
 export default async function RecruitersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ r?: string; q?: string; pos?: string }>;
+  searchParams: Promise<{ r?: string; q?: string; pos?: string; client?: string }>;
 }) {
   const sp = await searchParams;
   const selected = (sp.r ?? "all").trim() || "all";
   const nameQuery = (sp.q ?? "").trim();
   const posQuery = (sp.pos ?? "").trim();
+  const clientQuery = (sp.client ?? "").trim();
 
   const [candidates, clients, recruiters, me] = await Promise.all([
     listRecruiterCandidates(),
@@ -51,8 +53,6 @@ export default async function RecruitersPage({
     }
   }
 
-  const nq = nameQuery.toLowerCase();
-  const pq = posQuery.toLowerCase();
   const matches = (c: (typeof candidates)[number]): boolean => {
     const canon = canonicalRecruiter(c.recruiter, rosterNames);
     const recruiterOk =
@@ -61,16 +61,20 @@ export default async function RecruitersPage({
         : selected === UNASSIGNED
           ? canon == null
           : canon != null && canon.toLowerCase() === selected.toLowerCase();
-    // Phase-1 #2 — also filter by candidate name + position.
-    const nameOk = !nq || c.full_name.toLowerCase().includes(nq);
-    const posOk = !pq || (c.applied_for ?? "").toLowerCase().includes(pq);
-    return recruiterOk && nameOk && posOk;
+    // Filter by candidate name + position (shared substring match) + client.
+    return (
+      recruiterOk &&
+      textMatches(c.full_name, nameQuery) &&
+      textMatches(c.applied_for, posQuery) &&
+      idMatches(c.client_id, clientQuery)
+    );
   };
   const filtered = candidates.filter(matches);
   const positions = Array.from(
     new Set(candidates.map((c) => c.applied_for).filter((p): p is string => !!p)),
   ).sort();
-  const filtering = nameQuery !== "" || posQuery !== "";
+  const filtering =
+    nameQuery !== "" || posQuery !== "" || clientQuery !== "";
 
   // The "Add candidate" form pre-selects the recruiter when a specific tab is
   // active (so logging a candidate drops them straight into that tab).
@@ -90,6 +94,7 @@ export default async function RecruitersPage({
     if (key !== "all") params.set("r", key);
     if (nameQuery) params.set("q", nameQuery);
     if (posQuery) params.set("pos", posQuery);
+    if (clientQuery) params.set("client", clientQuery);
     const qs = params.toString();
     return qs ? `/recruiters?${qs}` : "/recruiters";
   };
@@ -162,6 +167,21 @@ export default async function RecruitersPage({
               <option key={p} value={p} />
             ))}
           </datalist>
+        </label>
+        <label className="dt-filter" style={{ flex: "1 1 200px" }}>
+          <span className="dt-filter-label">Client</span>
+          <select
+            name="client"
+            defaultValue={clientQuery}
+            className="dt-filter-input"
+          >
+            <option value="">All clients</option>
+            {clients.map((cl) => (
+              <option key={cl.id} value={cl.id}>
+                {cl.name}
+              </option>
+            ))}
+          </select>
         </label>
         <button type="submit" className="dt-btn dt-btn-primary">
           Filter
