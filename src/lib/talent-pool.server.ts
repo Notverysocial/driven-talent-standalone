@@ -3,17 +3,18 @@ import { createClient } from "./supabase/server";
 import { daysAvailable } from "./talent-pool";
 import type { Candidate } from "./supabase/types";
 
-// True when the error is "the 0026 lifecycle columns/enum don't exist yet"
+// True when the error is "the lifecycle columns/enum don't exist yet"
 // (Postgres 42703 undefined_column / 42704 undefined_object). Lets the UI
 // degrade to empty instead of 500ing in the window between a code deploy and
-// the migration being applied to the database.
+// the migration being applied to the database. The live enum is named
+// `lifecycle_status` (matched below); an earlier draft referenced a
+// `candidate_lifecycle_status` type that was never created in prod.
 function isMissingLifecycleSchema(error: { code?: string; message?: string }): boolean {
   if (error.code === "42703" || error.code === "42704") return true;
   const m = (error.message ?? "").toLowerCase();
   return (
     m.includes("lifecycle_status") ||
-    m.includes("last_placement_end") ||
-    m.includes("candidate_lifecycle_status")
+    m.includes("last_placement_end")
   );
 }
 
