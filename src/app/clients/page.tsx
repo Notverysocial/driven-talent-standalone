@@ -10,7 +10,7 @@ import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
 import { AddClientPanel } from "./AddClientPanel";
 
 export default async function ClientsPage() {
-  const { totals, rows } = await getClientMarginsOverview();
+  const { totals, rows, warnings } = await getClientMarginsOverview();
   const tb = (await getServerDictionary()).topbar.clients;
   const me = await getCurrentUser();
   const isAdmin = roleAtLeast(me?.profile.role ?? "user", "admin");
@@ -27,6 +27,24 @@ export default async function ClientsPage() {
           </Link>
         }
       />
+
+      {warnings.length > 0 && (
+        <div
+          className="dt-card"
+          role="status"
+          style={{
+            padding: "12px 18px",
+            marginBottom: 14,
+            borderLeft: "3px solid var(--dt-warning)",
+            fontSize: 12.5,
+            color: "var(--dt-warm-700)",
+          }}
+        >
+          Some live figures are temporarily unavailable, so revenue, cost, and
+          margin may read as zero. Your client list is up to date. Engineering
+          has been notified automatically.
+        </div>
+      )}
 
       <KpiGrid min={200}>
         <KpiTile
