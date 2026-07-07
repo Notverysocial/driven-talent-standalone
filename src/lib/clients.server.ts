@@ -1,4 +1,5 @@
 import "server-only";
+import * as Sentry from "@sentry/nextjs";
 import { createClient } from "./supabase/server";
 import type {
   Client,
@@ -72,6 +73,12 @@ export type ClientMarginsOverview = {
     expectedWeeklyMarginPct: number | null;
   };
   rows: ClientMarginRow[];
+  // Non-empty when one of the analytics sub-queries (invoices / line items /
+  // assignments) failed — e.g. a live-schema drift on a column this page
+  // selects. The client list still renders; the flagged financial figures fall
+  // back to zero and the page shows a "figures unavailable" banner. Names the
+  // table(s) that failed; the precise DB error is sent to Sentry.
+  warnings: string[];
 };
 
 // Pull margin overview across all clients. Computes per-client realized
@@ -96,10 +103,32 @@ export async function getClientMarginsOverview(): Promise<ClientMarginsOverview>
       .eq("active", true),
   ]);
 
-  if (clientsRes.error) throw new Error(clientsRes.error.message);
-  if (invoicesRes.error) throw new Error(invoicesRes.error.message);
-  if (lineItemsRes.error) throw new Error(lineItemsRes.error.message);
-  if (assignmentsRes.error) throw new Error(assignmentsRes.error.message);
+  // The clients list is the backbone of this page: without it there is nothing
+  // to render, so let it surface to the route error boundary (clients/error.tsx).
+  if (clientsRes.error) {
+    throw new Error(
+      `/clients margins: clients query failed — ${clientsRes.error.message}`,
+    );
+  }
+
+  // The three analytics queries are additive. If one fails — e.g. the live DB
+  // schema drifted from a column this page selects (invoices / line items /
+  // employee_assignments) — we must NOT 500 the whole route and lock the team
+  // out of their client list. Log the exact DB error to Sentry (so the offending
+  // column is named on the next prod hit) and degrade that dataset to empty,
+  // flagged via `warnings` so the page can tell the user its figures are stale.
+  const warnings: string[] = [];
+  function degraded(label: string, err: { message: string } | null): boolean {
+    if (!err) return false;
+    const detail = `/clients margins: ${label} query failed — ${err.message}`;
+    console.error(detail);
+    Sentry.captureException(new Error(detail));
+    warnings.push(label);
+    return true;
+  }
+  const invoicesFailed = degraded("invoices", invoicesRes.error);
+  const lineItemsFailed = degraded("invoice_line_items", lineItemsRes.error);
+  const assignmentsFailed = degraded("employee_assignments", assignmentsRes.error);
 
   const clients = (clientsRes.data ?? []) as Client[];
   type InvRow = {
@@ -109,12 +138,12 @@ export async function getClientMarginsOverview(): Promise<ClientMarginsOverview>
     total: number;
     subtotal: number;
   };
-  const invoices = (invoicesRes.data ?? []) as InvRow[];
-  const lineItems = (lineItemsRes.data ?? []) as Pick<
+  const invoices = (invoicesFailed ? [] : invoicesRes.data ?? []) as InvRow[];
+  const lineItems = (lineItemsFailed ? [] : lineItemsRes.data ?? []) as Pick<
     InvoiceLineItem,
     "invoice_id" | "amount" | "employee_cost"
   >[];
-  const assignments = (assignmentsRes.data ?? []) as Pick<
+  const assignments = (assignmentsFailed ? [] : assignmentsRes.data ?? []) as Pick<
     EmployeeAssignment,
     "client_id" | "employee_id" | "hourly_rate" | "bill_rate" | "active"
   >[];
@@ -232,6 +261,7 @@ export async function getClientMarginsOverview(): Promise<ClientMarginsOverview>
           : null,
     },
     rows,
+    warnings,
   };
 }
 
