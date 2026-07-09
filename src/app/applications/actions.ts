@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { ApplicationIntakeStatus } from "@/lib/recruiting";
 import type { CandidateStatus } from "@/lib/supabase/types";
@@ -106,6 +107,10 @@ export async function promoteIntakeToCandidate(
       applied_for:      intake.position_of_interest,
       source:           "promoted-from-intake",
       experience_years: intake.experience_years,
+      // Carry the claiming recruiter onto the candidate as the owner (Change 1).
+      recruiter:        intake.claimed_by ?? null,
+      claimed_by:       intake.claimed_by ?? null,
+      claimed_at:       intake.claimed_at ?? null,
       status:           "applied" satisfies CandidateStatus,
       criteria:         DEFAULT_CRITERIA,
       score:            weightedScore(DEFAULT_CRITERIA),
@@ -157,7 +162,6 @@ export async function promoteIntakeToCandidate(
 
   revalidatePath("/applications");
   revalidatePath("/candidates");
-  revalidatePath("/inbox");
   return { ok: true, candidateId: cand.id };
 }
 
@@ -179,4 +183,37 @@ function buildCandidateNotes(opts: {
     lines.push(opts.cover.trim());
   }
   return lines.join("\n");
+}
+
+// Change 1 (Leangel 2026-07-08) — Applicant Tracking claim / reassign. On claim
+// we stamp the claiming recruiter + timestamp; on promote (above) that recruiter
+// is carried onto the created candidate as the owner. "Me" resolves from the
+// signed-in identity (the synthetic owner "Driven Talent" when AUTH_ENABLED off).
+export async function claimIntake(intakeId: string): Promise<void> {
+  const sb = await createClient();
+  const me = await getCurrentUser();
+  const who = me?.profile.full_name ?? "Unknown";
+  const { error } = await sb
+    .from("application_intakes")
+    .update({ claimed_by: who, claimed_at: new Date().toISOString() })
+    .eq("id", intakeId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/applications");
+}
+
+export async function reassignIntake(
+  intakeId: string,
+  formData: FormData,
+): Promise<void> {
+  const assignee = (formData.get("assignee") as string | null)?.trim();
+  const sb = await createClient();
+  const { error } = await sb
+    .from("application_intakes")
+    .update({
+      claimed_by: assignee || null,
+      claimed_at: assignee ? new Date().toISOString() : null,
+    })
+    .eq("id", intakeId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/applications");
 }
