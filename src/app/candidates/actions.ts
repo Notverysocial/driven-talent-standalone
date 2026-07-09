@@ -247,3 +247,59 @@ export async function sendOnboardingDoc(
   revalidatePath("/candidates");
   return { ok: true, document_id: r.document_id };
 }
+
+// Candidates v2 (Estefany 2026-07-06) — edit the enriched profile field set:
+// personal info, job fit (manually-editable Position + Shift), assignment, and
+// the red-flag / do-not-send warning flags. Additive to the existing per-
+// criterion + notes actions. Booleans arrive from selects as "yes"/"no"/"".
+function ynBool(fd: FormData, key: string): boolean {
+  return fd.get(key) === "yes";
+}
+export async function updateCandidateProfile(
+  candidateId: string,
+  formData: FormData,
+) {
+  const supabase = await createClient();
+
+  const skills = (formData.get("skills") as string | null)
+    ?.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean) ?? [];
+
+  const scoreRaw = (formData.get("job_fit_score") as string | null)?.trim();
+  const jobFitScore = scoreRaw ? Number(scoreRaw) : null;
+
+  const patch = {
+    full_name:        (formData.get("full_name") as string)?.trim() || undefined,
+    phone:            (formData.get("phone") as string)?.trim() || null,
+    email:            (formData.get("email") as string)?.trim() || null,
+    city:             (formData.get("city") as string)?.trim() || null,
+    state:            (formData.get("state") as string)?.trim() || null,
+    primary_language: (formData.get("primary_language") as string)?.trim() || null,
+    source:           (formData.get("source") as string)?.trim() || null,
+    // Manually-editable normalized position (Estefany's collapse-variants ask).
+    position:         (formData.get("position") as string)?.trim() || null,
+    preferred_shift:  (formData.get("preferred_shift") as string)?.trim() || null,
+    client_company:   (formData.get("client_company") as string)?.trim() || null,
+    pay_rate:         (formData.get("pay_rate") as string)?.trim() || null,
+    skills,
+    job_fit_score:
+      jobFitScore != null && !Number.isNaN(jobFitScore)
+        ? Math.max(1, Math.min(5, jobFitScore))
+        : null,
+    recruiter:        (formData.get("recruiter") as string)?.trim() || null,
+    transferred_to:   (formData.get("transferred_to") as string)?.trim() || null,
+    red_flag:         ynBool(formData, "red_flag"),
+    red_flag_reason:  (formData.get("red_flag_reason") as string)?.trim() || null,
+    do_not_send:      ynBool(formData, "do_not_send"),
+  };
+
+  const { error } = await supabase
+    .from("candidates")
+    .update(patch)
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/candidates/${candidateId}`);
+  revalidatePath("/candidates");
+}
