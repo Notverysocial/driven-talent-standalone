@@ -5,13 +5,13 @@ import { Avatar } from "@/components/Avatar";
 import { Badge, type BadgeTone } from "@/components/Badge";
 import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import { getDashboard } from "@/lib/dashboard.server";
-import { getInboxCounts } from "@/app/inbox/actions";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
 import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
 import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
 import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
+import { ApplicantsPerMonthChart } from "@/components/charts/ApplicantsPerMonthChart";
 import { SiteTrafficCard } from "@/components/dashboard/SiteTrafficCard";
 import { getServerDictionary, getLocale } from "@/lib/i18n/server";
 
@@ -34,7 +34,6 @@ function pickGreeting(d: typeof import("@/lib/i18n/locales/en").en["dashboard"])
 
 export default async function DashboardPage() {
   const d = await getDashboard();
-  const inbox = await getInboxCounts();
   const dict = await getServerDictionary();
   const locale = await getLocale();
   const dd = dict.dashboard;
@@ -44,6 +43,9 @@ export default async function DashboardPage() {
     (s, p) => (p.status === "hired" ? s : s + p.count),
     0,
   );
+
+  // New Applicants This Month + month-over-month (Change 3).
+  const applicantsDelta = d.applicants.thisMonth - d.applicants.lastMonth;
 
   return (
     <Shell>
@@ -88,12 +90,20 @@ export default async function DashboardPage() {
           sub={dd.kpiPendingTimecardsSub}
           href="/timecards"
         />
+        {/* Change 3 — New Applicants This Month with month-over-month delta.
+            TODO(i18n): add dd.* keys for these labels (EN literals for now). */}
         <KpiTile
-          tone={inbox.openConversations > 0 ? "amber" : "warm"}
-          label={dd.kpiOpenConversations}
-          value={inbox.openConversations}
-          sub={`${inbox.unreadMessages} ${dd.kpiUnreadSub}`}
-          href="/inbox"
+          tone="gold"
+          label="New Applicants This Month"
+          value={d.applicants.thisMonth}
+          sub={
+            applicantsDelta === 0
+              ? `same as last month (${d.applicants.lastMonth})`
+              : applicantsDelta > 0
+              ? `▲ ${applicantsDelta} vs last month (${d.applicants.lastMonth})`
+              : `▼ ${Math.abs(applicantsDelta)} vs last month (${d.applicants.lastMonth})`
+          }
+          href="/applications"
         />
         <KpiTile
           tone="gold"
@@ -114,6 +124,23 @@ export default async function DashboardPage() {
           href="/invoices"
         />
       </KpiGrid>
+
+      {/* Change 3 — Applicants Per Month (12 months, combined sources).
+          NOTE(mockup): exact placement/styling is governed by Mockup 3; this
+          keeps the current serif-title / gold-accent card look. */}
+      <div style={{ marginBottom: 22 }}>
+        <ChartCard
+          title="Applicants Per Month"
+          sub="Website · Indeed · Facebook · LinkedIn · Instagram — this year"
+          action={
+            <Link href="/applications" className="dt-btn dt-btn-ghost tiny">
+              Open Applicant Tracking
+            </Link>
+          }
+        >
+          <ApplicantsPerMonthChart data={d.applicants.perMonth} />
+        </ChartCard>
+      </div>
 
       <div
         className="dt-overview-grid"
