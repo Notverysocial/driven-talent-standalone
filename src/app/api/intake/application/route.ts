@@ -1,8 +1,9 @@
 // POST /api/intake/application
 //
 // Public endpoint that the driven-talent.com careers form posts to.
-// Creates an `application_intakes` row + a paired `contacts` + `conversations`
-// row so the application also surfaces in the Inbox.
+// Creates an `application_intakes` row (Applicant Tracking). As of Change 4
+// (2026-07-08) the Inbox is removed, so it NO LONGER also writes a paired
+// contacts + conversations row.
 //
 // IMPORTANT: the exact field set on the driven-talent.com careers form is NOT
 // yet inventoried. This handler implements a sensible best-effort mapping
@@ -181,61 +182,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // 2) Mirror into Inbox: contact + conversation + opening message so the
-  //    existing inbox subscribers / counts pick it up.
-  const { data: contact } = await sb
-    .from("contacts")
-    .insert({
-      full_name,
-      email,
-      phone,
-      type: "job_seeker",
-      source: "Website Application",
-      notes: position_of_interest
-        ? `Applied for: ${position_of_interest}`
-        : null,
-    })
-    .select("id")
-    .single();
-
-  let conversationId: string | null = null;
-  if (contact) {
-    const { data: conv } = await sb
-      .from("conversations")
-      .insert({
-        contact_id: contact.id,
-        subject: position_of_interest
-          ? `Application: ${position_of_interest}`
-          : "Website Application",
-        status: "open",
-        channel: "application",
-      })
-      .select("id")
-      .single();
-
-    if (conv) {
-      conversationId = conv.id;
-      const body =
-        `New application from ${full_name}.` +
-        (position_of_interest ? `\nApplied for: ${position_of_interest}` : "") +
-        (email ? `\nEmail: ${email}` : "") +
-        (phone ? `\nPhone: ${phone}` : "") +
-        (city ? `\nCity: ${city}` : "") +
-        (experience_years != null ? `\nYears experience: ${experience_years}` : "") +
-        (cover_letter ? `\n\n${cover_letter}` : "");
-      await sb.from("messages").insert({
-        conversation_id: conv.id,
-        sender_type: "visitor",
-        sender_name: full_name,
-        body,
-        read: false,
-      });
-      await sb
-        .from("application_intakes")
-        .update({ conversation_id: conv.id })
-        .eq("id", intake.id);
-    }
-  }
+  // 2) Inbox removed (Change 4, Leangel 2026-07-08). Website form submissions
+  //    now land ONLY in application_intakes (Applicant Tracking) — we no longer
+  //    mirror a contact + conversation + message into the Inbox. Messaging is a
+  //    later proper Twilio/SendGrid build. The messaging tables (0002) stay
+  //    dormant; dropping them is a separate Antonio-only stop-point.
+  const conversationId: string | null = null;
 
   return NextResponse.json(
     { ok: true, intake_id: intake.id, conversation_id: conversationId },
