@@ -19,7 +19,7 @@
 //   - IP is hashed (sha256, not stored raw) for dedupe / abuse tracking.
 
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 
 const ALLOWED_ORIGIN =
@@ -81,6 +81,7 @@ export async function POST(request: Request) {
   // Accept both JSON and form-encoded posts (most WordPress/Webflow forms
   // post as form-encoded by default).
   let payload: RawPayload = {};
+  let resumeFile: File | null = null;
   const contentType = request.headers.get("content-type") ?? "";
   try {
     if (contentType.includes("application/json")) {
@@ -90,8 +91,18 @@ export async function POST(request: Request) {
       contentType.includes("multipart/form-data")
     ) {
       const fd = await request.formData();
+      const preferred = ["resume", "cv", "file", "resume_file", "attachment"];
       for (const [k, v] of fd.entries()) {
-        payload[k] = typeof v === "string" ? v : null;
+        if (typeof v === "string") {
+          payload[k] = v;
+        } else {
+          payload[k] = null; // File objects are not JSON-serializable
+          if (v && (v as File).size > 0) {
+            if (!resumeFile || preferred.includes(k.toLowerCase())) {
+              resumeFile = v as File;
+            }
+          }
+        }
       }
     } else {
       // Try JSON, fall back to text.
@@ -154,6 +165,23 @@ export async function POST(request: Request) {
 
   const sb = createServiceClient();
 
+  // Resolve the resume: prefer an actually-uploaded file (store it in the
+  // private `resumes` bucket and keep its storage key), else fall back to any
+  // URL string the form posted. Storage key (no scheme) vs external URL is
+  // disambiguated downstream in promoteIntakeToCandidate.
+  let resumeRef: string | null = resume_url;
+  if (resumeFile && resumeFile.size <= 10 * 1024 * 1024) {
+    const ext = resumeFile.name.split(".").pop()?.toLowerCase() ?? "pdf";
+    const key = `intakes/${randomUUID()}.${ext}`;
+    const { error: upErr } = await sb.storage
+      .from("resumes")
+      .upload(key, resumeFile, {
+        contentType: resumeFile.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (!upErr) resumeRef = key;
+  }
+
   // 1) Insert the intake row with the full raw payload preserved.
   const { data: intake, error: intakeErr } = await sb
     .from("application_intakes")
@@ -164,7 +192,7 @@ export async function POST(request: Request) {
       city,
       position_of_interest,
       experience_years,
-      resume_url,
+      resume_url: resumeRef,
       cover_letter,
       source: pickString(payload, ["source", "form_id", "page"]) ?? "driven-talent.com",
       user_agent: request.headers.get("user-agent"),

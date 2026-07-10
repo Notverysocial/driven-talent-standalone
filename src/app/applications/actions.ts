@@ -96,6 +96,43 @@ export async function promoteIntakeToCandidate(
     return { ok: false, error: "Intake has no name — cannot promote." };
   }
 
+  // Carry the resume onto the candidate so it is downloadable in the
+  // Candidates UI. A bare storage key (no http scheme) already lives in the
+  // `resumes` bucket and can be referenced directly; an external URL is
+  // best-effort fetched and re-uploaded so the signed-URL download works.
+  let resumePath: string | null = null;
+  const rawResume = intake.resume_url?.trim() || null;
+  if (rawResume) {
+    if (!/^https?:\/\//i.test(rawResume)) {
+      resumePath = rawResume;
+    } else {
+      try {
+        const res = await fetch(rawResume);
+        if (res.ok) {
+          const buf = new Uint8Array(await res.arrayBuffer());
+          if (buf.byteLength > 0 && buf.byteLength <= 10 * 1024 * 1024) {
+            const ext =
+              (rawResume.split("?")[0].split(".").pop() || "pdf")
+                .toLowerCase()
+                .slice(0, 5);
+            const key = `candidates/intake-${intakeId}/${Date.now()}.${ext}`;
+            const { error: upErr } = await sb.storage
+              .from("resumes")
+              .upload(key, buf, {
+                contentType:
+                  res.headers.get("content-type") || "application/octet-stream",
+                upsert: true,
+              });
+            if (!upErr) resumePath = key;
+          }
+        }
+      } catch {
+        // Non-fatal: leave resumePath null so promotion still succeeds and a
+        // recruiter can upload manually.
+      }
+    }
+  }
+
   const { data: cand, error: candErr } = await sb
     .from("candidates")
     .insert({
@@ -107,6 +144,7 @@ export async function promoteIntakeToCandidate(
       source:           "promoted-from-intake",
       experience_years: intake.experience_years,
       status:           "applied" satisfies CandidateStatus,
+      resume_path:      resumePath,
       criteria:         DEFAULT_CRITERIA,
       score:            weightedScore(DEFAULT_CRITERIA),
       notes:            buildCandidateNotes({
