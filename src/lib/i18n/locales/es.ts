@@ -210,6 +210,14 @@ export const es: Dictionary = {
     inboundLeadsNew: "nuevos",
     noInboundLeads: "Aún no hay prospectos de empleadores.",
     workersShort: "trabajadores",
+
+    // New Applicants This Month tile + Applicants Per Month chart (Change 3).
+    kpiNewApplicants: "Nuevos Postulantes Este Mes",
+    kpiNewApplicantsSameAs: "igual que el mes pasado",
+    kpiNewApplicantsVsLast: "vs. el mes pasado",
+    applicantsPerMonthTitle: "Postulantes Por Mes",
+    applicantsPerMonthSub: "Sitio web · Indeed · Facebook · LinkedIn · Instagram — este año",
+    applicantsPerMonthOpen: "Abrir Seguimiento de Postulantes",
   },
 
   modules: {

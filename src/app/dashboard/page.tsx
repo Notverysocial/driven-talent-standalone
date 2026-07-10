@@ -103,18 +103,17 @@ export default async function DashboardPage() {
           sub={dd.kpiPendingTimecardsSub}
           href="/timecards"
         />
-        {/* Change 3 — New Applicants This Month with month-over-month delta.
-            TODO(i18n): add dd.* keys for these labels (EN literals for now). */}
+        {/* Change 3 — New Applicants This Month with month-over-month delta. */}
         <KpiTile
           tone="gold"
-          label="New Applicants This Month"
+          label={dd.kpiNewApplicants}
           value={d.applicants.thisMonth}
           sub={
             applicantsDelta === 0
-              ? `same as last month (${d.applicants.lastMonth})`
+              ? `${dd.kpiNewApplicantsSameAs} (${d.applicants.lastMonth})`
               : applicantsDelta > 0
-              ? `▲ ${applicantsDelta} vs last month (${d.applicants.lastMonth})`
-              : `▼ ${Math.abs(applicantsDelta)} vs last month (${d.applicants.lastMonth})`
+              ? `▲ ${applicantsDelta} ${dd.kpiNewApplicantsVsLast} (${d.applicants.lastMonth})`
+              : `▼ ${Math.abs(applicantsDelta)} ${dd.kpiNewApplicantsVsLast} (${d.applicants.lastMonth})`
           }
           href="/applications"
         />
@@ -150,11 +149,11 @@ export default async function DashboardPage() {
           keeps the current serif-title / gold-accent card look. */}
       <div style={{ marginBottom: 22 }}>
         <ChartCard
-          title="Applicants Per Month"
-          sub="Website · Indeed · Facebook · LinkedIn · Instagram — this year"
+          title={dd.applicantsPerMonthTitle}
+          sub={dd.applicantsPerMonthSub}
           action={
             <Link href="/applications" className="dt-btn dt-btn-ghost tiny">
-              Open Applicant Tracking
+              {dd.applicantsPerMonthOpen}
             </Link>
           }
         >
