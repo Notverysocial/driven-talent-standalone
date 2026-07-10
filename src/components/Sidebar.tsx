@@ -35,7 +35,9 @@ export type SidebarViewer = {
 const NAV: NavEntry[] = [
   { sectionKey: "overview" },
   { id: "dashboard",  labelKey: "dashboard",   icon: "home",     href: "/dashboard" },
-  { id: "inbox",      labelKey: "inbox",       icon: "message",  href: "/inbox" },
+  // Inbox removed (Change 4, Leangel 2026-07-08) — routed intake to Applicant
+  // Tracking; future messaging is a proper Twilio/SendGrid build. Route folder
+  // deletion + messaging-table cleanup are an Antonio-only stop-point.
 
   { sectionKey: "recruiting" },
   { id: "applications", labelKey: "applications", icon: "file",      href: "/applications" },

@@ -10,21 +10,53 @@ import { textMatches, idMatches } from "@/lib/filters";
 import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { CandidateStageMenu } from "./CandidateStageMenu";
+import { getCurrentUser } from "@/lib/auth.server";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+// Change 2 (Leangel 2026-07-08) — ATS internal tabs (text-specified). The exact
+// tab-bar VISUAL, ordering, the Owner column + avatar, the "you" badge, and the
+// nav collapse of Candidates + Talent Pool + Recruiter Tabs into one "ATS" item
+// are MOCKUP-DEPENDENT (Mockup 2) and left for the visual pass. This ships the
+// tab structure + filtering behavior on the existing candidates list.
+const ATS_TABS: { key: string; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "mine", label: "My Candidates" },
+  { key: "unassigned", label: "Unassigned" },
+  { key: "Rocio", label: "Rocio" },
+  { key: "Estefany", label: "Estefany" },
+  { key: "Rodrigo", label: "Rodrigo" },
+  { key: "Priscila", label: "Priscila" },
+  { key: "Nathalia", label: "Nathalia" },
+  { key: "available_for_rehire", label: "Available for Rehire" },
+  { key: "do_not_return", label: "Do Not Return" },
+];
+
+function eqi(a: string | null | undefined, b: string | null | undefined): boolean {
+  return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 export default async function CandidatesListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pos?: string; client?: string }>;
+  searchParams: Promise<{ q?: string; pos?: string; client?: string; tab?: string }>;
 }) {
   const sp = await searchParams;
   const nameQuery = (sp.q ?? "").trim();
   const posQuery = (sp.pos ?? "").trim();
   const clientQuery = (sp.client ?? "").trim();
+
+  // My Candidates is the default on login for a real recruiter; managers /
+  // the auth-off synthetic owner default to All (they see everyone).
+  const me = await getCurrentUser();
+  const viewerName = me?.profile.full_name ?? null;
+  const isRealRecruiter = Boolean(me && me.id !== NIL_UUID);
+  const tab = (sp.tab ?? (isRealRecruiter ? "mine" : "all")).trim();
 
   const [allCandidates, clients] = await Promise.all([
     listCandidates(),
@@ -34,11 +66,22 @@ export default async function CandidatesListPage({
   // Filter the pipeline by candidate name + position (case-insensitive
   // substring, standardized in src/lib/filters.ts) and by client (exact
   // client_id). All three compose with AND.
+  function matchesTab(c: Candidate): boolean {
+    switch (tab) {
+      case "all": return true;
+      case "mine": return eqi(c.recruiter, viewerName) || eqi(c.claimed_by, viewerName);
+      case "unassigned": return !c.recruiter && !c.claimed_by;
+      case "available_for_rehire": return c.lifecycle_status === "available_for_rehire";
+      case "do_not_return": return c.lifecycle_status === "do_not_return";
+      default: return eqi(c.recruiter, tab) || eqi(c.claimed_by, tab);
+    }
+  }
   const candidates = allCandidates.filter(
     (c) =>
       textMatches(c.full_name, nameQuery) &&
       textMatches(c.applied_for, posQuery) &&
-      idMatches(c.client_id, clientQuery),
+      idMatches(c.client_id, clientQuery) &&
+      matchesTab(c),
   );
   const clientName =
     clients.find((cl) => cl.id === clientQuery)?.name ?? clientQuery;
@@ -68,6 +111,39 @@ export default async function CandidatesListPage({
           </Link>
         }
       />
+
+      {/* ATS internal tabs — Change 2. NOTE(mockup): exact tab-bar visual, the
+          Owner column + "you" badge, and the nav merge into a single "ATS" item
+          await Mockup 2; this is the behavioral scaffold. */}
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          flexWrap: "wrap",
+          marginBottom: 18,
+          borderBottom: "1px solid var(--dt-warm-150)",
+          paddingBottom: 10,
+        }}
+      >
+        {ATS_TABS.map((t) => {
+          const params = new URLSearchParams();
+          if (nameQuery) params.set("q", nameQuery);
+          if (posQuery) params.set("pos", posQuery);
+          if (clientQuery) params.set("client", clientQuery);
+          if (t.key !== "all") params.set("tab", t.key);
+          const active = tab === t.key;
+          return (
+            <Link
+              key={t.key}
+              href={`/candidates${params.toString() ? `?${params}` : ""}`}
+              className={"dt-btn" + (active ? " dt-btn-gold" : " dt-btn-ghost")}
+              style={{ fontSize: 12, padding: "5px 12px" }}
+            >
+              {active ? <span>{t.label}</span> : t.label}
+            </Link>
+          );
+        })}
+      </div>
 
       <div
         style={{

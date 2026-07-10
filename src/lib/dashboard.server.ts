@@ -62,6 +62,11 @@ export type DashboardData = {
     status: AttendanceEntry["status"];
     notes: string | null;
   }[];
+  applicants: {
+    thisMonth: number;
+    lastMonth: number;
+    perMonth: { month: string; label: string; count: number }[];
+  };
   attendanceTrend: AttendanceTrendPoint[];
   revenueTrend: RevenueTrendPoint[];
 };
@@ -90,6 +95,7 @@ export async function getDashboard(): Promise<DashboardData> {
     candidatesRes,
     attendance30Res,
     incidentsRes,
+    intakesRes,
   ] = await Promise.all([
     supabase.from("employees").select("id, status, score, band").neq("status", "inactive"),
     supabase
@@ -104,7 +110,7 @@ export async function getDashboard(): Promise<DashboardData> {
     supabase
       .from("invoices_with_overdue")
       .select("id, status, total, due_at, paid_at, is_overdue, issued_at"),
-    supabase.from("candidates").select("status"),
+    supabase.from("candidates").select("status, created_at"),
     supabase
       .from("attendance_entries")
       .select("employee_id, client_id, date, status")
@@ -120,6 +126,9 @@ export async function getDashboard(): Promise<DashboardData> {
       .gte("date", isoDaysAgo(14))
       .order("date", { ascending: false })
       .limit(5),
+    supabase
+      .from("application_intakes")
+      .select("created_at, status"),
   ]);
 
   if (employeesRes.error) throw new Error(employeesRes.error.message);
@@ -130,6 +139,7 @@ export async function getDashboard(): Promise<DashboardData> {
   if (candidatesRes.error) throw new Error(candidatesRes.error.message);
   if (attendance30Res.error) throw new Error(attendance30Res.error.message);
   if (incidentsRes.error) throw new Error(incidentsRes.error.message);
+  if (intakesRes.error) throw new Error(intakesRes.error.message);
 
   const employees = (employeesRes.data ?? []) as Pick<Employee, "id" | "status" | "score" | "band">[];
   const assignments = (assignmentsRes.data ?? []) as Pick<
@@ -150,7 +160,8 @@ export async function getDashboard(): Promise<DashboardData> {
   };
   const invoices = (invoicesRes.data ?? []) as InvRow[];
 
-  const candidates = (candidatesRes.data ?? []) as { status: CandidateStatus }[];
+  const candidates = (candidatesRes.data ?? []) as { status: CandidateStatus; created_at: string }[];
+  const intakes = (intakesRes.data ?? []) as { created_at: string; status: string }[];
   const att30 = (attendance30Res.data ?? []) as Pick<AttendanceEntry, "employee_id" | "client_id" | "date" | "status">[];
 
   // ----- totals -----
@@ -274,6 +285,46 @@ export async function getDashboard(): Promise<DashboardData> {
   }
   const revenueTrend = Array.from(monthBuckets.values());
 
+  // ----- applicants per month (Change 3, Leangel 2026-07-08) -----
+  // Combined new-applicant volume across channels. Every candidate is an
+  // applicant in the funnel; website intakes NOT yet promoted are counted too
+  // (promoted intakes already exist as candidates, so this avoids double count).
+  const applicantDates: string[] = [];
+  for (const c of candidates) if (c.created_at) applicantDates.push(c.created_at);
+  for (const i of intakes) if (i.status !== "promoted" && i.created_at) applicantDates.push(i.created_at);
+
+  const nowA = new Date();
+  const curKey = `${nowA.getFullYear()}-${String(nowA.getMonth() + 1).padStart(2, "0")}`;
+  const prev = new Date(nowA.getFullYear(), nowA.getMonth() - 1, 1);
+  const prevKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
+
+  let applicantsThisMonth = 0;
+  let applicantsLastMonth = 0;
+  // 12 months of the CURRENT calendar year (Jan..Dec) per the spec.
+  const year = nowA.getFullYear();
+  const perMonthMap = new Map<string, { month: string; label: string; count: number }>();
+  for (let m = 0; m < 12; m++) {
+    const d = new Date(year, m, 1);
+    const key = `${year}-${String(m + 1).padStart(2, "0")}`;
+    perMonthMap.set(key, {
+      month: key,
+      label: d.toLocaleDateString("en-US", { month: "short" }),
+      count: 0,
+    });
+  }
+  for (const iso of applicantDates) {
+    const key = iso.slice(0, 7);
+    if (key === curKey) applicantsThisMonth++;
+    if (key === prevKey) applicantsLastMonth++;
+    const bucket = perMonthMap.get(key);
+    if (bucket) bucket.count++;
+  }
+  const applicants = {
+    thisMonth: applicantsThisMonth,
+    lastMonth: applicantsLastMonth,
+    perMonth: Array.from(perMonthMap.values()),
+  };
+
   return {
     totals: {
       activeEmployees,
@@ -295,6 +346,7 @@ export async function getDashboard(): Promise<DashboardData> {
     pipeline,
     clientStats,
     incidents,
+    applicants,
     attendanceTrend,
     revenueTrend,
   };

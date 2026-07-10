@@ -120,6 +120,9 @@ export type ApplicationIntake = {
   promoted_candidate_id: string | null;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  // Applicant-Tracking claim (Change 1, migration 0038).
+  claimed_by: string | null;
+  claimed_at: string | null;
   created_at: string;
   updated_at: string;
 };

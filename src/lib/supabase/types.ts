@@ -222,6 +222,35 @@ export type Candidate = {
   responded: boolean;
   // Added in 0033 — document-language preference (task 86e20w8yz).
   language_pref: LanguagePref;
+  // ---- Candidates v2 (migration 0038) ----------------------------------
+  primary_language: string | null;
+  state: string | null;
+  position: string | null;
+  client_company: string | null;
+  pay_rate: string | null;
+  job_fit_score: number | null;
+  transferred_to: string | null;
+  red_flag: boolean;
+  red_flag_reason: string | null;
+  do_not_send: boolean;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  call_answered: boolean | null;
+  voicemail_or_text_sent: boolean | null;
+  last_contact_date: string | null;
+  interview_scheduled: boolean | null;
+  interview_at: string | null;
+  showed_up: boolean | null;
+  no_show_reason: string | null;
+  interview_notes: string | null;
+  strong_candidate: "yes" | "no" | "maybe" | null;
+  other_positions_fit: string | null;
+  resume_on_file: boolean | null;
+  updated_profile_ready: boolean | null;
+  sent_to_client: boolean | null;
+  sent_at: string | null;
+  client_response: "accepted" | "rejected" | "pending" | null;
+  client_response_date: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -1131,5 +1160,28 @@ export type PeriodVerification = {
   deduction_zero_ok: boolean;
   details: VerificationDetail[];
   notes: string | null;
+  created_at: string;
+};
+
+
+// ---------------------------------------------------------------------------
+// Candidates v2 — threaded notes (migration 0038)
+// ---------------------------------------------------------------------------
+
+export type NoteSubjectType = "candidate" | "onboarding" | "employee";
+export type FollowupStatus = "in_review" | "resolved";
+export type NoteMention = { name: string; team_member_id?: string | null };
+
+export type CandidateNote = {
+  id: string;
+  subject_type: NoteSubjectType;
+  subject_id: string;
+  author_id: string | null;
+  author_name: string;
+  body: string;
+  mentions: NoteMention[];
+  followup_required: boolean;
+  followup_assignee: string | null;
+  followup_status: FollowupStatus | null;
   created_at: string;
 };
