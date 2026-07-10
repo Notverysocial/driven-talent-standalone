@@ -97,6 +97,7 @@ export function Sidebar({
   viewer,
   authEnabled = true,
   newApplicationsCount = 0,
+  newLeadsCount = 0,
   unreadNotifications = 0,
 }: {
   viewer: SidebarViewer | null;
@@ -106,6 +107,9 @@ export function Sidebar({
   // Number of application intakes with status "new" from the last 24h.
   // Rendered as "Applications (N new)" inline on the nav row.
   newApplicationsCount?: number;
+  // Number of inbound employer leads (website staffing requests) still in the
+  // "new" stage. Rendered as a count badge on the Pipeline nav row.
+  newLeadsCount?: number;
   // Unread @mention notifications for the viewer. Rendered as a count badge
   // on the Notifications nav row so mentions are visible without opening it.
   unreadNotifications?: number;
@@ -216,6 +220,23 @@ export function Sidebar({
                     }}
                   >
                     {newApplicationsCount} new
+                  </span>
+                )}
+                {entry.id === "pipeline" && newLeadsCount > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      color: "#0a0a0a",
+                      background: "#F5C518",
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    {newLeadsCount} new
                   </span>
                 )}
                 {entry.id === "notifications" && unreadNotifications > 0 && (

@@ -208,6 +208,14 @@ export const en = {
     tblEstWeeklyBilling: "Est. Weekly Billing",
     noClients: "No clients yet.",
     days: "d",
+    kpiInboundLeads: "New Employer Leads",
+    kpiInboundLeadsSub: "from the website · untriaged",
+    inboundLeadsTitle: "Inbound Employer Leads",
+    inboundLeadsSub: "Staffing requests submitted on the website",
+    inboundLeadsOpenBtn: "Open pipeline →",
+    inboundLeadsNew: "new",
+    noInboundLeads: "No inbound employer leads yet.",
+    workersShort: "workers",
   },
 
   // Module-level (primary page) headings + chrome

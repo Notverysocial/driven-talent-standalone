@@ -3,6 +3,7 @@ import { Sidebar, type SidebarViewer } from "./Sidebar";
 import { AUTH_ENABLED, getCurrentUser } from "@/lib/auth.server";
 import { countRecentNewApplications } from "@/lib/recruiting.server";
 import { countUnreadNotifications } from "@/lib/notifications.server";
+import { countNewInboundLeads } from "@/lib/inbound-leads.server";
 
 export async function Shell({ children }: { children: ReactNode }) {
   const me = await getCurrentUser();
@@ -20,12 +21,16 @@ export async function Shell({ children }: { children: ReactNode }) {
   // Sidebar badge: unread @mention notifications for the signed-in user.
   // Count-only + error-safe (returns 0), so it never breaks a page render.
   const unreadNotifications = viewer ? await countUnreadNotifications() : 0;
+  // Sidebar badge: inbound employer leads (website staffing requests) still
+  // untriaged. Error-safe (returns 0), so it never breaks a page render.
+  const newLeadsCount = viewer ? await countNewInboundLeads() : 0;
   return (
     <div className="dt-screen">
       <Sidebar
         viewer={viewer}
         authEnabled={AUTH_ENABLED}
         newApplicationsCount={newApplicationsCount}
+        newLeadsCount={newLeadsCount}
         unreadNotifications={unreadNotifications}
       />
       <div className="dt-main">{children}</div>
