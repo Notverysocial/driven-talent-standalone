@@ -5,6 +5,11 @@ import { Avatar } from "@/components/Avatar";
 import { Badge, type BadgeTone } from "@/components/Badge";
 import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import { getDashboard } from "@/lib/dashboard.server";
+import {
+  listInboundEmployerLeads,
+  countNewInboundLeads,
+  syncInboundEmployerLeadsToInbox,
+} from "@/lib/inbound-leads.server";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
@@ -33,7 +38,15 @@ function pickGreeting(d: typeof import("@/lib/i18n/locales/en").en["dashboard"])
 }
 
 export default async function DashboardPage() {
+  // Mirror any brand-new inbound employer leads into the Inbox (idempotent,
+  // fail-safe) so viewing the dashboard also keeps the shared queue current.
+  await syncInboundEmployerLeadsToInbox();
+
   const d = await getDashboard();
+  const [inboundLeads, newInboundLeads] = await Promise.all([
+    listInboundEmployerLeads(6),
+    countNewInboundLeads(),
+  ]);
   const dict = await getServerDictionary();
   const locale = await getLocale();
   const dd = dict.dashboard;
@@ -104,6 +117,13 @@ export default async function DashboardPage() {
               : `▼ ${Math.abs(applicantsDelta)} vs last month (${d.applicants.lastMonth})`
           }
           href="/applications"
+        />
+        <KpiTile
+          tone={newInboundLeads > 0 ? "gold" : "warm"}
+          label={dd.kpiInboundLeads}
+          value={newInboundLeads}
+          sub={dd.kpiInboundLeadsSub}
+          href="/pipeline"
         />
         <KpiTile
           tone="gold"
@@ -371,6 +391,85 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
+        </div>
+      </div>
+
+      <div className="dt-card gold-edge" style={{ marginBottom: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>{dd.inboundLeadsTitle}</h3>
+            <div className="sub">{dd.inboundLeadsSub}</div>
+          </div>
+          <Link href="/pipeline" className="dt-btn dt-btn-ghost tiny">
+            {dd.inboundLeadsOpenBtn}
+          </Link>
+        </div>
+        <div style={{ padding: "8px 0 0" }}>
+          {inboundLeads.length === 0 ? (
+            <div
+              style={{
+                padding: "32px 26px",
+                color: "var(--dt-warm-500)",
+                fontStyle: "italic",
+              }}
+            >
+              {dd.noInboundLeads}
+            </div>
+          ) : (
+            inboundLeads.map((lead, i) => (
+              <Link
+                key={lead.id}
+                href={`/pipeline/${lead.id}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 16,
+                  alignItems: "center",
+                  padding: "16px 26px",
+                  borderBottom:
+                    i < inboundLeads.length - 1
+                      ? "1px solid var(--dt-warm-100)"
+                      : "none",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 400 }}>
+                    {lead.company_name}
+                    {lead.stage === "new" && (
+                      <span style={{ marginLeft: 8 }}>
+                        <Badge tone="gold">{dd.inboundLeadsNew}</Badge>
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "var(--dt-warm-500)",
+                      marginTop: 4,
+                    }}
+                  >
+                    {[
+                      lead.contact_name,
+                      lead.city,
+                      lead.estimated_headcount != null
+                        ? `${lead.estimated_headcount} ${dd.workersShort}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </div>
+                </div>
+                <Badge tone="warm">
+                  {new Date(lead.created_at).toLocaleDateString(
+                    locale === "es" ? "es-MX" : "en-US",
+                    { month: "short", day: "numeric" },
+                  )}
+                </Badge>
+              </Link>
+            ))
+          )}
         </div>
       </div>
 

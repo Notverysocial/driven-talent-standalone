@@ -202,6 +202,14 @@ export const es: Dictionary = {
     tblEstWeeklyBilling: "Facturación sem. est.",
     noClients: "Aún no hay clientes.",
     days: "d",
+    kpiInboundLeads: "Nuevos Prospectos",
+    kpiInboundLeadsSub: "desde el sitio web · sin revisar",
+    inboundLeadsTitle: "Prospectos de Empleadores",
+    inboundLeadsSub: "Solicitudes de personal enviadas en el sitio web",
+    inboundLeadsOpenBtn: "Abrir pipeline →",
+    inboundLeadsNew: "nuevos",
+    noInboundLeads: "Aún no hay prospectos de empleadores.",
+    workersShort: "trabajadores",
   },
 
   modules: {

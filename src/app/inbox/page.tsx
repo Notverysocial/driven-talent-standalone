@@ -4,9 +4,15 @@ import { Topbar } from "@/components/Topbar";
 import { createClient } from "@/lib/supabase/server";
 import { getConversations } from "./actions";
 import { InboxClient } from "./InboxClient";
+import { syncInboundEmployerLeadsToInbox } from "@/lib/inbound-leads.server";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function InboxPage() {
+  // Surface inbound employer leads (from the public site's staffing-request
+  // form) as Inbox conversations before we read the thread list. Idempotent
+  // and fail-safe, so it only ever adds genuinely new leads.
+  await syncInboundEmployerLeadsToInbox();
+
   const conversations = await getConversations();
 
   // Surface a quick chip when there are new website applications to triage.
