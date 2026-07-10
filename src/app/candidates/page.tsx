@@ -112,9 +112,10 @@ export default async function CandidatesListPage({
         }
       />
 
-      {/* ATS internal tabs — Change 2. NOTE(mockup): exact tab-bar visual, the
-          Owner column + "you" badge, and the nav merge into a single "ATS" item
-          await Mockup 2; this is the behavioral scaffold. */}
+      {/* ATS internal tabs — Change 2. The Owner column + "you" badge ship in
+          the table below (dt-* design system). NOTE(mockup): the exact tab-bar
+          visual/ordering and the nav merge into a single "ATS" item await
+          Mockup 2; this is the behavioral scaffold. */}
       <div
         style={{
           display: "flex",
@@ -283,6 +284,7 @@ export default async function CandidatesListPage({
                   <tr>
                     <th style={{ paddingLeft: 22 }}>Candidate</th>
                     <th>Applied For</th>
+                    <th>Owner</th>
                     <th>Source</th>
                     <th>Applied</th>
                     <th style={{ textAlign: "center" }}>Move</th>
@@ -311,6 +313,46 @@ export default async function CandidatesListPage({
                           </Link>
                         </td>
                         <td>{c.applied_for ?? "—"}</td>
+                        <td>
+                          {(() => {
+                            // Owner = the recruiter who claimed the applicant,
+                            // else the assigned recruiter (Change 2, Leangel
+                            // 2026-07-08). "you" badge when it is the signed-in
+                            // viewer. Exact tab-bar visual still awaits Mockup 2.
+                            const owner = c.claimed_by ?? c.recruiter;
+                            if (!owner) {
+                              return (
+                                <span className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>
+                                  Unassigned
+                                </span>
+                              );
+                            }
+                            const isYou = eqi(owner, viewerName);
+                            return (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                                <Avatar name={owner} />
+                                <span style={{ fontSize: 12.5 }}>{owner}</span>
+                                {isYou && (
+                                  <span
+                                    style={{
+                                      fontSize: 9.5,
+                                      fontWeight: 600,
+                                      letterSpacing: "0.1em",
+                                      textTransform: "uppercase",
+                                      color: "var(--dt-gold-deep)",
+                                      background: "var(--dt-gold-50, rgba(212,175,55,0.14))",
+                                      border: "1px solid var(--dt-gold, #d4af37)",
+                                      padding: "1px 6px",
+                                      borderRadius: 3,
+                                    }}
+                                  >
+                                    you
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })()}
+                        </td>
                         <td className="muted" style={{ fontSize: 12 }}>
                           {c.source ?? "—"}
                         </td>

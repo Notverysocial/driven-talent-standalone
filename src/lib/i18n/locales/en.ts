@@ -216,6 +216,14 @@ export const en = {
     inboundLeadsNew: "new",
     noInboundLeads: "No inbound employer leads yet.",
     workersShort: "workers",
+
+    // New Applicants This Month tile + Applicants Per Month chart (Change 3).
+    kpiNewApplicants: "New Applicants This Month",
+    kpiNewApplicantsSameAs: "same as last month",
+    kpiNewApplicantsVsLast: "vs last month",
+    applicantsPerMonthTitle: "Applicants Per Month",
+    applicantsPerMonthSub: "Website · Indeed · Facebook · LinkedIn · Instagram — this year",
+    applicantsPerMonthOpen: "Open Applicant Tracking",
   },
 
   // Module-level (primary page) headings + chrome
