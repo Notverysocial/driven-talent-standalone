@@ -30,6 +30,9 @@ export const en = {
     inbox: "Inbox",
     applications: "Applicant Tracking",
     calls: "Inbound Calls",
+    ats: "ATS",
+    // Retained for the /candidates topbar + any deep links; the sidebar now
+    // uses the single `ats` label above (Change 2).
     candidates: "Candidates",
     talentPool: "Talent Pool",
     recruiters: "Recruiter Tabs",
@@ -166,8 +169,6 @@ export const en = {
     kpiInAtsSub: "candidates active",
     kpiPendingTimecards: "Pending Timecards",
     kpiPendingTimecardsSub: "awaiting approval",
-    kpiOpenConversations: "Open Conversations",
-    kpiUnreadSub: "unread",
     kpiOpenInvoices: "Open Invoices",
     kpiOverdue: "Overdue",
     kpiOldestDaysSuffix: "d oldest",
