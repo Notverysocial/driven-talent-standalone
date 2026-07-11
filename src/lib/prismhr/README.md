@@ -9,7 +9,7 @@ wired.
 ## Status
 - **Disconnected / MOCK.** No credentials, no live connection.
 - Registered on `/integrations` as **PrismHR / Peoplease** (auth mode `api_key`).
-- Seed row: migration `0038_prismhr_integration_scaffold.sql`.
+- Seed row: migration `0039_prismhr_integration_scaffold.sql`.
 - Data adapter: `adapter.ts` (`LivePrismHrAdapter` stubs + `MockPrismHrAdapter`),
   resolved server-side by `adapter.server.ts` (`getPrismHrAdapter`).
 - Integrations-registry client: `../integrations/providers/prismhr.ts`.

@@ -1,4 +1,4 @@
--- 0038_prismhr_integration_scaffold.sql
+-- 0039_prismhr_integration_scaffold.sql
 -- Seed the PrismHR (Peoplease) integration row — DISCONNECTED, scaffold only.
 --
 -- PrismHR is DT's PEO payroll system (via Peoplease). There is NO live
