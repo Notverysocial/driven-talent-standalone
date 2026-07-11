@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth.server";
 import {
   DEFAULT_CRITERIA,
   weightedScore,
@@ -13,6 +14,27 @@ import type {
   CandidateStatus,
   LanguagePref,
 } from "@/lib/supabase/types";
+
+// Change 2 (Leangel 2026-07-08) — ATS "Claim for me". An unclaimed candidate
+// row in the ATS Owner column stamps the signed-in recruiter as the owner
+// (claimed_by + claimed_at) and mirrors it onto `recruiter` so they surface
+// under both "My Candidates" and their name tab. "Me" resolves from the
+// signed-in identity (the synthetic owner "Driven Talent" when AUTH_ENABLED off).
+export async function claimCandidate(candidateId: string): Promise<void> {
+  const sb = await createClient();
+  const me = await getCurrentUser();
+  const who = me?.profile.full_name ?? "Unknown";
+  const { error } = await sb
+    .from("candidates")
+    .update({
+      claimed_by: who,
+      claimed_at: new Date().toISOString(),
+      recruiter: who,
+    })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/candidates");
+}
 
 const LANGUAGE_PREFS: LanguagePref[] = ["en", "es"];
 
@@ -28,6 +50,21 @@ export async function setCandidateLanguagePref(
     .update({ language_pref: next })
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
+  revalidatePath(`/candidates/${candidateId}`);
+}
+
+// Change 2 — Reactivate a rehire-pool / do-not-return candidate back into the
+// active funnel from the ATS "Available for Rehire" / "Do Not Return" tabs
+// (ported from the former Talent Pool page). Clears the DNR reason on the way
+// out of do_not_return.
+export async function reactivateCandidate(candidateId: string): Promise<void> {
+  const sb = await createClient();
+  const { error } = await sb
+    .from("candidates")
+    .update({ lifecycle_status: "in_process", do_not_return_reason: null })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/candidates");
   revalidatePath(`/candidates/${candidateId}`);
 }
 

@@ -180,7 +180,7 @@ export function IntakeCard({
               className="dt-btn"
               style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", background: "#2E7D46", color: "#fff", borderColor: "#2E7D46" }}
             >
-              Download resume
+              Download Resume (PDF)
             </a>
           ) : (
             <button type="button" disabled className="dt-btn" style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", opacity: 0.5 }} title="No resume on file">

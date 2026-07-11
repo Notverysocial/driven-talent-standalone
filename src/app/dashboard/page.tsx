@@ -8,7 +8,6 @@ import { getDashboard } from "@/lib/dashboard.server";
 import {
   listInboundEmployerLeads,
   countNewInboundLeads,
-  syncInboundEmployerLeadsToInbox,
 } from "@/lib/inbound-leads.server";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
 import { ChartCard } from "@/components/charts/ChartCard";
@@ -38,10 +37,11 @@ function pickGreeting(d: typeof import("@/lib/i18n/locales/en").en["dashboard"])
 }
 
 export default async function DashboardPage() {
-  // Mirror any brand-new inbound employer leads into the Inbox (idempotent,
-  // fail-safe) so viewing the dashboard also keeps the shared queue current.
-  await syncInboundEmployerLeadsToInbox();
-
+  // Inbound employer leads are read directly from `sales_leads` for the
+  // dashboard card + KPI below (Change 4, Leangel 2026-07-08 — the Inbox was
+  // removed, so leads are surfaced here and on the Pipeline instead of being
+  // mirrored into a conversation queue). No lead is lost: the card/KPI query
+  // the source table, so every inbound request stays visible.
   const d = await getDashboard();
   const [inboundLeads, newInboundLeads] = await Promise.all([
     listInboundEmployerLeads(6),

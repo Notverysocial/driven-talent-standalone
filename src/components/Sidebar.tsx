@@ -42,9 +42,12 @@ const NAV: NavEntry[] = [
   { sectionKey: "recruiting" },
   { id: "applications", labelKey: "applications", icon: "file",      href: "/applications" },
   { id: "calls",        labelKey: "calls",        icon: "message",   href: "/calls" },
-  { id: "candidates",   labelKey: "candidates",   icon: "star",      href: "/candidates" },
-  { id: "talent-pool",  labelKey: "talentPool",   icon: "users",     href: "/talent-pool" },
-  { id: "recruiters",   labelKey: "recruiters",   icon: "users",     href: "/recruiters" },
+  // ATS — Change 2 (Leangel 2026-07-08). Collapses the former Candidates,
+  // Talent Pool, and Recruiter Tabs items into one entry. The internal tabs
+  // (All · ⭐ My Candidates · Unassigned · <recruiters> · Available for Rehire ·
+  // Do Not Return) live on /candidates; /talent-pool and /recruiters redirect
+  // into those tabs so old links never 404.
+  { id: "ats",          labelKey: "ats",          icon: "star",      href: "/candidates" },
   { id: "positions",    labelKey: "positions",    icon: "clipboard", href: "/positions" },
   { id: "job-postings", labelKey: "jobPostings",  icon: "file",      href: "/job-postings" },
   { id: "onboarding",   labelKey: "onboarding",   icon: "clipboard", href: "/onboarding" },

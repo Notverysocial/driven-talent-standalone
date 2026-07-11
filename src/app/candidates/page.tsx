@@ -10,7 +10,10 @@ import { textMatches, idMatches } from "@/lib/filters";
 import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { CandidateStageMenu } from "./CandidateStageMenu";
-import { getCurrentUser } from "@/lib/auth.server";
+import { ClaimForMeButton, ReactivateButton } from "./AtsRowActions";
+import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
+import { listRecruiters } from "@/lib/recruiters.server";
+import { RecruiterAdmin } from "../recruiters/RecruiterAdmin";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -26,7 +29,7 @@ const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 // tab structure + filtering behavior on the existing candidates list.
 const ATS_TABS: { key: string; label: string }[] = [
   { key: "all", label: "All" },
-  { key: "mine", label: "My Candidates" },
+  { key: "mine", label: "⭐ My Candidates" },
   { key: "unassigned", label: "Unassigned" },
   { key: "Rocio", label: "Rocio" },
   { key: "Estefany", label: "Estefany" },
@@ -56,11 +59,16 @@ export default async function CandidatesListPage({
   const me = await getCurrentUser();
   const viewerName = me?.profile.full_name ?? null;
   const isRealRecruiter = Boolean(me && me.id !== NIL_UUID);
+  const isAdmin = roleAtLeast(me?.profile.role ?? "user", "admin");
   const tab = (sp.tab ?? (isRealRecruiter ? "mine" : "all")).trim();
+  // The two lifecycle tabs (rehire pool / DNR) get a Reactivate action in the
+  // Move column instead of the recruitment-stage menu (ported from Talent Pool).
+  const isLifecycleTab = tab === "available_for_rehire" || tab === "do_not_return";
 
-  const [allCandidates, clients] = await Promise.all([
+  const [allCandidates, clients, recruiters] = await Promise.all([
     listCandidates(),
     listClientsForPicker(),
+    listRecruiters(),
   ]);
 
   // Filter the pipeline by candidate name + position (case-insensitive
@@ -111,6 +119,12 @@ export default async function CandidatesListPage({
           </Link>
         }
       />
+
+      {/* Recruiter roster management — admin only. Relocated onto the ATS page
+          (Change 2) from the former standalone Recruiter Tabs page, which now
+          redirects here. Self-collapsing, so non-admins never see it and the
+          clean look is preserved. */}
+      {isAdmin && <RecruiterAdmin recruiters={recruiters} />}
 
       {/* ATS internal tabs — Change 2. The Owner column + "you" badge ship in
           the table below (dt-* design system). NOTE(mockup): the exact tab-bar
@@ -321,11 +335,10 @@ export default async function CandidatesListPage({
                             // viewer. Exact tab-bar visual still awaits Mockup 2.
                             const owner = c.claimed_by ?? c.recruiter;
                             if (!owner) {
-                              return (
-                                <span className="muted" style={{ fontSize: 12, fontStyle: "italic" }}>
-                                  Unassigned
-                                </span>
-                              );
+                              // Unclaimed → offer a one-click "Claim for me"
+                              // (Change 2). On claim the row hops to the
+                              // recruiter's "My Candidates" + name tab.
+                              return <ClaimForMeButton candidateId={c.id} />;
                             }
                             const isYou = eqi(owner, viewerName);
                             return (
@@ -360,10 +373,14 @@ export default async function CandidatesListPage({
                           {fmtDate(c.applied_at)}
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          <CandidateStageMenu
-                            candidateId={c.id}
-                            currentStatus={c.status}
-                          />
+                          {isLifecycleTab ? (
+                            <ReactivateButton candidateId={c.id} />
+                          ) : (
+                            <CandidateStageMenu
+                              candidateId={c.id}
+                              currentStatus={c.status}
+                            />
+                          )}
                         </td>
                         <td
                           className="tab-num"
