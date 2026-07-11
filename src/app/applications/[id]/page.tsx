@@ -205,20 +205,6 @@ export default async function ApplicationDetailPage(props: {
                   </span>
                 </Link>
               )}
-              {detail.conversation_id && (
-                <Link
-                  href="/inbox"
-                  className="dt-btn"
-                  style={{
-                    fontSize: 12,
-                    padding: "6px 12px",
-                    justifyContent: "center",
-                    display: "flex",
-                  }}
-                >
-                  Open in Inbox
-                </Link>
-              )}
             </div>
           )}
         </div>

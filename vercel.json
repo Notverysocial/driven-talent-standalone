@@ -3,6 +3,10 @@
     {
       "path": "/api/integrations/cron",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/talent-pool/digest",
+      "schedule": "0 14 * * 1"
     }
   ]
 }

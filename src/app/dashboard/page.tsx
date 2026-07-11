@@ -5,13 +5,17 @@ import { Avatar } from "@/components/Avatar";
 import { Badge, type BadgeTone } from "@/components/Badge";
 import { KpiTile, KpiGrid } from "@/components/KpiTile";
 import { getDashboard } from "@/lib/dashboard.server";
-import { getInboxCounts } from "@/app/inbox/actions";
+import {
+  listInboundEmployerLeads,
+  countNewInboundLeads,
+} from "@/lib/inbound-leads.server";
 import { ATTENDANCE_LABEL } from "@/lib/staffing";
 import { ChartCard } from "@/components/charts/ChartCard";
 import { AttendanceTrendChart } from "@/components/charts/AttendanceTrendChart";
 import { RevenueTrendChart } from "@/components/charts/RevenueTrendChart";
 import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
 import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
+import { ApplicantsPerMonthChart } from "@/components/charts/ApplicantsPerMonthChart";
 import { SiteTrafficCard } from "@/components/dashboard/SiteTrafficCard";
 import { getServerDictionary, getLocale } from "@/lib/i18n/server";
 
@@ -33,8 +37,16 @@ function pickGreeting(d: typeof import("@/lib/i18n/locales/en").en["dashboard"])
 }
 
 export default async function DashboardPage() {
+  // Inbound employer leads are read directly from `sales_leads` for the
+  // dashboard card + KPI below (Change 4, Leangel 2026-07-08 — the Inbox was
+  // removed, so leads are surfaced here and on the Pipeline instead of being
+  // mirrored into a conversation queue). No lead is lost: the card/KPI query
+  // the source table, so every inbound request stays visible.
   const d = await getDashboard();
-  const inbox = await getInboxCounts();
+  const [inboundLeads, newInboundLeads] = await Promise.all([
+    listInboundEmployerLeads(6),
+    countNewInboundLeads(),
+  ]);
   const dict = await getServerDictionary();
   const locale = await getLocale();
   const dd = dict.dashboard;
@@ -44,6 +56,9 @@ export default async function DashboardPage() {
     (s, p) => (p.status === "hired" ? s : s + p.count),
     0,
   );
+
+  // New Applicants This Month + month-over-month (Change 3).
+  const applicantsDelta = d.applicants.thisMonth - d.applicants.lastMonth;
 
   return (
     <Shell>
@@ -88,12 +103,26 @@ export default async function DashboardPage() {
           sub={dd.kpiPendingTimecardsSub}
           href="/timecards"
         />
+        {/* Change 3 — New Applicants This Month with month-over-month delta. */}
         <KpiTile
-          tone={inbox.openConversations > 0 ? "amber" : "warm"}
-          label={dd.kpiOpenConversations}
-          value={inbox.openConversations}
-          sub={`${inbox.unreadMessages} ${dd.kpiUnreadSub}`}
-          href="/inbox"
+          tone="gold"
+          label={dd.kpiNewApplicants}
+          value={d.applicants.thisMonth}
+          sub={
+            applicantsDelta === 0
+              ? `${dd.kpiNewApplicantsSameAs} (${d.applicants.lastMonth})`
+              : applicantsDelta > 0
+              ? `▲ ${applicantsDelta} ${dd.kpiNewApplicantsVsLast} (${d.applicants.lastMonth})`
+              : `▼ ${Math.abs(applicantsDelta)} ${dd.kpiNewApplicantsVsLast} (${d.applicants.lastMonth})`
+          }
+          href="/applications"
+        />
+        <KpiTile
+          tone={newInboundLeads > 0 ? "gold" : "warm"}
+          label={dd.kpiInboundLeads}
+          value={newInboundLeads}
+          sub={dd.kpiInboundLeadsSub}
+          href="/pipeline"
         />
         <KpiTile
           tone="gold"
@@ -114,6 +143,23 @@ export default async function DashboardPage() {
           href="/invoices"
         />
       </KpiGrid>
+
+      {/* Change 3 — Applicants Per Month (12 months, combined sources).
+          NOTE(mockup): exact placement/styling is governed by Mockup 3; this
+          keeps the current serif-title / gold-accent card look. */}
+      <div style={{ marginBottom: 22 }}>
+        <ChartCard
+          title={dd.applicantsPerMonthTitle}
+          sub={dd.applicantsPerMonthSub}
+          action={
+            <Link href="/applications" className="dt-btn dt-btn-ghost tiny">
+              {dd.applicantsPerMonthOpen}
+            </Link>
+          }
+        >
+          <ApplicantsPerMonthChart data={d.applicants.perMonth} />
+        </ChartCard>
+      </div>
 
       <div
         className="dt-overview-grid"
@@ -344,6 +390,85 @@ export default async function DashboardPage() {
             </Link>
           </div>
 
+        </div>
+      </div>
+
+      <div className="dt-card gold-edge" style={{ marginBottom: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>{dd.inboundLeadsTitle}</h3>
+            <div className="sub">{dd.inboundLeadsSub}</div>
+          </div>
+          <Link href="/pipeline" className="dt-btn dt-btn-ghost tiny">
+            {dd.inboundLeadsOpenBtn}
+          </Link>
+        </div>
+        <div style={{ padding: "8px 0 0" }}>
+          {inboundLeads.length === 0 ? (
+            <div
+              style={{
+                padding: "32px 26px",
+                color: "var(--dt-warm-500)",
+                fontStyle: "italic",
+              }}
+            >
+              {dd.noInboundLeads}
+            </div>
+          ) : (
+            inboundLeads.map((lead, i) => (
+              <Link
+                key={lead.id}
+                href={`/pipeline/${lead.id}`}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 16,
+                  alignItems: "center",
+                  padding: "16px 26px",
+                  borderBottom:
+                    i < inboundLeads.length - 1
+                      ? "1px solid var(--dt-warm-100)"
+                      : "none",
+                  textDecoration: "none",
+                  color: "inherit",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 400 }}>
+                    {lead.company_name}
+                    {lead.stage === "new" && (
+                      <span style={{ marginLeft: 8 }}>
+                        <Badge tone="gold">{dd.inboundLeadsNew}</Badge>
+                      </span>
+                    )}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 11.5,
+                      color: "var(--dt-warm-500)",
+                      marginTop: 4,
+                    }}
+                  >
+                    {[
+                      lead.contact_name,
+                      lead.city,
+                      lead.estimated_headcount != null
+                        ? `${lead.estimated_headcount} ${dd.workersShort}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ") || "—"}
+                  </div>
+                </div>
+                <Badge tone="warm">
+                  {new Date(lead.created_at).toLocaleDateString(
+                    locale === "es" ? "es-MX" : "en-US",
+                    { month: "short", day: "numeric" },
+                  )}
+                </Badge>
+              </Link>
+            ))
+          )}
         </div>
       </div>
 

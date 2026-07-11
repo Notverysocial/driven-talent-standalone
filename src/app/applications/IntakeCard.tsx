@@ -4,13 +4,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
+import { Avatar } from "@/components/Avatar";
 import { CalendlyScheduler } from "@/components/CalendlyScheduler";
 import {
   buildCalendlyBookingUrl,
   CALENDLY_EVENT_TYPES,
 } from "@/lib/integrations/calendly-events";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
-import { promoteIntakeToCandidate, setIntakeStatus, updateIntake } from "./actions";
+import {
+  promoteIntakeToCandidate,
+  setIntakeStatus,
+  updateIntake,
+  claimIntake,
+  reassignIntake,
+} from "./actions";
 
 export type IntakeCalendlyContext = {
   connected: boolean;
@@ -22,14 +29,17 @@ export function IntakeCard({
   intake,
   createdLabel,
   calendly,
+  recruiters = [],
 }: {
   intake: ApplicationIntake;
   createdLabel: string;
   calendly: IntakeCalendlyContext;
+  recruiters?: string[];
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [feedback, setFeedback] = useState<
     | { kind: "ok"; message: string }
@@ -78,6 +88,17 @@ export function IntakeCard({
         name: intake.full_name,
         email: intake.email,
       })
+    : null;
+
+  const claimedWhen = intake.claimed_at
+    ? (() => {
+        const d = new Date(intake.claimed_at);
+        const sameDay = new Date().toDateString() === d.toDateString();
+        const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+        return sameDay
+          ? `today at ${time}`
+          : `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${time}`;
+      })()
     : null;
 
   return (
@@ -148,6 +169,72 @@ export function IntakeCard({
         </Link>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
+          {/* Change 1 — green Download resume + blue Claim for me + Reassign.
+              NOTE(mockup): exact claim-card layout (avatar/timestamp/reassign
+              arrangement) is governed by Mockup 1; this ships the behavior. */}
+          {intake.resume_url ? (
+            <a
+              href={intake.resume_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="dt-btn"
+              style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", background: "#2E7D46", color: "#fff", borderColor: "#2E7D46" }}
+            >
+              Download Resume (PDF)
+            </a>
+          ) : (
+            <button type="button" disabled className="dt-btn" style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", opacity: 0.5 }} title="No resume on file">
+              No resume
+            </button>
+          )}
+
+          {intake.claimed_by ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+              <Avatar name={intake.claimed_by} />
+              <div style={{ fontSize: 11, color: "var(--dt-warm-600, #555)", lineHeight: 1.3 }}>
+                <strong style={{ fontWeight: 600 }}>{intake.claimed_by}</strong> claimed this applicant
+                {claimedWhen ? `, ${claimedWhen}` : ""}
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => startTransition(async () => { await claimIntake(intake.id); router.refresh(); })}
+              className="dt-btn"
+              style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", background: "#2563EB", color: "#fff", borderColor: "#2563EB" }}
+            >
+              {pending ? "Claiming…" : "Claim for me"}
+            </button>
+          )}
+
+          {intake.claimed_by && (
+            reassignOpen ? (
+              <form
+                action={reassignIntake.bind(null, intake.id)}
+                onSubmit={() => setReassignOpen(false)}
+                style={{ display: "flex", gap: 4 }}
+              >
+                <select name="assignee" defaultValue={intake.claimed_by ?? ""} className="dt-filter-input" style={{ fontSize: 11, flex: 1 }}>
+                  <option value="">Unassign</option>
+                  {recruiters.map((r) => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+                <button type="submit" className="dt-btn" style={{ fontSize: 11, padding: "4px 8px" }}>Assign</button>
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setReassignOpen(true)}
+                className="dt-btn dt-btn-ghost tiny"
+                style={{ fontSize: 11, padding: "4px 10px", justifyContent: "center" }}
+              >
+                Reassign
+              </button>
+            )
+          )}
+
           {intake.promoted_candidate_id ? (
             <Link
               href={`/candidates/${intake.promoted_candidate_id}`}
@@ -215,15 +302,6 @@ export function IntakeCard({
             >
               Mark Spam
             </button>
-          )}
-          {intake.conversation_id && (
-            <Link
-              href="/inbox"
-              className="dt-btn"
-              style={{ fontSize: 11, padding: "4px 10px", justifyContent: "center" }}
-            >
-              Open in Inbox
-            </Link>
           )}
         </div>
       </div>

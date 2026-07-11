@@ -35,13 +35,19 @@ export type SidebarViewer = {
 const NAV: NavEntry[] = [
   { sectionKey: "overview" },
   { id: "dashboard",  labelKey: "dashboard",   icon: "home",     href: "/dashboard" },
-  { id: "inbox",      labelKey: "inbox",       icon: "message",  href: "/inbox" },
+  // Inbox removed (Change 4, Leangel 2026-07-08) — routed intake to Applicant
+  // Tracking; future messaging is a proper Twilio/SendGrid build. Route folder
+  // deletion + messaging-table cleanup are an Antonio-only stop-point.
 
   { sectionKey: "recruiting" },
   { id: "applications", labelKey: "applications", icon: "file",      href: "/applications" },
   { id: "calls",        labelKey: "calls",        icon: "message",   href: "/calls" },
-  { id: "candidates",   labelKey: "candidates",   icon: "star",      href: "/candidates" },
-  { id: "recruiters",   labelKey: "recruiters",   icon: "users",     href: "/recruiters" },
+  // ATS — Change 2 (Leangel 2026-07-08). Collapses the former Candidates,
+  // Talent Pool, and Recruiter Tabs items into one entry. The internal tabs
+  // (All · ⭐ My Candidates · Unassigned · <recruiters> · Available for Rehire ·
+  // Do Not Return) live on /candidates; /talent-pool and /recruiters redirect
+  // into those tabs so old links never 404.
+  { id: "ats",          labelKey: "ats",          icon: "star",      href: "/candidates" },
   { id: "positions",    labelKey: "positions",    icon: "clipboard", href: "/positions" },
   { id: "job-postings", labelKey: "jobPostings",  icon: "file",      href: "/job-postings" },
   { id: "onboarding",   labelKey: "onboarding",   icon: "clipboard", href: "/onboarding" },
@@ -94,6 +100,7 @@ export function Sidebar({
   viewer,
   authEnabled = true,
   newApplicationsCount = 0,
+  newLeadsCount = 0,
   unreadNotifications = 0,
 }: {
   viewer: SidebarViewer | null;
@@ -103,6 +110,9 @@ export function Sidebar({
   // Number of application intakes with status "new" from the last 24h.
   // Rendered as "Applications (N new)" inline on the nav row.
   newApplicationsCount?: number;
+  // Number of inbound employer leads (website staffing requests) still in the
+  // "new" stage. Rendered as a count badge on the Pipeline nav row.
+  newLeadsCount?: number;
   // Unread @mention notifications for the viewer. Rendered as a count badge
   // on the Notifications nav row so mentions are visible without opening it.
   unreadNotifications?: number;
@@ -213,6 +223,23 @@ export function Sidebar({
                     }}
                   >
                     {newApplicationsCount} new
+                  </span>
+                )}
+                {entry.id === "pipeline" && newLeadsCount > 0 && (
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      fontSize: 10.5,
+                      fontWeight: 600,
+                      letterSpacing: "0.05em",
+                      color: "#0a0a0a",
+                      background: "#F5C518",
+                      padding: "2px 6px",
+                      borderRadius: 3,
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    {newLeadsCount} new
                   </span>
                 )}
                 {entry.id === "notifications" && unreadNotifications > 0 && (

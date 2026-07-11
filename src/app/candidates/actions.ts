@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth.server";
 import {
   DEFAULT_CRITERIA,
   weightedScore,
@@ -13,6 +14,27 @@ import type {
   CandidateStatus,
   LanguagePref,
 } from "@/lib/supabase/types";
+
+// Change 2 (Leangel 2026-07-08) — ATS "Claim for me". An unclaimed candidate
+// row in the ATS Owner column stamps the signed-in recruiter as the owner
+// (claimed_by + claimed_at) and mirrors it onto `recruiter` so they surface
+// under both "My Candidates" and their name tab. "Me" resolves from the
+// signed-in identity (the synthetic owner "Driven Talent" when AUTH_ENABLED off).
+export async function claimCandidate(candidateId: string): Promise<void> {
+  const sb = await createClient();
+  const me = await getCurrentUser();
+  const who = me?.profile.full_name ?? "Unknown";
+  const { error } = await sb
+    .from("candidates")
+    .update({
+      claimed_by: who,
+      claimed_at: new Date().toISOString(),
+      recruiter: who,
+    })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/candidates");
+}
 
 const LANGUAGE_PREFS: LanguagePref[] = ["en", "es"];
 
@@ -28,6 +50,21 @@ export async function setCandidateLanguagePref(
     .update({ language_pref: next })
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
+  revalidatePath(`/candidates/${candidateId}`);
+}
+
+// Change 2 — Reactivate a rehire-pool / do-not-return candidate back into the
+// active funnel from the ATS "Available for Rehire" / "Do Not Return" tabs
+// (ported from the former Talent Pool page). Clears the DNR reason on the way
+// out of do_not_return.
+export async function reactivateCandidate(candidateId: string): Promise<void> {
+  const sb = await createClient();
+  const { error } = await sb
+    .from("candidates")
+    .update({ lifecycle_status: "in_process", do_not_return_reason: null })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/candidates");
   revalidatePath(`/candidates/${candidateId}`);
 }
 
@@ -246,4 +283,60 @@ export async function sendOnboardingDoc(
   revalidatePath(`/candidates/${candidateId}`);
   revalidatePath("/candidates");
   return { ok: true, document_id: r.document_id };
+}
+
+// Candidates v2 (Estefany 2026-07-06) — edit the enriched profile field set:
+// personal info, job fit (manually-editable Position + Shift), assignment, and
+// the red-flag / do-not-send warning flags. Additive to the existing per-
+// criterion + notes actions. Booleans arrive from selects as "yes"/"no"/"".
+function ynBool(fd: FormData, key: string): boolean {
+  return fd.get(key) === "yes";
+}
+export async function updateCandidateProfile(
+  candidateId: string,
+  formData: FormData,
+) {
+  const supabase = await createClient();
+
+  const skills = (formData.get("skills") as string | null)
+    ?.split(",")
+    .map((s) => s.trim())
+    .filter(Boolean) ?? [];
+
+  const scoreRaw = (formData.get("job_fit_score") as string | null)?.trim();
+  const jobFitScore = scoreRaw ? Number(scoreRaw) : null;
+
+  const patch = {
+    full_name:        (formData.get("full_name") as string)?.trim() || undefined,
+    phone:            (formData.get("phone") as string)?.trim() || null,
+    email:            (formData.get("email") as string)?.trim() || null,
+    city:             (formData.get("city") as string)?.trim() || null,
+    state:            (formData.get("state") as string)?.trim() || null,
+    primary_language: (formData.get("primary_language") as string)?.trim() || null,
+    source:           (formData.get("source") as string)?.trim() || null,
+    // Manually-editable normalized position (Estefany's collapse-variants ask).
+    position:         (formData.get("position") as string)?.trim() || null,
+    preferred_shift:  (formData.get("preferred_shift") as string)?.trim() || null,
+    client_company:   (formData.get("client_company") as string)?.trim() || null,
+    pay_rate:         (formData.get("pay_rate") as string)?.trim() || null,
+    skills,
+    job_fit_score:
+      jobFitScore != null && !Number.isNaN(jobFitScore)
+        ? Math.max(1, Math.min(5, jobFitScore))
+        : null,
+    recruiter:        (formData.get("recruiter") as string)?.trim() || null,
+    transferred_to:   (formData.get("transferred_to") as string)?.trim() || null,
+    red_flag:         ynBool(formData, "red_flag"),
+    red_flag_reason:  (formData.get("red_flag_reason") as string)?.trim() || null,
+    do_not_send:      ynBool(formData, "do_not_send"),
+  };
+
+  const { error } = await supabase
+    .from("candidates")
+    .update(patch)
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/candidates/${candidateId}`);
+  revalidatePath("/candidates");
 }

@@ -21,6 +21,12 @@ export type AttendanceStatus =
   | "sick_day";
 // Updated by 0001 — old values were new/screening/interview/placed/inactive.
 export type CandidateStatus = "applied" | "screening" | "interview" | "offer" | "hired" | "rejected";
+export type CandidateLifecycleStatus =
+  | "new_applicant"
+  | "in_process"
+  | "placed"
+  | "available_for_rehire"
+  | "do_not_return";
 export type TimecardStatus = "draft" | "submitted" | "approved" | "rejected";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "void";
 export type OnboardingCategory =
@@ -171,6 +177,17 @@ export type CandidateCriterion = {
   note: string;
 };
 
+// One entry per past placement, stored on candidates.placement_history.
+export type PlacementHistoryEntry = {
+  client_id?: string | null;
+  client_name?: string | null;
+  role?: string | null;
+  season?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  reason_for_end?: string | null;
+};
+
 export type Candidate = {
   id: string;
   full_name: string;
@@ -192,11 +209,48 @@ export type Candidate = {
   recruiter: string | null;
   pandadoc_document_id: string | null;
   pandadoc_document_status: string | null;
+  // Seasonal Talent Pool lifecycle layer (migration 0036).
+  lifecycle_status: CandidateLifecycleStatus;
+  placement_history: PlacementHistoryEntry[];
+  last_placement_end: string | null;
+  skills: string[];
+  preferred_location: string | null;
+  preferred_shift: string | null;
+  do_not_return_reason: string | null;
   // Added in 0031 — used by the per-recruiter candidate tabs (#14).
   photo_url: string | null;
   responded: boolean;
   // Added in 0033 — document-language preference (task 86e20w8yz).
   language_pref: LanguagePref;
+  // ---- Candidates v2 (migration 0038) ----------------------------------
+  primary_language: string | null;
+  state: string | null;
+  position: string | null;
+  client_company: string | null;
+  pay_rate: string | null;
+  job_fit_score: number | null;
+  transferred_to: string | null;
+  red_flag: boolean;
+  red_flag_reason: string | null;
+  do_not_send: boolean;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  call_answered: boolean | null;
+  voicemail_or_text_sent: boolean | null;
+  last_contact_date: string | null;
+  interview_scheduled: boolean | null;
+  interview_at: string | null;
+  showed_up: boolean | null;
+  no_show_reason: string | null;
+  interview_notes: string | null;
+  strong_candidate: "yes" | "no" | "maybe" | null;
+  other_positions_fit: string | null;
+  resume_on_file: boolean | null;
+  updated_profile_ready: boolean | null;
+  sent_to_client: boolean | null;
+  sent_at: string | null;
+  client_response: "accepted" | "rejected" | "pending" | null;
+  client_response_date: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -1106,5 +1160,28 @@ export type PeriodVerification = {
   deduction_zero_ok: boolean;
   details: VerificationDetail[];
   notes: string | null;
+  created_at: string;
+};
+
+
+// ---------------------------------------------------------------------------
+// Candidates v2 — threaded notes (migration 0038)
+// ---------------------------------------------------------------------------
+
+export type NoteSubjectType = "candidate" | "onboarding" | "employee";
+export type FollowupStatus = "in_review" | "resolved";
+export type NoteMention = { name: string; team_member_id?: string | null };
+
+export type CandidateNote = {
+  id: string;
+  subject_type: NoteSubjectType;
+  subject_id: string;
+  author_id: string | null;
+  author_name: string;
+  body: string;
+  mentions: NoteMention[];
+  followup_required: boolean;
+  followup_assignee: string | null;
+  followup_status: FollowupStatus | null;
   created_at: string;
 };

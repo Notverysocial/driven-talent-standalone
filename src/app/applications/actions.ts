@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser } from "@/lib/auth.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { ApplicationIntakeStatus } from "@/lib/recruiting";
 import type { CandidateStatus } from "@/lib/supabase/types";
@@ -96,6 +97,43 @@ export async function promoteIntakeToCandidate(
     return { ok: false, error: "Intake has no name — cannot promote." };
   }
 
+  // Carry the resume onto the candidate so it is downloadable in the
+  // Candidates UI. A bare storage key (no http scheme) already lives in the
+  // `resumes` bucket and can be referenced directly; an external URL is
+  // best-effort fetched and re-uploaded so the signed-URL download works.
+  let resumePath: string | null = null;
+  const rawResume = intake.resume_url?.trim() || null;
+  if (rawResume) {
+    if (!/^https?:\/\//i.test(rawResume)) {
+      resumePath = rawResume;
+    } else {
+      try {
+        const res = await fetch(rawResume);
+        if (res.ok) {
+          const buf = new Uint8Array(await res.arrayBuffer());
+          if (buf.byteLength > 0 && buf.byteLength <= 10 * 1024 * 1024) {
+            const ext =
+              (rawResume.split("?")[0].split(".").pop() || "pdf")
+                .toLowerCase()
+                .slice(0, 5);
+            const key = `candidates/intake-${intakeId}/${Date.now()}.${ext}`;
+            const { error: upErr } = await sb.storage
+              .from("resumes")
+              .upload(key, buf, {
+                contentType:
+                  res.headers.get("content-type") || "application/octet-stream",
+                upsert: true,
+              });
+            if (!upErr) resumePath = key;
+          }
+        }
+      } catch {
+        // Non-fatal: leave resumePath null so promotion still succeeds and a
+        // recruiter can upload manually.
+      }
+    }
+  }
+
   const { data: cand, error: candErr } = await sb
     .from("candidates")
     .insert({
@@ -106,7 +144,12 @@ export async function promoteIntakeToCandidate(
       applied_for:      intake.position_of_interest,
       source:           "promoted-from-intake",
       experience_years: intake.experience_years,
+      // Carry the claiming recruiter onto the candidate as the owner (Change 1).
+      recruiter:        intake.claimed_by ?? null,
+      claimed_by:       intake.claimed_by ?? null,
+      claimed_at:       intake.claimed_at ?? null,
       status:           "applied" satisfies CandidateStatus,
+      resume_path:      resumePath,
       criteria:         DEFAULT_CRITERIA,
       score:            weightedScore(DEFAULT_CRITERIA),
       notes:            buildCandidateNotes({
@@ -157,7 +200,6 @@ export async function promoteIntakeToCandidate(
 
   revalidatePath("/applications");
   revalidatePath("/candidates");
-  revalidatePath("/inbox");
   return { ok: true, candidateId: cand.id };
 }
 
@@ -179,4 +221,37 @@ function buildCandidateNotes(opts: {
     lines.push(opts.cover.trim());
   }
   return lines.join("\n");
+}
+
+// Change 1 (Leangel 2026-07-08) — Applicant Tracking claim / reassign. On claim
+// we stamp the claiming recruiter + timestamp; on promote (above) that recruiter
+// is carried onto the created candidate as the owner. "Me" resolves from the
+// signed-in identity (the synthetic owner "Driven Talent" when AUTH_ENABLED off).
+export async function claimIntake(intakeId: string): Promise<void> {
+  const sb = await createClient();
+  const me = await getCurrentUser();
+  const who = me?.profile.full_name ?? "Unknown";
+  const { error } = await sb
+    .from("application_intakes")
+    .update({ claimed_by: who, claimed_at: new Date().toISOString() })
+    .eq("id", intakeId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/applications");
+}
+
+export async function reassignIntake(
+  intakeId: string,
+  formData: FormData,
+): Promise<void> {
+  const assignee = (formData.get("assignee") as string | null)?.trim();
+  const sb = await createClient();
+  const { error } = await sb
+    .from("application_intakes")
+    .update({
+      claimed_by: assignee || null,
+      claimed_at: assignee ? new Date().toISOString() : null,
+    })
+    .eq("id", intakeId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/applications");
 }

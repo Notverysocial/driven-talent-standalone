@@ -1,8 +1,9 @@
 // POST /api/intake/application
 //
 // Public endpoint that the driven-talent.com careers form posts to.
-// Creates an `application_intakes` row + a paired `contacts` + `conversations`
-// row so the application also surfaces in the Inbox.
+// Creates an `application_intakes` row (Applicant Tracking). As of Change 4
+// (2026-07-08) the Inbox is removed, so it NO LONGER also writes a paired
+// contacts + conversations row.
 //
 // IMPORTANT: the exact field set on the driven-talent.com careers form is NOT
 // yet inventoried. This handler implements a sensible best-effort mapping
@@ -19,7 +20,7 @@
 //   - IP is hashed (sha256, not stored raw) for dedupe / abuse tracking.
 
 import { NextResponse } from "next/server";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
 
 const ALLOWED_ORIGIN =
@@ -81,6 +82,7 @@ export async function POST(request: Request) {
   // Accept both JSON and form-encoded posts (most WordPress/Webflow forms
   // post as form-encoded by default).
   let payload: RawPayload = {};
+  let resumeFile: File | null = null;
   const contentType = request.headers.get("content-type") ?? "";
   try {
     if (contentType.includes("application/json")) {
@@ -90,8 +92,18 @@ export async function POST(request: Request) {
       contentType.includes("multipart/form-data")
     ) {
       const fd = await request.formData();
+      const preferred = ["resume", "cv", "file", "resume_file", "attachment"];
       for (const [k, v] of fd.entries()) {
-        payload[k] = typeof v === "string" ? v : null;
+        if (typeof v === "string") {
+          payload[k] = v;
+        } else {
+          payload[k] = null; // File objects are not JSON-serializable
+          if (v && (v as File).size > 0) {
+            if (!resumeFile || preferred.includes(k.toLowerCase())) {
+              resumeFile = v as File;
+            }
+          }
+        }
       }
     } else {
       // Try JSON, fall back to text.
@@ -154,6 +166,23 @@ export async function POST(request: Request) {
 
   const sb = createServiceClient();
 
+  // Resolve the resume: prefer an actually-uploaded file (store it in the
+  // private `resumes` bucket and keep its storage key), else fall back to any
+  // URL string the form posted. Storage key (no scheme) vs external URL is
+  // disambiguated downstream in promoteIntakeToCandidate.
+  let resumeRef: string | null = resume_url;
+  if (resumeFile && resumeFile.size <= 10 * 1024 * 1024) {
+    const ext = resumeFile.name.split(".").pop()?.toLowerCase() ?? "pdf";
+    const key = `intakes/${randomUUID()}.${ext}`;
+    const { error: upErr } = await sb.storage
+      .from("resumes")
+      .upload(key, resumeFile, {
+        contentType: resumeFile.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (!upErr) resumeRef = key;
+  }
+
   // 1) Insert the intake row with the full raw payload preserved.
   const { data: intake, error: intakeErr } = await sb
     .from("application_intakes")
@@ -164,7 +193,7 @@ export async function POST(request: Request) {
       city,
       position_of_interest,
       experience_years,
-      resume_url,
+      resume_url: resumeRef,
       cover_letter,
       source: pickString(payload, ["source", "form_id", "page"]) ?? "driven-talent.com",
       user_agent: request.headers.get("user-agent"),
@@ -181,61 +210,12 @@ export async function POST(request: Request) {
     );
   }
 
-  // 2) Mirror into Inbox: contact + conversation + opening message so the
-  //    existing inbox subscribers / counts pick it up.
-  const { data: contact } = await sb
-    .from("contacts")
-    .insert({
-      full_name,
-      email,
-      phone,
-      type: "job_seeker",
-      source: "Website Application",
-      notes: position_of_interest
-        ? `Applied for: ${position_of_interest}`
-        : null,
-    })
-    .select("id")
-    .single();
-
-  let conversationId: string | null = null;
-  if (contact) {
-    const { data: conv } = await sb
-      .from("conversations")
-      .insert({
-        contact_id: contact.id,
-        subject: position_of_interest
-          ? `Application: ${position_of_interest}`
-          : "Website Application",
-        status: "open",
-        channel: "application",
-      })
-      .select("id")
-      .single();
-
-    if (conv) {
-      conversationId = conv.id;
-      const body =
-        `New application from ${full_name}.` +
-        (position_of_interest ? `\nApplied for: ${position_of_interest}` : "") +
-        (email ? `\nEmail: ${email}` : "") +
-        (phone ? `\nPhone: ${phone}` : "") +
-        (city ? `\nCity: ${city}` : "") +
-        (experience_years != null ? `\nYears experience: ${experience_years}` : "") +
-        (cover_letter ? `\n\n${cover_letter}` : "");
-      await sb.from("messages").insert({
-        conversation_id: conv.id,
-        sender_type: "visitor",
-        sender_name: full_name,
-        body,
-        read: false,
-      });
-      await sb
-        .from("application_intakes")
-        .update({ conversation_id: conv.id })
-        .eq("id", intake.id);
-    }
-  }
+  // 2) Inbox removed (Change 4, Leangel 2026-07-08). Website form submissions
+  //    now land ONLY in application_intakes (Applicant Tracking) — we no longer
+  //    mirror a contact + conversation + message into the Inbox. Messaging is a
+  //    later proper Twilio/SendGrid build. The messaging tables (0002) stay
+  //    dormant; dropping them is a separate Antonio-only stop-point.
+  const conversationId: string | null = null;
 
   return NextResponse.json(
     { ok: true, intake_id: intake.id, conversation_id: conversationId },

@@ -18,12 +18,15 @@ import {
   CALENDLY_EVENT_TYPES,
 } from "@/lib/integrations/calendly-events";
 import { CriterionRow } from "./CriterionRow";
-import { NotesEditor } from "./NotesEditor";
 import { StatusActions } from "./StatusActions";
 import { ResumeBlock } from "./ResumeBlock";
 import { SendOnboardingDoc } from "./SendOnboardingDoc";
 import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
 import { setCandidateLanguagePref } from "../actions";
+import { PipelineTracker } from "./PipelineTracker";
+import { CandidateProfileFields } from "./CandidateProfileFields";
+import { CandidateNotes } from "@/components/CandidateNotes";
+import { listNotes } from "@/lib/candidate-notes.server";
 
 export default async function CandidateDetailPage({
   params,
@@ -33,6 +36,7 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const cand = await getCandidate(id);
   if (!cand) notFound();
+  const notes = await listNotes("candidate", cand.id);
 
   const score = cand.score ?? weightedScore(cand.criteria);
   const tier = tierLabel(score);
@@ -88,6 +92,29 @@ export default async function CandidateDetailPage({
         }
       />
 
+      {(cand.red_flag || cand.do_not_send) && (
+        <div
+          role="alert"
+          style={{
+            marginBottom: 16,
+            padding: "12px 16px",
+            borderRadius: 6,
+            background: "rgba(178,58,58,0.08)",
+            border: "1px solid rgba(178,58,58,0.35)",
+            color: "var(--dt-danger)",
+            fontSize: 13,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          <strong style={{ letterSpacing: "0.04em", textTransform: "uppercase", fontSize: 11 }}>
+            {cand.do_not_send ? "Do Not Send" : "Red Flag"}
+          </strong>
+          <span>{cand.red_flag_reason ?? "Flagged by a recruiter."}</span>
+        </div>
+      )}
       <div
         className="candidate-grid"
         style={{
@@ -193,6 +220,30 @@ export default async function CandidateDetailPage({
           <div className="dt-card">
             <div className="dt-card-head">
               <div>
+                <h3>Profile</h3>
+                <div className="sub">Personal info, job fit, assignment &amp; flags</div>
+              </div>
+            </div>
+            <div style={{ padding: "18px 24px 22px" }}>
+              <CandidateProfileFields cand={cand} />
+            </div>
+          </div>
+
+          <div className="dt-card gold-edge">
+            <div className="dt-card-head">
+              <div>
+                <h3>Recruitment Pipeline</h3>
+                <div className="sub">Five stages · replaces the parallel spreadsheet</div>
+              </div>
+            </div>
+            <div style={{ padding: "18px 24px 22px" }}>
+              <PipelineTracker cand={cand} />
+            </div>
+          </div>
+
+          <div className="dt-card">
+            <div className="dt-card-head">
+              <div>
                 <h3>Evaluation Criteria</h3>
                 <div className="sub">
                   Drag the sliders. Weighted average updates on release.
@@ -230,12 +281,30 @@ export default async function CandidateDetailPage({
           <div className="dt-card">
             <div className="dt-card-head">
               <div>
-                <h3>Roxanna&apos;s Notes</h3>
-                <div className="sub">What you&apos;d tell a client about this person</div>
+                <h3>Notes</h3>
+                <div className="sub">Authored + timestamped · @mention to tag · newest first</div>
               </div>
             </div>
             <div style={{ padding: "18px 24px 22px" }}>
-              <NotesEditor candidateId={cand.id} initialNotes={cand.notes ?? ""} />
+              {cand.notes && cand.notes.trim() !== "" && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: "10px 12px",
+                    background: "var(--dt-warm-50)",
+                    border: "1px solid var(--dt-warm-150)",
+                    fontSize: 12.5,
+                    color: "var(--dt-warm-600, #555)",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  <div className="tiny muted" style={{ letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>
+                    Legacy note
+                  </div>
+                  {cand.notes}
+                </div>
+              )}
+              <CandidateNotes subjectType="candidate" subjectId={cand.id} notes={notes} />
             </div>
           </div>
         </div>

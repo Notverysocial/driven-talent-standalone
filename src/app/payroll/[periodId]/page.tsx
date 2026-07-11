@@ -12,6 +12,7 @@ import {
   fmtPeriodRange,
 } from "@/lib/payroll";
 import { PeriodActions } from "./PeriodActions";
+import { PEOPLEASE_EXPORT_PROVISIONAL_NOTE } from "@/lib/peoplease-export";
 import { InvoicePreviewCard } from "./InvoicePreviewCard";
 import { previewInvoicesForPeriod } from "@/lib/payroll-invoicing.server";
 import type { TimecardFlags } from "@/lib/supabase/types";
@@ -50,10 +51,16 @@ export default async function PayrollPeriodDetailPage({
               ← All Periods
             </Link>
             <Link
-              href={`/payroll/${detail.period.id}/export?format=peoplease`}
+              href={`/payroll/${detail.period.id}/export?format=peoplease_payroll`}
+              className="dt-btn dt-btn-gold"
+            >
+              <span>Export for Peoplease</span>
+            </Link>
+            <Link
+              href={`/payroll/${detail.period.id}/export?format=standard_hours`}
               className="dt-btn"
             >
-              PEOPLEASE Export
+              Standard Hours
             </Link>
             <Link
               href={`/payroll/${detail.period.id}/export?format=peo_department`}
@@ -65,6 +72,22 @@ export default async function PayrollPeriodDetailPage({
           </>
         }
       />
+
+      {/* Provisional-format note for the Peoplease export. */}
+      <div
+        className="dt-card"
+        style={{
+          padding: "10px 18px",
+          marginBottom: 16,
+          borderLeft: "3px solid var(--dt-gold)",
+          fontSize: 12,
+          color: "var(--dt-warm-600, #5a4a3a)",
+        }}
+      >
+        <strong>Export for Peoplease</strong> builds a payroll CSV (name, PEO ID,
+        company, hours, rate, gross) from this period’s timecards.{" "}
+        {PEOPLEASE_EXPORT_PROVISIONAL_NOTE}
+      </div>
 
       {/* Header card */}
       <div

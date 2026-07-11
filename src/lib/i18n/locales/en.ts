@@ -30,7 +30,11 @@ export const en = {
     inbox: "Inbox",
     applications: "Applicant Tracking",
     calls: "Inbound Calls",
+    ats: "ATS",
+    // Retained for the /candidates topbar + any deep links; the sidebar now
+    // uses the single `ats` label above (Change 2).
     candidates: "Candidates",
+    talentPool: "Talent Pool",
     recruiters: "Recruiter Tabs",
     positions: "Open Positions",
     jobPostings: "Job Postings",
@@ -165,8 +169,6 @@ export const en = {
     kpiInAtsSub: "candidates active",
     kpiPendingTimecards: "Pending Timecards",
     kpiPendingTimecardsSub: "awaiting approval",
-    kpiOpenConversations: "Open Conversations",
-    kpiUnreadSub: "unread",
     kpiOpenInvoices: "Open Invoices",
     kpiOverdue: "Overdue",
     kpiOldestDaysSuffix: "d oldest",
@@ -207,6 +209,22 @@ export const en = {
     tblEstWeeklyBilling: "Est. Weekly Billing",
     noClients: "No clients yet.",
     days: "d",
+    kpiInboundLeads: "New Employer Leads",
+    kpiInboundLeadsSub: "from the website · untriaged",
+    inboundLeadsTitle: "Inbound Employer Leads",
+    inboundLeadsSub: "Staffing requests submitted on the website",
+    inboundLeadsOpenBtn: "Open pipeline →",
+    inboundLeadsNew: "new",
+    noInboundLeads: "No inbound employer leads yet.",
+    workersShort: "workers",
+
+    // New Applicants This Month tile + Applicants Per Month chart (Change 3).
+    kpiNewApplicants: "New Applicants This Month",
+    kpiNewApplicantsSameAs: "same as last month",
+    kpiNewApplicantsVsLast: "vs last month",
+    applicantsPerMonthTitle: "Applicants Per Month",
+    applicantsPerMonthSub: "Website · Indeed · Facebook · LinkedIn · Instagram — this year",
+    applicantsPerMonthOpen: "Open Applicant Tracking",
   },
 
   // Module-level (primary page) headings + chrome

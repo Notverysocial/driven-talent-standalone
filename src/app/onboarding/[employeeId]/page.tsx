@@ -24,6 +24,8 @@ import { PeopleaseFormsPanel } from "./PeopleaseFormsPanel";
 import { WelcomeLetter } from "./WelcomeLetter";
 import { EsignaturePanel } from "./EsignaturePanel";
 import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
+import { CandidateNotes } from "@/components/CandidateNotes";
+import { listNotes } from "@/lib/candidate-notes.server";
 import {
   addChecklistItem,
   addDocument,
@@ -62,6 +64,10 @@ export default async function OnboardingDetailPage({
   const progress = calcProgress(checklist);
   const orderByKey = new Map(ONBOARDING_TEMPLATE.map((t) => [t.key, t.ord]));
   const generated = generateWelcomeLetterBody(employee, primaryAssignment);
+
+  // Shared threaded notes log — same component reused on the onboarding record
+  // (Estefany 2026-07-06). subject_type "onboarding", keyed by employee id.
+  const onboardingNotes = await listNotes("onboarding", employeeId);
 
   // Calendly — book the new-hire orientation, prefilled with the employee's
   // name/email so the booking reconciles back to them via the webhook.
@@ -387,6 +393,18 @@ export default async function OnboardingDetailPage({
           </div>
         </form>
       </div>
+      <div className="dt-card" style={{ marginTop: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Notes</h3>
+            <div className="sub">Authored + timestamped · @mention to tag · newest first</div>
+          </div>
+        </div>
+        <div style={{ padding: "18px 24px 22px" }}>
+          <CandidateNotes subjectType="onboarding" subjectId={employee.id} notes={onboardingNotes} />
+        </div>
+      </div>
+
     </Shell>
   );
 }
