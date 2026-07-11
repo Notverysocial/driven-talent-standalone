@@ -51,6 +51,7 @@ const PROVIDER_DESCRIPTION: Record<IntegrationProvider, string> = {
   uattend: "Time-clock punches sync to Timecards + Attendance.",
   pandadoc: "E-sign documents flow into Onboarding + Legal.",
   calendly: "Booked interviews land in the internal Calendar.",
+  prismhr: "PrismHR/Peoplease PEO — payroll + employee status (scaffold; awaiting credentials).",
 };
 
 function fmtTime(ts: string | null): string {

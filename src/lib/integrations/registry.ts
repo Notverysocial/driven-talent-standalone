@@ -51,5 +51,7 @@ import { pandadocClient } from "./providers/pandadoc";
 registerClient("pandadoc", pandadocClient);
 import { calendlyClient } from "./providers/calendly";
 registerClient("calendly", calendlyClient);
+import { prismhrClient } from "./providers/prismhr";
+registerClient("prismhr", prismhrClient);
 
 export { ALL_PROVIDERS };

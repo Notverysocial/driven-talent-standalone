@@ -9,7 +9,8 @@ export type IntegrationProvider =
   | "indeed"
   | "uattend"
   | "pandadoc"
-  | "calendly";
+  | "calendly"
+  | "prismhr";
 
 export type IntegrationStatus =
   | "disconnected"
@@ -76,6 +77,9 @@ export const INTEGRATION_AUTH_MODE: Record<
   uattend: "api_key",
   pandadoc: "oauth",
   calendly: "oauth",
+  // PrismHR/Peoplease uses a provisioned web-service user credential (pasted as
+  // an API key). Scaffold only — see src/lib/prismhr/.
+  prismhr: "api_key",
 };
 
 // Default per-provider sync intervals in minutes. The cron handler
@@ -91,6 +95,7 @@ export const INTEGRATION_DEFAULT_INTERVAL_MIN: Record<
   uattend: 30,
   pandadoc: 30,
   calendly: 15,
+  prismhr: 60,
 };
 
 export const ALL_PROVIDERS: IntegrationProvider[] = [
@@ -99,6 +104,7 @@ export const ALL_PROVIDERS: IntegrationProvider[] = [
   "uattend",
   "pandadoc",
   "calendly",
+  "prismhr",
 ];
 
 export function isIntegrationProvider(
