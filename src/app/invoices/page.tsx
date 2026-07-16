@@ -38,6 +38,30 @@ export default async function InvoicesListPage() {
         }
       />
 
+      {/* How invoices are produced — makes the Time Cards → approve → generate
+          flow explicit so edits that haven't been generated yet aren't a mystery. */}
+      <div
+        className="dt-card"
+        style={{
+          padding: "10px 18px",
+          marginBottom: 16,
+          fontSize: 12,
+          color: "var(--dt-warm-700, #5a4a3a)",
+          lineHeight: 1.5,
+        }}
+      >
+        Invoices are generated from <strong>approved</strong>{" "}
+        <Link href="/timecards" style={{ color: "var(--dt-gold-deep)" }}>
+          time cards
+        </Link>
+        . To create or update them: approve the time cards, open the matching{" "}
+        <Link href="/payroll" style={{ color: "var(--dt-gold-deep)" }}>
+          pay period
+        </Link>
+        , and run Generate (or Refresh Draft Invoices). Editing a time card alone
+        does not change an invoice, and invoices already sent are never overwritten.
+      </div>
+
       <div
         style={{
           display: "grid",

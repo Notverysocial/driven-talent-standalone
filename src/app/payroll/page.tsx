@@ -11,6 +11,7 @@ import {
   fmtMoney,
   fmtPeriodRange,
 } from "@/lib/payroll";
+import { startOfWeek } from "@/lib/timecards";
 import { createPayrollPeriod } from "./actions";
 import { getServerDictionary } from "@/lib/i18n/server";
 
@@ -24,15 +25,24 @@ export default async function PayrollPage() {
     periodSummaries(),
   ]);
 
-  // Default for new-period form: next Mon..Sun after the most recent period.
-  let nextStart = new Date();
-  if (summaries.length > 0) {
+  // The Mon..Sun week that contains today — used for the "create this week"
+  // one-click CTA and to prefill the new-period form when nothing covers today.
+  const thisWeekStart = startOfWeek(new Date());
+  const thisWeekEnd = new Date(thisWeekStart);
+  thisWeekEnd.setDate(thisWeekEnd.getDate() + 6);
+
+  // Default for the new-period form. When no period covers today, prefill to
+  // the current week so the operator can just click Create. Otherwise default
+  // to the next Mon..Sun after the most recent period.
+  let nextStart: Date;
+  if (!current) {
+    nextStart = new Date(thisWeekStart);
+  } else if (summaries.length > 0) {
     const latest = new Date(summaries[0].period.end_date + "T00:00:00");
     latest.setDate(latest.getDate() + 1);
     nextStart = latest;
   } else {
-    const day = nextStart.getDay() === 0 ? 7 : nextStart.getDay();
-    nextStart.setDate(nextStart.getDate() - (day - 1));
+    nextStart = new Date(thisWeekStart);
   }
   const nextEnd = new Date(nextStart);
   nextEnd.setDate(nextEnd.getDate() + 6);
@@ -85,10 +95,48 @@ export default async function PayrollPage() {
         </div>
       ) : (
         <div
-          className="dt-card"
-          style={{ padding: "20px 24px", marginBottom: 22, color: "var(--dt-warm-500)", fontStyle: "italic" }}
+          className="dt-card gold-edge"
+          style={{
+            padding: "22px 26px",
+            marginBottom: 22,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 18,
+          }}
         >
-          No active pay period covers today. Create one below.
+          <div>
+            <div
+              className="tiny muted"
+              style={{ letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 400 }}
+            >
+              Current Pay Period
+            </div>
+            <div
+              style={{
+                fontFamily: "var(--dt-display)",
+                fontSize: 20,
+                fontWeight: 300,
+                marginTop: 4,
+              }}
+            >
+              No pay period covers this week yet
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--dt-warm-500)", marginTop: 6 }}>
+              Create the period for{" "}
+              {fmtPeriodRange(isoDate(thisWeekStart), isoDate(thisWeekEnd))} to start
+              entering time cards and building invoices.
+            </div>
+          </div>
+          {/* One-click: create the current week and jump straight into it. */}
+          <form action={createPayrollPeriod}>
+            <input type="hidden" name="start_date" value={isoDate(thisWeekStart)} />
+            <input type="hidden" name="end_date" value={isoDate(thisWeekEnd)} />
+            <button type="submit" className="dt-btn dt-btn-gold">
+              <span>+ Create this week&apos;s pay period</span>
+            </button>
+          </form>
         </div>
       )}
 

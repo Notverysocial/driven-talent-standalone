@@ -2,12 +2,24 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { listAssignmentsForTimecards } from "@/lib/timecards.server";
-import { isoWeekStart } from "@/lib/timecards";
+import { isoWeekStart, startOfWeek } from "@/lib/timecards";
 import { createOrOpenTimecard } from "../actions";
 
-export default async function NewTimecardPage() {
+export default async function NewTimecardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>;
+}) {
+  const sp = await searchParams;
   const assignments = await listAssignmentsForTimecards();
-  const thisWeek = isoWeekStart();
+  // Prefill the week from ?week= (snapped to Monday) so the "Add one" link from
+  // a specific week lands on that week; default to the current week otherwise.
+  // Ignore an unparseable value so a bad query string can't break the page.
+  const parsedWeek = sp.week ? new Date(sp.week + "T00:00:00") : null;
+  const thisWeek =
+    parsedWeek && !Number.isNaN(parsedWeek.getTime())
+      ? startOfWeek(parsedWeek).toISOString().slice(0, 10)
+      : isoWeekStart();
 
   return (
     <Shell>

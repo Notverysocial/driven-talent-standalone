@@ -5,18 +5,46 @@ import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import { listTimecards } from "@/lib/timecards.server";
 import type { ResolvedTimecard } from "@/lib/timecards.server";
-import { TIMECARD_STATUSES, fmtWeekRange } from "@/lib/timecards";
+import { TIMECARD_STATUSES, fmtWeekRange, isoWeekStart, startOfWeek } from "@/lib/timecards";
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { getIntegration } from "@/lib/integrations/db";
 
-export default async function TimecardsListPage() {
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+function shiftWeek(weekStart: string, deltaWeeks: number): string {
+  const d = new Date(weekStart + "T00:00:00");
+  d.setDate(d.getDate() + deltaWeeks * 7);
+  return isoDate(d);
+}
+// Snap an arbitrary ?week= value to its Monday; ignore unparseable input so a
+// bad query string can never 500 the page.
+function resolveWeek(raw: string | undefined): string {
+  if (!raw) return isoWeekStart();
+  const d = new Date(raw + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return isoWeekStart();
+  return isoDate(startOfWeek(d));
+}
+
+export default async function TimecardsListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string; all?: string }>;
+}) {
+  const sp = await searchParams;
+
+  // View mode: a single week (default = current week) or all weeks. When a
+  // week is passed we snap it to that week's Monday so any date works.
+  const showAll = sp.all === "1";
+  const selectedWeek = showAll ? null : resolveWeek(sp.week);
+
   // Skip timecards whose employee or client join came back null (orphaned FK
   // or RLS-hidden parent). Accessing .full_name / .name on those throws during
   // render. Filtering here keeps the KPI counts and the tables consistent.
-  const all = (await listTimecards()).filter(
-    (t): t is ResolvedTimecard => Boolean(t.employees && t.clients),
-  );
+  const all = (
+    await listTimecards(selectedWeek ? { weekStart: selectedWeek } : undefined)
+  ).filter((t): t is ResolvedTimecard => Boolean(t.employees && t.clients));
 
   // uAttend connection status — shown as a thin banner so payroll
   // sees at a glance whether punches are flowing.  We swallow errors
@@ -54,6 +82,98 @@ export default async function TimecardsListPage() {
       />
 
       <UAttendStatus integration={uattend} />
+
+      {/* Week selector: default is the current week; prev/next step by a week,
+          the date box jumps to any week, and "All weeks" shows everything. */}
+      <div
+        className="dt-card"
+        style={{
+          padding: "12px 18px",
+          marginBottom: 14,
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        {selectedWeek ? (
+          <>
+            <Link
+              href={`/timecards?week=${shiftWeek(selectedWeek, -1)}`}
+              className="dt-btn tiny"
+              aria-label="Previous week"
+            >
+              ← Prev
+            </Link>
+            <div style={{ minWidth: 150, textAlign: "center", fontWeight: 400 }}>
+              {fmtWeekRange(selectedWeek)}
+              {selectedWeek === isoWeekStart() && (
+                <span style={{ marginLeft: 6, fontSize: 10.5, color: "var(--dt-gold-deep)" }}>
+                  (this week)
+                </span>
+              )}
+            </div>
+            <Link
+              href={`/timecards?week=${shiftWeek(selectedWeek, 1)}`}
+              className="dt-btn tiny"
+              aria-label="Next week"
+            >
+              Next →
+            </Link>
+            <form method="get" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="date"
+                name="week"
+                defaultValue={selectedWeek}
+                className="dt-filter-input"
+                style={{ fontSize: 12 }}
+              />
+              <button type="submit" className="dt-btn tiny">
+                Go
+              </button>
+            </form>
+            <Link
+              href="/timecards?all=1"
+              className="dt-btn tiny"
+              style={{ marginLeft: "auto" }}
+            >
+              View all weeks
+            </Link>
+          </>
+        ) : (
+          <>
+            <div style={{ fontWeight: 400 }}>Showing all weeks</div>
+            <Link href="/timecards" className="dt-btn tiny" style={{ marginLeft: "auto" }}>
+              Back to this week
+            </Link>
+          </>
+        )}
+      </div>
+
+      {/* How invoices get built — plain-language flow so an unchanged Invoices
+          page after editing hours doesn't read as a bug. */}
+      <div
+        className="dt-card"
+        style={{
+          padding: "10px 18px",
+          marginBottom: 14,
+          fontSize: 12,
+          color: "var(--dt-warm-700, #5a4a3a)",
+          lineHeight: 1.5,
+        }}
+      >
+        Invoices are built from <strong>approved</strong> time cards. Editing a time card
+        does not change invoices on its own. To update invoices: approve the time cards,
+        then open the matching{" "}
+        <Link href="/payroll" style={{ color: "var(--dt-gold-deep)" }}>
+          pay period
+        </Link>{" "}
+        and run Generate. See{" "}
+        <Link href="/invoices" style={{ color: "var(--dt-gold-deep)" }}>
+          Invoices
+        </Link>
+        .
+      </div>
 
       <div
         style={{
@@ -204,10 +324,31 @@ export default async function TimecardsListPage() {
           className="dt-card"
           style={{ padding: "48px 32px", textAlign: "center", color: "var(--dt-warm-500)" }}
         >
-          No timecards yet.{" "}
-          <Link href="/timecards/new" style={{ color: "var(--dt-gold-deep)" }}>
-            Create the first one →
-          </Link>
+          {selectedWeek ? (
+            <>
+              No time cards for the week of {fmtWeekRange(selectedWeek)} yet.{" "}
+              <Link
+                href={`/timecards/new?week=${selectedWeek}`}
+                style={{ color: "var(--dt-gold-deep)" }}
+              >
+                Add one →
+              </Link>
+              <div style={{ marginTop: 10, fontSize: 12 }}>
+                Looking for another week? Use the arrows above or{" "}
+                <Link href="/timecards?all=1" style={{ color: "var(--dt-gold-deep)" }}>
+                  view all weeks
+                </Link>
+                .
+              </div>
+            </>
+          ) : (
+            <>
+              No timecards yet.{" "}
+              <Link href="/timecards/new" style={{ color: "var(--dt-gold-deep)" }}>
+                Create the first one →
+              </Link>
+            </>
+          )}
         </div>
       )}
     </Shell>

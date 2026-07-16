@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   autoOvertimeAdjustment,
   emptyDays,
+  normalizeDays,
   rollupTotals,
   startOfWeek,
   type DayKey,
@@ -102,7 +103,10 @@ export async function updateDay(
   }
 
   const days = (row.days as TimecardDays) ?? emptyDays();
-  const next = { ...days, [day]: { ...(days[day] ?? { regular: 0, overtime: 0, holiday: 0, in: null, out: null, locked: false }), ...patch } };
+  const merged = { ...days, [day]: { ...(days[day] ?? { regular: 0, overtime: 0, holiday: 0, in: null, out: null, locked: false }), ...patch } };
+  // Recompute regular hours net of the unpaid lunch so the stored grid and the
+  // rolled-up columns stay consistent regardless of what the client sent.
+  const next = normalizeDays(merged);
   const totals = rollupTotals(next);
 
   const { error } = await supabase
@@ -130,7 +134,9 @@ export async function submitTimecard(timecardId: string) {
     .single();
   if (getErr) throw new Error(getErr.message);
 
-  const adjusted = autoOvertimeAdjustment(row.days as TimecardDays);
+  // Normalize (lunch-deduct) before the >40h auto-OT split so the split works
+  // off true worked hours, then normalize again so the saved grid is consistent.
+  const adjusted = normalizeDays(autoOvertimeAdjustment(normalizeDays(row.days as TimecardDays)));
   const totals = rollupTotals(adjusted);
 
   const { error } = await supabase
