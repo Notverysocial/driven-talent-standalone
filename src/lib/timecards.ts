@@ -1,6 +1,6 @@
 // Client-safe timecard helpers — pure functions, no Supabase imports.
 
-import type { TimecardDays, TimecardStatus } from "./supabase/types";
+import type { TimecardDay, TimecardDays, TimecardStatus } from "./supabase/types";
 
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 export type DayKey = typeof DAYS[number];
@@ -30,16 +30,106 @@ export function emptyDays(): TimecardDays {
   return d;
 }
 
+// ---------------------------------------------------------------------------
+// Lunch / worked-hours computation
+//
+// When a day has both an In and an Out punch, worked hours are computed from
+// the span minus an unpaid lunch break (default 30 min, editable per day).
+// Regular hours are then derived as worked − overtime − holiday, so the daily
+// total always equals worked hours net of lunch. Days with no In/Out fall back
+// to the manually entered `regular` value (backward compatible).
+// ---------------------------------------------------------------------------
+
+export const LUNCH_DEFAULT_MIN = 30;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+// Minutes since midnight from an "HH:MM" string, or null if unparseable.
+export function hmToMinutes(t: string | null | undefined): number | null {
+  if (!t) return null;
+  const m = /^(\d{1,2}):(\d{2})$/.exec(t.trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+// The unpaid lunch (in minutes) for a day: the day's own value, or the
+// standard default when unset. Never negative.
+export function dayLunchMin(d: { lunch_min?: number } | undefined): number {
+  const v = d?.lunch_min;
+  if (v == null || !Number.isFinite(Number(v))) return LUNCH_DEFAULT_MIN;
+  return Math.max(0, Number(v));
+}
+
+// Total minutes between In and Out (handles a shift crossing midnight).
+// Returns null when either punch is missing/unparseable.
+export function punchSpanMinutes(
+  inT: string | null | undefined,
+  outT: string | null | undefined,
+): number | null {
+  const a = hmToMinutes(inT);
+  const b = hmToMinutes(outT);
+  if (a == null || b == null) return null;
+  let span = b - a;
+  if (span < 0) span += 24 * 60; // out before in → shift crossing midnight
+  return span;
+}
+
+// Worked hours from In/Out minus the unpaid lunch. Returns null when In/Out
+// are not both parseable, signalling "fall back to manual regular hours".
+export function workedHoursFromPunch(
+  inT: string | null | undefined,
+  outT: string | null | undefined,
+  lunchMin: number,
+): number | null {
+  const span = punchSpanMinutes(inT, outT);
+  if (span == null) return null;
+  const worked = span - Math.max(0, lunchMin || 0);
+  return round2(Math.max(0, worked) / 60);
+}
+
+// Regular hours for a single day. When In/Out are present, derive from worked
+// hours (net of lunch) minus OT and holiday. Otherwise use manual `regular`.
+export function dayRegularHours(d: TimecardDay | undefined): number {
+  if (!d) return 0;
+  const worked = workedHoursFromPunch(d.in, d.out, dayLunchMin(d));
+  if (worked == null) return Math.max(0, Number(d.regular) || 0);
+  const ot = Math.max(0, Number(d.overtime) || 0);
+  const hol = Math.max(0, Number(d.holiday) || 0);
+  return round2(Math.max(0, worked - ot - hol));
+}
+
+// Return a copy of the week with each day's stored `regular` replaced by the
+// derived value, so the persisted grid and the rolled-up columns stay in sync.
+export function normalizeDays(days: TimecardDays): TimecardDays {
+  const next: TimecardDays = {};
+  for (const k of DAYS) {
+    const d = days[k];
+    if (!d) continue;
+    next[k] = { ...d, regular: dayRegularHours(d) };
+  }
+  return next;
+}
+
 export function rollupTotals(days: TimecardDays) {
   let reg = 0, ot = 0, hol = 0;
   for (const k of DAYS) {
     const d = days[k];
     if (!d) continue;
-    reg += Number(d.regular) || 0;
+    reg += dayRegularHours(d);
     ot  += Number(d.overtime) || 0;
     hol += Number(d.holiday) || 0;
   }
-  return { reg_hours: reg, ot_hours: ot, holiday_hours: hol, total: reg + ot + hol };
+  return {
+    reg_hours: round2(reg),
+    ot_hours: round2(ot),
+    holiday_hours: round2(hol),
+    total: round2(reg + ot + hol),
+  };
 }
 
 // Federal-style auto-OT: if regular total > 40, push the excess into OT before

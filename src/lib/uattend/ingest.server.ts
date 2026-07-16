@@ -1,6 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { DAYS, emptyDays, rollupTotals, type DayKey } from "@/lib/timecards";
+import { DAYS, emptyDays, punchSpanMinutes, rollupTotals, type DayKey } from "@/lib/timecards";
 import { getUattendAdapter } from "./adapter.server";
 import { getIntegration } from "@/lib/integrations/db";
 import { mondayOf, type UattendEmployee } from "./contract";
@@ -157,13 +157,22 @@ export async function importUattendTimecards(opts: {
 
     const days = emptyDays();
     for (const [dk, v] of agg.byDay) {
+      const reg = Math.round(v.reg * 100) / 100;
+      // The clock's Regular paycode is authoritative (already excludes lunch).
+      // When we also have In/Out, store the unpaid lunch as the leftover of the
+      // In→Out span minus worked hours, so the grid's auto-derivation reproduces
+      // exactly `reg` instead of naively subtracting the 30-min default.
+      const span = punchSpanMinutes(v.in, v.out);
+      const lunchMin =
+        span != null ? Math.max(0, Math.round(span - reg * 60)) : undefined;
       days[dk] = {
-        regular: Math.round(v.reg * 100) / 100,
+        regular: reg,
         overtime: 0,
         holiday: 0,
         in: v.in,
         out: v.out,
         locked: false,
+        ...(lunchMin != null ? { lunch_min: lunchMin } : {}),
       };
     }
     const totals = rollupTotals(days);

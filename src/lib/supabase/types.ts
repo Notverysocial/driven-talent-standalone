@@ -311,6 +311,10 @@ export type TimecardDay = {
   in: string | null;
   out: string | null;
   locked: boolean;
+  // Unpaid lunch break in minutes, deducted from the in→out span when both
+  // punches are present. Undefined means "use the standard default" (30 min)
+  // so existing rows keep working without a backfill.
+  lunch_min?: number;
 };
 
 export type TimecardDays = Partial<

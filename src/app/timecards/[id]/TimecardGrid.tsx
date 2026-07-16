@@ -1,8 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { DAYS, DAY_LABEL, dayDate, type DayKey } from "@/lib/timecards";
-import type { TimecardDays } from "@/lib/supabase/types";
+import {
+  DAYS,
+  DAY_LABEL,
+  dayDate,
+  dayLunchMin,
+  dayRegularHours,
+  workedHoursFromPunch,
+  LUNCH_DEFAULT_MIN,
+  type DayKey,
+} from "@/lib/timecards";
+import type { TimecardDay, TimecardDays } from "@/lib/supabase/types";
 import { updateDay } from "../actions";
 
 type CellType = "regular" | "overtime" | "holiday";
@@ -70,13 +79,46 @@ export function TimecardGrid({
     });
   };
 
+  const onLunchChange = (day: DayKey, raw: string) => {
+    const v = raw === "" ? LUNCH_DEFAULT_MIN : Number(raw);
+    if (Number.isNaN(v)) return;
+    setDays((prev) => ({
+      ...prev,
+      [day]: {
+        ...(prev[day] ?? { regular: 0, overtime: 0, holiday: 0, in: null, out: null, locked: false }),
+        lunch_min: Math.max(0, v),
+      },
+    }));
+  };
+
+  const commitLunch = (day: DayKey, raw: string) => {
+    if (!editable) return;
+    const v = raw === "" ? LUNCH_DEFAULT_MIN : Math.max(0, Number(raw));
+    if (Number.isNaN(v)) return;
+    if (v === dayLunchMin(initialDays[day])) return;
+    startTransition(async () => {
+      await updateDay(timecardId, day, { lunch_min: v });
+    });
+  };
+
   const rows: { type: CellType; label: string; chip: string }[] = [
     { type: "regular", label: "Regular", chip: "var(--dt-warm-300)" },
     { type: "overtime", label: "Overtime", chip: "var(--dt-gold)" },
     { type: "holiday", label: "Holiday", chip: "var(--dt-success)" },
   ];
 
-  const total = (t: CellType) => DAYS.reduce((s, k) => s + (Number(days[k]?.[t]) || 0), 0);
+  // A day whose Regular hours are auto-computed from In/Out (net of lunch).
+  const isAutoDay = (d: TimecardDay | undefined): boolean =>
+    workedHoursFromPunch(d?.in, d?.out, dayLunchMin(d)) != null;
+
+  // Displayed value per cell — Regular is derived when In/Out are present.
+  const cellValue = (k: DayKey, t: CellType): number => {
+    const d = days[k];
+    if (t === "regular") return dayRegularHours(d);
+    return Number(d?.[t]) || 0;
+  };
+
+  const total = (t: CellType) => DAYS.reduce((s, k) => s + cellValue(k, t), 0);
 
   return (
     <div
@@ -186,8 +228,40 @@ export function TimecardGrid({
                 {row.label}
               </div>
               {DAYS.map((k) => {
-                const v = Number(days[k]?.[row.type]) || 0;
+                const v = cellValue(k, row.type);
                 const empty = v === 0;
+                // Regular is auto-derived (read-only) when the day has In+Out;
+                // the operator drives it via the In/Out/Lunch fields instead.
+                const auto = row.type === "regular" && isAutoDay(days[k]);
+                if (auto) {
+                  return (
+                    <div
+                      key={k}
+                      style={{ padding: 10, borderLeft: "1px solid var(--dt-warm-100)" }}
+                    >
+                      <div
+                        className="tab-num"
+                        title="Auto: worked hours from In/Out, minus the unpaid lunch"
+                        style={{
+                          width: "100%",
+                          padding: "10px 12px",
+                          background: "var(--dt-warm-50)",
+                          border: "1px dashed var(--dt-warm-150)",
+                          textAlign: "center",
+                          fontFamily: "var(--dt-mono)",
+                          fontSize: 14,
+                          fontWeight: 400,
+                          color: empty ? "var(--dt-warm-300)" : CELL_FG.regular,
+                        }}
+                      >
+                        {empty ? "—" : v}
+                        <span style={{ fontSize: 8.5, letterSpacing: "0.1em", color: "var(--dt-warm-400)", display: "block", marginTop: 1 }}>
+                          AUTO
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <div
                     key={k}
@@ -254,9 +328,11 @@ export function TimecardGrid({
                 fontWeight: 400,
               }}
             >
-              In · Out
+              In · Out · Lunch
             </div>
-            {DAYS.map((k) => (
+            {DAYS.map((k) => {
+              const auto = isAutoDay(days[k]);
+              return (
               <div
                 key={k}
                 style={{ padding: "8px 4px", textAlign: "center", borderLeft: "1px solid var(--dt-warm-100)" }}
@@ -298,8 +374,47 @@ export function TimecardGrid({
                     marginTop: 2,
                   }}
                 />
+                <div
+                  title="Unpaid lunch (minutes) deducted from In→Out. Applies only when both punches are set."
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 2,
+                    marginTop: 3,
+                    opacity: auto ? 1 : 0.45,
+                  }}
+                >
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    step="5"
+                    value={days[k]?.lunch_min ?? LUNCH_DEFAULT_MIN}
+                    onChange={(e) => onLunchChange(k, e.target.value)}
+                    onBlur={(e) => commitLunch(k, e.target.value)}
+                    disabled={!editable}
+                    aria-label={`Lunch minutes for ${DAY_LABEL[k]}`}
+                    className="tab-num"
+                    style={{
+                      width: 34,
+                      fontSize: 9.5,
+                      fontFamily: "var(--dt-mono)",
+                      background: "var(--dt-white)",
+                      border: "1px solid var(--dt-warm-150)",
+                      color: "var(--dt-warm-700)",
+                      outline: "none",
+                      textAlign: "center",
+                      padding: "1px 2px",
+                    }}
+                  />
+                  <span style={{ fontSize: 8, color: "var(--dt-warm-400)", letterSpacing: "0.06em" }}>
+                    LUNCH
+                  </span>
+                </div>
               </div>
-            ))}
+              );
+            })}
             <div
               style={{
                 borderLeft: "1px solid var(--dt-warm-150)",
@@ -308,6 +423,19 @@ export function TimecardGrid({
             />
           </div>
         </div>
+      </div>
+      <div
+        style={{
+          padding: "10px 18px",
+          borderTop: "1px solid var(--dt-warm-100)",
+          fontSize: 11,
+          color: "var(--dt-warm-500)",
+          lineHeight: 1.5,
+        }}
+      >
+        Enter In and Out for a day and Regular hours are calculated automatically,
+        minus the unpaid lunch shown (default {LUNCH_DEFAULT_MIN} minutes, editable per day).
+        Leave In/Out blank to type Regular hours by hand.
       </div>
     </div>
   );
