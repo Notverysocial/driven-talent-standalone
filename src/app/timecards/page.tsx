@@ -18,6 +18,14 @@ function shiftWeek(weekStart: string, deltaWeeks: number): string {
   d.setDate(d.getDate() + deltaWeeks * 7);
   return isoDate(d);
 }
+// Snap an arbitrary ?week= value to its Monday; ignore unparseable input so a
+// bad query string can never 500 the page.
+function resolveWeek(raw: string | undefined): string {
+  if (!raw) return isoWeekStart();
+  const d = new Date(raw + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return isoWeekStart();
+  return isoDate(startOfWeek(d));
+}
 
 export default async function TimecardsListPage({
   searchParams,
@@ -29,11 +37,7 @@ export default async function TimecardsListPage({
   // View mode: a single week (default = current week) or all weeks. When a
   // week is passed we snap it to that week's Monday so any date works.
   const showAll = sp.all === "1";
-  const selectedWeek = showAll
-    ? null
-    : sp.week
-      ? isoDate(startOfWeek(new Date(sp.week + "T00:00:00")))
-      : isoWeekStart();
+  const selectedWeek = showAll ? null : resolveWeek(sp.week);
 
   // Skip timecards whose employee or client join came back null (orphaned FK
   // or RLS-hidden parent). Accessing .full_name / .name on those throws during

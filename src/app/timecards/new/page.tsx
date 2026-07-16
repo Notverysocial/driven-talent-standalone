@@ -14,9 +14,12 @@ export default async function NewTimecardPage({
   const assignments = await listAssignmentsForTimecards();
   // Prefill the week from ?week= (snapped to Monday) so the "Add one" link from
   // a specific week lands on that week; default to the current week otherwise.
-  const thisWeek = sp.week
-    ? startOfWeek(new Date(sp.week + "T00:00:00")).toISOString().slice(0, 10)
-    : isoWeekStart();
+  // Ignore an unparseable value so a bad query string can't break the page.
+  const parsedWeek = sp.week ? new Date(sp.week + "T00:00:00") : null;
+  const thisWeek =
+    parsedWeek && !Number.isNaN(parsedWeek.getTime())
+      ? startOfWeek(parsedWeek).toISOString().slice(0, 10)
+      : isoWeekStart();
 
   return (
     <Shell>
