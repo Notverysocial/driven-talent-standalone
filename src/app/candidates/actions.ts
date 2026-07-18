@@ -68,6 +68,31 @@ export async function reactivateCandidate(candidateId: string): Promise<void> {
   revalidatePath(`/candidates/${candidateId}`);
 }
 
+// Do Not Return list (card 526923b0). Flag a problem candidate so they are not
+// re-engaged: set the lifecycle to do_not_return, capture the reason, and turn
+// on do_not_send so the existing "Do Not Send" guard/banner applies too. This is
+// the CANDIDATE-side DNR (ATS), parallel to the EMPLOYEE-side DNR roster
+// (roster/actions.ts markDoNotReturn → do_not_return table). reactivateCandidate
+// is the inverse (clears the reason on the way out).
+export async function markCandidateDoNotReturn(
+  candidateId: string,
+  reason: string,
+): Promise<void> {
+  const sb = await createClient();
+  const trimmed = reason.trim();
+  const { error } = await sb
+    .from("candidates")
+    .update({
+      lifecycle_status: "do_not_return",
+      do_not_return_reason: trimmed || null,
+      do_not_send: true,
+    })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/candidates");
+  revalidatePath(`/candidates/${candidateId}`);
+}
+
 export async function createCandidate(formData: FormData) {
   const supabase = await createClient();
 
