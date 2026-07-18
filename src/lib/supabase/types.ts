@@ -27,6 +27,10 @@ export type CandidateLifecycleStatus =
   | "placed"
   | "available_for_rehire"
   | "do_not_return";
+// Candidate-level screening outcome (migration 0040, card c2ad6f4f). Distinct
+// from the pipeline `status`, the `lifecycle_status` enum, and the position-level
+// open/on_hold status. null = not yet reviewed.
+export type CandidateScreeningStatus = "approved" | "on_hold";
 export type TimecardStatus = "draft" | "submitted" | "approved" | "rejected";
 export type InvoiceStatus = "draft" | "sent" | "paid" | "overdue" | "void";
 export type OnboardingCategory =
@@ -209,6 +213,8 @@ export type Candidate = {
   recruiter: string | null;
   pandadoc_document_id: string | null;
   pandadoc_document_status: string | null;
+  // Candidate-level screening outcome (migration 0040). null = not reviewed.
+  screening_status: CandidateScreeningStatus | null;
   // Seasonal Talent Pool lifecycle layer (migration 0036).
   lifecycle_status: CandidateLifecycleStatus;
   placement_history: PlacementHistoryEntry[];
