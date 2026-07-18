@@ -20,6 +20,7 @@ import {
 import { CriterionRow } from "./CriterionRow";
 import { StatusActions } from "./StatusActions";
 import { ScreeningStatusActions } from "./ScreeningStatusActions";
+import { DoNotReturnActions } from "./DoNotReturnActions";
 import { ResumeBlock } from "./ResumeBlock";
 import { SendOnboardingDoc } from "./SendOnboardingDoc";
 import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
@@ -92,34 +93,51 @@ export default async function CandidateDetailPage({
               candidateId={cand.id}
               current={cand.screening_status}
             />
+            <DoNotReturnActions
+              candidateId={cand.id}
+              isDnr={cand.lifecycle_status === "do_not_return"}
+            />
             <StatusActions candidateId={cand.id} currentStatus={cand.status} />
           </>
         }
       />
 
-      {(cand.red_flag || cand.do_not_send) && (
-        <div
-          role="alert"
-          style={{
-            marginBottom: 16,
-            padding: "12px 16px",
-            borderRadius: 6,
-            background: "rgba(178,58,58,0.08)",
-            border: "1px solid rgba(178,58,58,0.35)",
-            color: "var(--dt-danger)",
-            fontSize: 13,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            flexWrap: "wrap",
-          }}
-        >
-          <strong style={{ letterSpacing: "0.04em", textTransform: "uppercase", fontSize: 11 }}>
-            {cand.do_not_send ? "Do Not Send" : "Red Flag"}
-          </strong>
-          <span>{cand.red_flag_reason ?? "Flagged by a recruiter."}</span>
-        </div>
-      )}
+      {(() => {
+        const isDnr = cand.lifecycle_status === "do_not_return";
+        if (!isDnr && !cand.red_flag && !cand.do_not_send) return null;
+        // Do Not Return is the strongest flag and wins the banner label + reason.
+        const label = isDnr
+          ? "Do Not Return"
+          : cand.do_not_send
+            ? "Do Not Send"
+            : "Red Flag";
+        const reason = isDnr
+          ? cand.do_not_return_reason
+          : cand.red_flag_reason;
+        return (
+          <div
+            role="alert"
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              borderRadius: 6,
+              background: "rgba(178,58,58,0.08)",
+              border: "1px solid rgba(178,58,58,0.35)",
+              color: "var(--dt-danger)",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            <strong style={{ letterSpacing: "0.04em", textTransform: "uppercase", fontSize: 11 }}>
+              {label}
+            </strong>
+            <span>{reason ?? "Flagged by a recruiter."}</span>
+          </div>
+        );
+      })()}
       <div
         className="candidate-grid"
         style={{

@@ -349,6 +349,16 @@ export default async function CandidatesListPage({
                                 {c.city ?? "—"}
                                 {c.experience_years ? ` · ${c.experience_years} yrs` : ""}
                               </div>
+                              {c.lifecycle_status === "do_not_return" &&
+                                c.do_not_return_reason && (
+                                  <div
+                                    className="meta"
+                                    style={{ color: "var(--dt-danger)", marginTop: 2 }}
+                                    title={c.do_not_return_reason}
+                                  >
+                                    ⛔ {c.do_not_return_reason}
+                                  </div>
+                                )}
                             </div>
                           </Link>
                         </td>
