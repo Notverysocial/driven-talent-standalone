@@ -27,6 +27,7 @@ import {
   updateIntegrationStatus,
   clearIntegrationTokens,
 } from "../db";
+import { describeError } from "../describe-error";
 import type { IntegrationClient, IntegrationRow } from "../types";
 
 const FEED_URL =
@@ -127,7 +128,7 @@ class IndeedClient implements IntegrationClient {
 
       return { ok: true, count: stats.job_count };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "indeed_sync_threw";
+      const msg = describeError(e, "indeed_sync_threw");
       await updateIntegrationStatus("indeed", {
         config: {
           ...configPatch,
@@ -304,7 +305,7 @@ class IndeedClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "disconnect_failed",
+        error: describeError(e, "disconnect_failed"),
       };
     }
   }

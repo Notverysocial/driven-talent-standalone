@@ -1,10 +1,10 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import {
-  deriveIntegrationHealth,
-  type IntegrationHealth,
-  type IntegrationHealthInput,
-} from "./health";
+  deriveIntegrationTruth,
+  type IntegrationTruth,
+  type IntegrationTruthInput,
+} from "./integration-truth";
 import type { IntegrationProvider, IntegrationRow, IntegrationStatus } from "./types";
 
 // Gathers the REAL evidence behind each integration's health.
@@ -102,7 +102,7 @@ async function eventCountFor(
   }
 }
 
-export type IntegrationHealthRow = IntegrationHealth & {
+export type IntegrationHealthRow = IntegrationTruth & {
   label: string;
   eventLabel: string;
   eventCount: number | null;
@@ -116,14 +116,14 @@ export async function getIntegrationHealth(): Promise<IntegrationHealthRow[]> {
     const { data } = await supabase.from("integrations").select("*");
     const rows = (data ?? []) as IntegrationRow[];
     const byProvider = new Map(rows.map((r) => [r.provider, r]));
-    const nowMs = Date.now();
+    const now = new Date();
 
     const out: IntegrationHealthRow[] = [];
     for (const provider of ALL_PROVIDERS) {
       const row = byProvider.get(provider);
       const eventCount = await eventCountFor(supabase, provider);
 
-      const input: IntegrationHealthInput = {
+      const input: IntegrationTruthInput = {
         provider,
         status: (row?.status ?? "disconnected") as IntegrationStatus,
         // Booleans only — token values never leave the row object.
@@ -134,11 +134,11 @@ export async function getIntegrationHealth(): Promise<IntegrationHealthRow[]> {
         lastSyncAt: row?.last_sync_at ?? null,
         lastError: row?.last_error ?? null,
         eventCount,
-        nowMs,
+        now,
       };
 
       out.push({
-        ...deriveIntegrationHealth(input),
+        ...deriveIntegrationTruth(input),
         label: PROVIDER_LABEL[provider],
         eventLabel: EVENT_LABEL[provider],
         eventCount,

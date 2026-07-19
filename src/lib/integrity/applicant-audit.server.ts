@@ -2,7 +2,7 @@ import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { groupDuplicateCandidates, summarizeDuplicates } from "@/lib/duplicates";
 import { getIntegrationHealth } from "@/lib/integrations/health.server";
-import { summarizeIntegrationHealth } from "@/lib/integrations/health";
+import { summarizeIntegrationTruth } from "@/lib/integrations/integration-truth";
 
 // Recurring data-integrity audit for the applicant pipeline (card 1322c60e).
 //
@@ -150,7 +150,7 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
   // expired token with zero bookings ever, both while reading "connected" —
   // this is the check that would have caught them.
   const health = await getIntegrationHealth();
-  const hs = summarizeIntegrationHealth(health);
+  const hs = summarizeIntegrationTruth(health);
   const integrations = {
     ...hs,
     broken: health.filter((h) => h.level === "alarm").map((h) => h.provider),

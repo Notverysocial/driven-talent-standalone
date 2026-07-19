@@ -1,6 +1,7 @@
 import "server-only";
 import * as Sentry from "@sentry/nextjs";
 import { createClient } from "./supabase/server";
+import { resolveMarkup, type MarkupSource } from "./markup";
 import type {
   Client,
   ClientContact,
@@ -293,6 +294,14 @@ export type ClientMarginAssignment = {
   hourly_rate: number;
   bill_rate: number;
   bill_rate_inferred: boolean;
+  /** The per-employee markup as stored (null = not set, falls back). */
+  markup_percent: number | null;
+  /** Effective markup after the fallback chain; null when pay rate is 0. */
+  effective_markup_pct: number | null;
+  markup_source: MarkupSource;
+  markup_label: string;
+  /** True when nothing is configured anywhere and we are billing at cost. */
+  markup_missing: boolean;
   hourly_gross: number;
   marginPct: number | null;
 };
@@ -333,7 +342,7 @@ export async function getClientMarginDetail(
     supabase
       .from("employee_assignments")
       .select(
-        "id, employee_id, position, department, shift, hourly_rate, bill_rate, active, employees ( full_name )",
+        "id, employee_id, position, department, shift, hourly_rate, bill_rate, markup_percent, active, employees ( full_name )",
       )
       .eq("client_id", client.id)
       .eq("active", true)
@@ -412,6 +421,7 @@ export async function getClientMarginDetail(
     shift: string | null;
     hourly_rate: number;
     bill_rate: number | null;
+    markup_percent: number | null;
     active: boolean;
     employees: { full_name: string } | null;
   };
@@ -419,8 +429,16 @@ export async function getClientMarginDetail(
 
   const assignments: ClientMarginAssignment[] = assignmentRows.map((a) => {
     const pay = Number(a.hourly_rate ?? 0);
-    const fallbackBill = pay * (1 + Number(client.service_fee_pct ?? 0) / 100);
-    const bill = a.bill_rate != null ? Number(a.bill_rate) : fallbackBill;
+    // Same resolver the invoicing engine uses, so this roster shows the rate
+    // that will actually be billed rather than a second, drifting copy of the
+    // fallback rule.
+    const markup = resolveMarkup({
+      payRate: pay,
+      assignmentBillRate: a.bill_rate,
+      employeeMarkupPct: a.markup_percent,
+      clientMarkupPct: client.service_fee_pct,
+    });
+    const bill = markup.billRate;
     const gross = bill - pay;
     return {
       id: a.id,
@@ -431,7 +449,12 @@ export async function getClientMarginDetail(
       shift: a.shift,
       hourly_rate: pay,
       bill_rate: bill,
-      bill_rate_inferred: a.bill_rate == null,
+      bill_rate_inferred: markup.source !== "assignment_bill_rate",
+      markup_percent: a.markup_percent == null ? null : Number(a.markup_percent),
+      effective_markup_pct: markup.markupPct,
+      markup_source: markup.source,
+      markup_label: markup.label,
+      markup_missing: markup.needsAttention,
       hourly_gross: gross,
       marginPct: bill > 0 ? (gross / bill) * 100 : null,
     };

@@ -140,10 +140,7 @@ export function IntegrationHealthPanel({ rows }: { rows: IntegrationHealthRow[] 
                 {r.eventCount == null
                   ? "events not measurable"
                   : `${r.eventCount} ${r.eventLabel}`}
-                {r.lastActivityDays != null
-                  ? ` · last sync ${r.lastActivityDays}d ago`
-                  : " · never synced"}
-                {r.staleAfterHours != null ? ` · expected every ${r.staleAfterHours}h` : ""}
+                {` · ${r.sync.label}`}
                 {r.accountEmail ? ` · ${r.accountEmail}` : ""}
               </div>
 

@@ -1,207 +1,143 @@
-import type { IntegrationProvider, IntegrationStatus } from "./types";
+// Sync freshness — "is this integration actually running?"
+//
+// WHY THIS EXISTS: uAttend stopped syncing on 2026-07-02 and nobody noticed
+// for seventeen days. Every field needed to spot it was already on the row
+// (`last_sync_at`, `next_sync_at`, `status`); nothing ever compared them to the
+// clock. The card showed "Last sync: Jul 2" in the same neutral grey it would
+// show "Last sync: 3 minutes ago", so a dead integration and a healthy one
+// looked identical.
+//
+// The rule: an integration that has not synced in several times its own
+// expected interval is BROKEN, whatever its status column claims. Status is
+// what the last run reported; staleness is whether runs are still happening.
+// Those are different questions and the seventeen-day gap is exactly the case
+// where they disagree.
 
-// Derived integration health — the truth surface.
-//
-// WHY THIS EXISTS: on 2026-07-19 Calendly read `status='connected'` while its
-// stored access token had expired, and uAttend was 17 days stale while reading
-// healthy. `status` is written at connect time and never revised, so it can stay
-// green on a dead integration. Health must come from evidence instead.
-//
-// WHAT THIS MODULE GOT WRONG FIRST, AND WHY IT MATTERS:
-// The first version treated an expired `token_expires_at` as proof of death, and
-// treated "zero events ever" as proof of breakage. Both were wrong, and would
-// have made this tool state a new falsehood in the name of eliminating
-// falsehoods:
-//   * An expired ACCESS token is the NORMAL resting state when a refresh token
-//     is doing its job — the provider mints a fresh one on the next call. It is
-//     only fatal when there is no refresh token to recover with.
-//   * Zero events may simply mean nobody has booked. "0 bookings received" is an
-//     honest COUNT; "not working" is an unearned VERDICT.
-//
-// So the primary signal is: DID THE LAST SYNC SUCCEED? `last_error` is cleared
-// on success and set on failure (integrations/db.ts), which makes it reliable.
-// `last_sync_at` is written on BOTH paths, so it proves attempt, not success.
-//
-// Counts and quirks that are not verdicts live in `observations`, which never
-// affect `level`.
-//
-// PURE — no server imports, no secrets. Callers pass BOOLEANS for credential
-// presence; token values never enter this module.
+import {
+  INTEGRATION_DEFAULT_INTERVAL_MIN,
+  type IntegrationProvider,
+  type IntegrationStatus,
+} from "./types";
 
-export type IntegrationHealthLevel =
-  | "alarm" // actively broken: last sync failed, or unrecoverable credentials
-  | "stale" // succeeding, but overdue for a sync
-  | "ok"
-  | "not_configured"; // never set up — a setup task, not a failure
+export type SyncHealthLevel = "ok" | "warn" | "stale" | "error" | "off";
 
-/**
- * How long after its last sync a provider should be considered stale, based on
- * its real cadence. Null = not sync-driven (webhook-only or a scaffold), so
- * staleness is not a meaningful signal.
- */
-export const STALE_AFTER_HOURS: Record<IntegrationProvider, number | null> = {
-  ringcentral: 24,
-  uattend: 24,
-  calendly: 48,
-  indeed: 48,
-  pandadoc: null, // webhook-driven, never polls
-  prismhr: null, // scaffold, makes no calls
+export type SyncHealth = {
+  level: SyncHealthLevel;
+  /** Minutes since the last sync; null when it has never synced. */
+  staleMinutes: number | null;
+  /** How many of its own intervals it has missed. null when never synced. */
+  missedIntervals: number | null;
+  /** One-line human summary for the card. */
+  label: string;
 };
 
-/** Whether inbound events are a meaningful thing to count for this provider. */
-export const EXPECTS_EVENTS: Record<IntegrationProvider, boolean> = {
-  ringcentral: true,
-  uattend: true,
-  calendly: true,
-  indeed: true,
-  pandadoc: true,
-  prismhr: false,
-};
+// A run is late once it has missed this many intervals, and considered dead
+// after this many. Generous multiples: a single skipped cron tick (deploy,
+// cold start, provider blip) must not cry wolf, but a day of silence on a
+// 30-minute job must.
+const WARN_AFTER_INTERVALS = 3;
+const STALE_AFTER_INTERVALS = 8;
 
-export type IntegrationHealthInput = {
+export function syncHealth(input: {
   provider: IntegrationProvider;
-  /** Recorded status. Reported, never trusted. */
   status: IntegrationStatus;
-  /** Boolean only — token values must never reach this module. */
-  hasCredentials: boolean;
-  /** Boolean only. An expired access token is recoverable when this is true. */
-  hasRefreshToken: boolean;
-  tokenExpiresAt: string | null;
   lastSyncAt: string | null;
-  /** Cleared on a successful sync, set on failure — the success signal. */
-  lastError: string | null;
-  /** Real inbound evidence. Null when not measurable. A COUNT, not a verdict. */
-  eventCount: number | null;
-  nowMs: number;
-};
+  /** Injected so this stays pure and testable. */
+  now: Date;
+  /** Override the provider's default cadence when a job runs on its own clock. */
+  intervalMinutes?: number;
+}): SyncHealth {
+  const { provider, status, lastSyncAt, now } = input;
+  const interval =
+    input.intervalMinutes ?? INTEGRATION_DEFAULT_INTERVAL_MIN[provider] ?? 30;
 
-export type IntegrationHealth = {
-  provider: IntegrationProvider;
-  level: IntegrationHealthLevel;
-  headline: string;
-  /** Why the verdict is what it is. */
-  reasons: string[];
-  /** Neutral facts that deliberately do NOT influence the verdict. */
-  observations: string[];
-  tokenExpired: boolean;
-  lastActivityDays: number | null;
-  staleAfterHours: number | null;
-  recordedStatus: IntegrationStatus;
-  /** True when the stored status claims health the evidence does not support. */
-  statusDisagrees: boolean;
-};
-
-const HOUR = 60 * 60 * 1000;
-const DAY = 24 * HOUR;
-
-function ageDays(iso: string | null, nowMs: number): number | null {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  return Math.max(0, Math.floor((nowMs - t) / DAY));
-}
-
-export function deriveIntegrationHealth(
-  input: IntegrationHealthInput,
-): IntegrationHealth {
-  const reasons: string[] = [];
-  const observations: string[] = [];
-  const staleAfterHours = STALE_AFTER_HOURS[input.provider];
-  const lastActivityDays = ageDays(input.lastSyncAt, input.nowMs);
-
-  const expMs = input.tokenExpiresAt ? Date.parse(input.tokenExpiresAt) : NaN;
-  const tokenExpired = !Number.isNaN(expMs) && expMs < input.nowMs;
-
-  let level: IntegrationHealthLevel;
-
-  if (!input.hasCredentials) {
-    level = "not_configured";
-    reasons.push("No credentials stored — this integration has never been connected.");
-  } else if (input.lastError) {
-    // The primary signal: the provider recorded a failure on its last attempt.
-    level = "alarm";
-    reasons.push(`Last sync FAILED: ${input.lastError}`);
-  } else if (tokenExpired && !input.hasRefreshToken) {
-    // Only fatal when there is nothing to recover with.
-    level = "alarm";
-    const d = ageDays(input.tokenExpiresAt, input.nowMs);
-    reasons.push(
-      `Access token expired${d != null ? ` ${d} day${d === 1 ? "" : "s"} ago` : ""} and there is no refresh token to recover with. It must be reconnected.`,
-    );
-  } else if (input.lastSyncAt == null && staleAfterHours != null) {
-    level = "alarm";
-    reasons.push("Has never completed a sync.");
-  } else if (
-    staleAfterHours != null &&
-    input.lastSyncAt != null &&
-    input.nowMs - Date.parse(input.lastSyncAt) > staleAfterHours * HOUR
-  ) {
-    level = "stale";
-    reasons.push(
-      `Last sync was ${lastActivityDays} day${lastActivityDays === 1 ? "" : "s"} ago; expected at least every ${staleAfterHours}h.`,
-    );
-  } else {
-    level = "ok";
-    reasons.push("Last sync completed without error.");
+  if (status === "disconnected") {
+    return {
+      level: "off",
+      staleMinutes: null,
+      missedIntervals: null,
+      label: "Not connected",
+    };
   }
 
-  // ---- Observations: facts, never verdicts --------------------------------
-  if (tokenExpired && input.hasRefreshToken) {
-    observations.push(
-      "The stored access token has expired, which is normal — a refresh token is present and mints a new one on the next call.",
-    );
-  }
-  if (input.eventCount != null && EXPECTS_EVENTS[input.provider]) {
-    observations.push(
-      input.eventCount === 0
-        ? "No events have been recorded yet. This may simply mean none have occurred, so it is not treated as a fault on its own."
-        : `${input.eventCount} event(s) recorded to date.`,
-    );
+  const last = lastSyncAt ? new Date(lastSyncAt) : null;
+  const lastValid = last && !Number.isNaN(last.getTime()) ? last : null;
+
+  if (!lastValid) {
+    // Connected but never synced once. That is not "fresh" — it is a job that
+    // has never run, which is precisely the state that must not read as OK.
+    return {
+      level: "stale",
+      staleMinutes: null,
+      missedIntervals: null,
+      label: "Never synced",
+    };
   }
 
-  const statusDisagrees =
-    (input.status === "connected" || input.status === "syncing") &&
-    (level === "alarm" || level === "not_configured");
-  if (statusDisagrees) {
-    reasons.push(
-      `Recorded status says "${input.status}", but the evidence above says otherwise. The status field is written at connect time and is not revised later.`,
-    );
+  const staleMinutes = Math.max(
+    0,
+    Math.floor((now.getTime() - lastValid.getTime()) / 60_000),
+  );
+  const missedIntervals = interval > 0 ? staleMinutes / interval : 0;
+
+  // Staleness outranks a healthy-looking status column: a row can say
+  // "connected" and still not have run in weeks. It does NOT outrank an error
+  // — an erroring integration should read as an error, with the age attached.
+  if (missedIntervals >= STALE_AFTER_INTERVALS) {
+    return {
+      level: "stale",
+      staleMinutes,
+      missedIntervals,
+      label: `No sync in ${humanizeMinutes(staleMinutes)}`,
+    };
   }
 
-  const headline =
-    level === "alarm"
-      ? "Not working"
-      : level === "stale"
-        ? "Stale"
-        : level === "not_configured"
-          ? "Not connected"
-          : "Working";
+  if (status === "error") {
+    return {
+      level: "error",
+      staleMinutes,
+      missedIntervals,
+      label: `Last run failed ${humanizeMinutes(staleMinutes)} ago`,
+    };
+  }
+
+  if (missedIntervals >= WARN_AFTER_INTERVALS) {
+    return {
+      level: "warn",
+      staleMinutes,
+      missedIntervals,
+      label: `Late — last sync ${humanizeMinutes(staleMinutes)} ago`,
+    };
+  }
 
   return {
-    provider: input.provider,
-    level,
-    headline,
-    reasons,
-    observations,
-    tokenExpired,
-    lastActivityDays,
-    staleAfterHours,
-    recordedStatus: input.status,
-    statusDisagrees,
+    level: "ok",
+    staleMinutes,
+    missedIntervals,
+    label: `Synced ${humanizeMinutes(staleMinutes)} ago`,
   };
 }
 
-/** Roll a set of health results into audit counts. */
-export function summarizeIntegrationHealth(all: IntegrationHealth[]): {
-  alarm: number;
-  stale: number;
-  notConfigured: number;
-  disagreeing: number;
-} {
-  return {
-    alarm: all.filter((h) => h.level === "alarm").length,
-    stale: all.filter((h) => h.level === "stale").length,
-    notConfigured: all.filter((h) => h.level === "not_configured").length,
-    disagreeing: all.filter((h) => h.statusDisagrees).length,
-  };
+export function humanizeMinutes(mins: number): string {
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+/** Map a health level onto the app's badge tones. */
+export function healthTone(level: SyncHealthLevel): "green" | "warm" | "red" {
+  switch (level) {
+    case "ok":
+      return "green";
+    case "warn":
+      return "warm";
+    case "stale":
+    case "error":
+      return "red";
+    default:
+      return "warm";
+  }
 }

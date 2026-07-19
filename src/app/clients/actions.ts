@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth.server";
+import { parseMarkupInput } from "@/lib/markup";
 import type { ClientStatus } from "@/lib/supabase/types";
 
 // Client config + per-position workers-comp mapping (tasks 86e20w8qy, 86e20w8tq).
@@ -210,4 +211,67 @@ export async function deleteWorkersCompCode(id: string, slug: string) {
     .eq("id", id);
   if (error) throw new Error(error.message);
   revalidatePath(`/clients/${slug}`);
+}
+
+// ---------- Per-employee markup rates (Rocio, 2026-06-17) -----------------
+
+// Set the markup percentage for one assignment. Rocio asked to "set the markup
+// once per employee" instead of applying it by hand every invoice run; this is
+// the write side of that. A blank value CLEARS the override so the assignment
+// falls back to the client rate — which is why we write an explicit null
+// rather than skipping the field.
+//
+// Writes only employee_assignments.markup_percent. It cannot touch an invoice:
+// markup is read at generation time, and generation only ever rewrites DRAFT
+// invoices (see upsertInvoicesForPeriod — sent/paid invoices are never
+// mutated). Changing a rate here therefore affects the next draft, never a
+// total that has already gone out.
+export async function setAssignmentMarkup(
+  assignmentId: string,
+  slug: string,
+  formData: FormData,
+) {
+  await assertRole("admin");
+  const pct = parseMarkupInput(formData.get("markup_percent") as string | null);
+
+  const sb = await createClient();
+  const { error } = await sb
+    .from("employee_assignments")
+    .update({ markup_percent: pct })
+    .eq("id", assignmentId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/clients/${slug}`);
+  revalidatePath("/payroll");
+}
+
+// Apply one markup to every active assignment at a client that does not have
+// its own rate yet. This is the "I have 40 employees on this account and they
+// are nearly all at 45%" path — it fills the blanks and deliberately leaves
+// per-employee overrides alone.
+export async function backfillClientMarkup(slug: string, formData: FormData) {
+  await assertRole("admin");
+  const pct = parseMarkupInput(formData.get("markup_percent") as string | null);
+  if (pct === null) {
+    throw new Error("Enter a markup percentage to apply.");
+  }
+
+  const sb = await createClient();
+  const { data: client, error: cErr } = await sb
+    .from("clients")
+    .select("id")
+    .eq("slug", slug)
+    .single();
+  if (cErr) throw new Error(cErr.message);
+
+  const { error } = await sb
+    .from("employee_assignments")
+    .update({ markup_percent: pct })
+    .eq("client_id", client.id)
+    .eq("active", true)
+    .is("markup_percent", null);
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/clients/${slug}`);
+  revalidatePath("/payroll");
 }

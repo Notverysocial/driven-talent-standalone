@@ -293,8 +293,13 @@ function BugRow({ bug }: { bug: BugReport }) {
           {bug.attachment_path && (
             <span>
               <span className="tiny">Attachment</span>{" "}
+              {/*
+                attachment_path may be a private-bucket storage key (public
+                form) or a legacy full URL. Both resolve through the signed-URL
+                route — linking the raw value produced a dead link for keys.
+              */}
               <a
-                href={bug.attachment_path}
+                href={`/api/bug-reports/attachment?path=${encodeURIComponent(bug.attachment_path)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ color: "var(--dt-gold-deep)" }}

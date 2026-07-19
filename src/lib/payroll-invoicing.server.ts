@@ -6,8 +6,11 @@
 //     5+ invoices in a week — one per dept (IC, WH, M, FM, RC, PD).
 //   - Two line items per employee: a Reg row and an OT row.
 //     OT bill rate = bill_rate × 1.5 (matches column V of the master sheet).
-//   - Bill rate is independent of pay rate. If the assignment has no
-//     bill_rate set, fall back to hourly_rate × (1 + service_fee_pct/100).
+//   - Bill rate is independent of pay rate and resolved by src/lib/markup.ts:
+//     assignment.bill_rate → assignment.markup_percent (the per-employee rate)
+//     → client.service_fee_pct → nothing (billed at cost, flagged loudly).
+//     Every line carries the source it resolved from so the preview can show
+//     where each rate came from.
 //   - Terms default to "Net 10 Days" (the standard embedded in every
 //     template tab of the W1-2026 spreadsheet).
 //   - Each run is logged to invoice_runs for audit / re-run visibility.
@@ -16,6 +19,7 @@ import "server-only";
 import { createClient } from "./supabase/server";
 import { nextInvoiceNumber } from "./invoices";
 import { countInvoices } from "./invoices.server";
+import { resolveMarkup, summariseSources, type MarkupSource, type ResolvedMarkup } from "./markup";
 import type { InvoiceRun, PayrollPeriod } from "./supabase/types";
 
 export type InvoicePreviewLine = {
@@ -28,6 +32,12 @@ export type InvoicePreviewLine = {
   sickHours: number;
   payRate: number;
   billRate: number;
+  /** Effective markup over pay; null when pay rate is 0. */
+  markupPct: number | null;
+  /** Which level of the chain supplied the rate — shown on the preview. */
+  markupSource: MarkupSource;
+  /** Short badge label, e.g. "Employee 45%" / "Client 8%" / "No markup". */
+  markupLabel: string;
   regAmount: number;
   otAmount: number;
   totalAmount: number;
@@ -42,6 +52,8 @@ export type InvoicePreviewGroup = {
   department: string;
   branch: string | null;
   serviceFeePct: number;
+  /** Count of lines by where their rate came from — drives the preview badges. */
+  markupSources: { employee: number; fixedRate: number; clientDefault: number; missing: number };
   lines: InvoicePreviewLine[];
   subtotal: number;
   totalCost: number;
@@ -59,6 +71,14 @@ export type PeriodInvoicePreview = {
     billed: number;
     cost: number;
     margin: number;
+    /**
+     * Employees on this run with no markup configured at any level. Non-zero
+     * means someone is about to be billed at cost — the preview says so before
+     * the operator commits.
+     */
+    missingMarkup: number;
+    /** Employees billed off the client-wide default rather than their own rate. */
+    clientDefaultMarkup: number;
   };
 };
 
@@ -84,6 +104,7 @@ type AssignmentRow = {
   position: string;
   department: string;
   bill_rate: number | null;
+  markup_percent: number | null;
   branch: string | null;
 };
 
@@ -126,7 +147,7 @@ export async function previewInvoicesForPeriod(
   if (empIds.length > 0) {
     const { data: aData, error: aErr } = await supabase
       .from("employee_assignments")
-      .select("employee_id, client_id, position, department, bill_rate, branch")
+      .select("employee_id, client_id, position, department, bill_rate, markup_percent, branch")
       .in("employee_id", empIds)
       .eq("active", true);
     if (aErr) throw new Error(aErr.message);
@@ -153,6 +174,7 @@ export async function previewInvoicesForPeriod(
         department,
         branch,
         serviceFeePct: Number(t.clients.service_fee_pct ?? 0),
+        markupSources: { employee: 0, fixedRate: 0, clientDefault: 0, missing: 0 },
         lines: [],
         subtotal: 0,
         totalCost: 0,
@@ -163,10 +185,16 @@ export async function previewInvoicesForPeriod(
     }
 
     const payRate = Number(t.hourly_rate);
-    const billRate =
-      a?.bill_rate != null && Number(a.bill_rate) > 0
-        ? Number(a.bill_rate)
-        : payRate * (1 + Number(t.clients.service_fee_pct ?? 0) / 100);
+    // Per-employee markup (Rocio, 2026-06-17). With no markup_percent set this
+    // returns the identical rate the previous inline expression did — see the
+    // parity block in e2e/logic/markup-resolution.spec.ts.
+    const markup = resolveMarkup({
+      payRate,
+      assignmentBillRate: a?.bill_rate,
+      employeeMarkupPct: a?.markup_percent,
+      clientMarkupPct: t.clients.service_fee_pct,
+    });
+    const billRate = markup.billRate;
     const regHours = Number(t.reg_hours) + Number(t.holiday_hours);
     const otHours = Number(t.ot_hours);
     const regAmount = round2(regHours * billRate);
@@ -190,6 +218,9 @@ export async function previewInvoicesForPeriod(
         sickHours: 0,
         payRate,
         billRate,
+        markupPct: markup.markupPct,
+        markupSource: markup.source,
+        markupLabel: markup.label,
         regAmount: 0,
         otAmount: 0,
         totalAmount: 0,
@@ -216,6 +247,12 @@ export async function previewInvoicesForPeriod(
     group.marginPct = group.subtotal > 0
       ? round2((group.totalMargin / group.subtotal) * 100)
       : 0;
+  }
+
+  // Roll the per-line provenance up to the group once all lines are folded in,
+  // so each employee counts once regardless of how many timecards they had.
+  for (const g of groupMap.values()) {
+    g.markupSources = summariseSources(g.lines.map((l) => ({ source: l.markupSource })));
   }
 
   const groups = Array.from(groupMap.values()).sort((a, b) => {
@@ -247,6 +284,8 @@ export async function previewInvoicesForPeriod(
       billed: round2(totalsBilled),
       cost: round2(totalsCost),
       margin: round2(totalsBilled - totalsCost),
+      missingMarkup: groups.reduce((s, g) => s + g.markupSources.missing, 0),
+      clientDefaultMarkup: groups.reduce((s, g) => s + g.markupSources.clientDefault, 0),
     },
   };
 }
