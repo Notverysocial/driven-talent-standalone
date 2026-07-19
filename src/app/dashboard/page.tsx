@@ -17,6 +17,7 @@ import { PipelineFunnelChart } from "@/components/charts/PipelineFunnelChart";
 import { WeeklyBillingChart } from "@/components/charts/WeeklyBillingChart";
 import { ApplicantsPerMonthChart } from "@/components/charts/ApplicantsPerMonthChart";
 import { SiteTrafficCard } from "@/components/dashboard/SiteTrafficCard";
+import { PipelineHealthCard } from "@/components/dashboard/PipelineHealthCard";
 import { getServerDictionary, getLocale } from "@/lib/i18n/server";
 
 function fmt$(n: number, locale: string) {
@@ -80,6 +81,10 @@ export default async function DashboardPage() {
           </>
         }
       />
+
+      {/* Applicant pipeline data-integrity audit (card 1322c60e) — surfaced at
+          the top of the dashboard so a backing-up funnel can't stay invisible. */}
+      <PipelineHealthCard />
 
       <KpiGrid min={200}>
         <KpiTile
