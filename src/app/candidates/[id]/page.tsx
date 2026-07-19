@@ -32,6 +32,7 @@ import { CandidateSchedule } from "./CandidateSchedule";
 import { CandidateInterview } from "./CandidateInterview";
 import { listCandidatePhotos } from "@/lib/candidate-photos.server";
 import { listCandidateInterviews } from "@/lib/interviews.server";
+import { findDuplicateCandidatesFor } from "@/lib/duplicates.server";
 
 export default async function CandidateDetailPage({
   params,
@@ -41,7 +42,7 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const cand = await getCandidate(id);
   if (!cand) notFound();
-  const [notes, activity, photos, interviews] = await Promise.all([
+  const [notes, activity, photos, interviews, duplicates] = await Promise.all([
     listNotes("candidate", cand.id),
     listActivity("candidate", cand.id),
     listCandidatePhotos(cand.id, cand.photo_url),
@@ -49,6 +50,9 @@ export default async function CandidateDetailPage({
     // the migration is not applied yet, and the tab falls back to the candidate
     // columns exactly as before.
     listCandidateInterviews(cand.id),
+    // Other candidate records that look like the same human. Computed at read
+    // time (never a stored flag, which would go stale). Fail-safe: [] on error.
+    findDuplicateCandidatesFor({ id: cand.id, email: cand.email, phone: cand.phone }),
   ]);
 
   const score = cand.score ?? weightedScore(cand.criteria);
@@ -84,6 +88,77 @@ export default async function CandidateDetailPage({
           </>
         }
       />
+
+      {duplicates.length > 0 && (() => {
+        const anyHistory =
+          interviews.length > 0 || duplicates.some((d) => d.hasInterviewHistory);
+        const noEmail = (cand.email ?? "").trim() === "";
+        const phoneOnly = duplicates.every((d) => d.matchedOn === "phone");
+        return (
+          <div
+            role="alert"
+            style={{
+              marginBottom: 16,
+              padding: "12px 16px",
+              borderRadius: 6,
+              background: "rgba(230,145,0,0.08)",
+              border: "1px solid rgba(230,145,0,0.40)",
+              color: "#9A5B00",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            <strong
+              style={{ letterSpacing: "0.04em", textTransform: "uppercase", fontSize: 11 }}
+            >
+              Possible duplicate
+            </strong>
+            <div style={{ marginTop: 6 }}>
+              {duplicates.length === 1
+                ? "Another candidate record"
+                : `${duplicates.length} other candidate records`}{" "}
+              match this person by{" "}
+              {phoneOnly ? "phone number" : "email or phone"}.{" "}
+              {phoneOnly && (
+                <>
+                  A shared phone can legitimately be a household or job-site number, so
+                  confirm before treating them as one person.{" "}
+                </>
+              )}
+              Interview sync from the calendar is{" "}
+              <strong>disabled</strong> while records are ambiguous — a booking is not
+              written rather than risk updating the wrong record.
+            </div>
+            {noEmail && (
+              <div style={{ marginTop: 8 }}>
+                <strong>This record has no email address.</strong> Calendar bookings are
+                matched by email, so interview sync can never fire for it — duplicate or
+                not — until an email is added.
+              </div>
+            )}
+            {anyHistory && (
+              <div style={{ marginTop: 8 }}>
+                <strong>Interview history exists on more than one of these records.</strong>{" "}
+                Any merge has to reconcile the interview rows too, not just the candidate
+                rows. Do not merge without deciding which history is authoritative.
+              </div>
+            )}
+            <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {duplicates.map((d) => (
+                <Link
+                  key={d.id}
+                  href={`/candidates/${d.id}`}
+                  className="dt-btn dt-btn-ghost"
+                  style={{ fontSize: 11.5, padding: "3px 9px" }}
+                >
+                  {d.full_name ?? "Untitled candidate"}
+                  {d.hasInterviewHistory ? " · has interviews" : ""} →
+                </Link>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {(() => {
         const isDnr = cand.lifecycle_status === "do_not_return";

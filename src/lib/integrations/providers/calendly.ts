@@ -50,6 +50,7 @@ import {
   decideInterviewWriteback,
   type InterviewWritebackDecision,
 } from "../calendly-interview";
+import { normalizeEmail } from "@/lib/duplicates";
 
 const PROVIDER = "calendly" as const;
 
@@ -707,12 +708,31 @@ async function applyInterviewWriteback(
   args: { email: string; eventType: "created" | "canceled"; incomingStart: string | null },
 ): Promise<InterviewWritebackDecision> {
   try {
-    // Exact-email match set (may be 0, 1, or >1 — duplicates are real here).
-    const { data: matches } = await sb
-      .from("candidates")
-      .select("id, interview_at")
-      .eq("email", args.email);
-    const rows = (matches ?? []) as { id: string; interview_at: string | null }[];
+    // Match on the NORMALIZED email (migration 0046) so records that differ only
+    // by case/spacing are recognized as the same human. Before this, text
+    // equality was case-sensitive, so a booking matched exactly one of a
+    // duplicated pair and silently wrote to it while the twin stayed blank — a
+    // split-brain nobody could see. Now such a booking is correctly ambiguous
+    // and is refused loudly instead of guessing a twin.
+    //
+    // Falls back to exact match when the normalized column isn't there yet
+    // (migrations are applied by hand, so this code can be live before 0046).
+    const normalized = normalizeEmail(args.email);
+    let rows: { id: string; interview_at: string | null }[] | null = null;
+    if (normalized) {
+      const { data, error } = await sb
+        .from("candidates")
+        .select("id, interview_at")
+        .eq("email_normalized", normalized);
+      if (!error) rows = (data ?? []) as { id: string; interview_at: string | null }[];
+    }
+    if (rows === null) {
+      const { data } = await sb
+        .from("candidates")
+        .select("id, interview_at")
+        .eq("email", args.email);
+      rows = (data ?? []) as { id: string; interview_at: string | null }[];
+    }
 
     const decision = decideInterviewWriteback({
       eventType: args.eventType,
@@ -722,10 +742,38 @@ async function applyInterviewWriteback(
     });
 
     if (decision.action === "skip") {
-      // Skips are observability only — never written to the change log.
       console.log(
         `[calendly-writeback] skip (${decision.reason}) for ${args.email} matches=${rows.length}`,
       );
+      // MAKE THE SILENT SKIP LOUD. An ambiguous match means a real booking
+      // produced no interview record. Previously that vanished into stdout.
+      // Record it on EVERY matched candidate's Change Log so a recruiter opening
+      // either twin sees why their interview never appeared.
+      if (decision.reason === "ambiguous_email_match" && rows.length > 1) {
+        for (const r of rows) {
+          try {
+            await sb.from("activity_log").insert({
+              subject_type: "candidate",
+              subject_id: r.id,
+              actor_id: null,
+              actor_name: "calendly-webhook",
+              action: "interview_sync_blocked_duplicate",
+              summary: `Calendly booking could not be applied: ${rows.length} candidate records share this email, so the interview was not written to avoid updating the wrong person. Merge the duplicates to re-enable interview sync.`,
+              field: "interview_at",
+              old_value: null,
+              new_value: null,
+              meta: {
+                source: "calendly-webhook",
+                reason: decision.reason,
+                match_count: rows.length,
+                duplicate_candidate_ids: rows.map((x) => x.id),
+              },
+            });
+          } catch (logErr) {
+            console.error("[calendly-writeback] duplicate-skip log failed:", logErr);
+          }
+        }
+      }
       return decision;
     }
 

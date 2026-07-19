@@ -38,13 +38,15 @@ export async function GET(request: Request): Promise<NextResponse> {
   const delta =
     previousFlags == null ? "" : ` (was ${previousFlags} last run)`;
   const summary =
-    `[integrity-audit] applicant pipeline: ${report.flags} flag(s)${delta} — ` +
+    `[integrity-audit] applicant pipeline: ${report.alarms} ALARM(s), ${report.tracked} tracked${delta} — ` +
     `${report.backlog.unreviewed} unreviewed ` +
     `(${report.backlog.over7} >7d, ${report.backlog.over30} >30d, oldest ${report.backlog.oldestDays}d), ` +
     `${report.stuck.count} stuck, ${report.duplicateEmails.count} dup-email, ` +
     `${report.unresolvedImports.total} unresolved-import, ` +
     `${report.orphans.danglingPromotedCandidate + report.orphans.promotedWithoutCandidateId + report.orphans.danglingPromotedEmployee} orphan(s), ` +
-    `${report.seedRows.unexcluded} unexcluded-seed`;
+    `${report.seedRows.unexcluded} unexcluded-seed, ` +
+    `${report.duplicateCandidates.records} duplicate-person record(s) in ${report.duplicateCandidates.groups} group(s), ` +
+    `${report.duplicateIntakes.records} duplicate-intake record(s) in ${report.duplicateIntakes.groups} group(s)`;
   console.log(summary);
 
   return NextResponse.json({

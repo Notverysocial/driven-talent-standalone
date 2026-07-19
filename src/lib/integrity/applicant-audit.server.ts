@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { groupDuplicateCandidates, summarizeDuplicates } from "@/lib/duplicates";
 
 // Recurring data-integrity audit for the applicant pipeline (card 1322c60e).
 //
@@ -41,7 +42,21 @@ export type ApplicantIntegrityReport = {
   };
   // (f) demo/QA seed rows that leaked into production without being excluded
   seedRows: { unexcluded: number };
-  // Headline: total count of things needing attention (drives dashboard severity)
+  // (g) multiple candidate records for the same human (same normalized email or
+  // phone). These block the Calendly interview write-back — see the profile
+  // banner and the change-log entry the webhook writes when it refuses.
+  duplicateCandidates: { groups: number; records: number; samples: string[] };
+  // (h) the same, on the intake side — repeated applications from one human
+  duplicateIntakes: { groups: number; records: number; samples: string[] };
+  // ALARMS: defects whose correct steady state is ZERO, so any non-zero is new
+  // or unexpected. This is what turns the dashboard red — and only this.
+  alarms: number;
+  // TRACKED: known, owned, carded issues that will legitimately be non-zero for
+  // a while (duplicates, unresolved imports, the drop seam). Reported as counts
+  // on their own line, deliberately NOT holding the headline red: a signal that
+  // stays lit for weeks is a signal everyone learns to ignore.
+  tracked: number;
+  // Total of everything. Kept for the stored trend in integrity_audit_runs.
   flags: number;
 };
 
@@ -89,6 +104,35 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
       rawIntakes.filter((i) => isExampleEmail(i.email) && i.is_seed !== true).length +
       rawCandidates.filter((c) => isExampleEmail(c.email) && c.is_seed !== true).length,
   };
+
+  // (g) Duplicate candidate records for one human. Seed rows are excluded
+  // inside groupDuplicateCandidates. Detection only — nothing is merged.
+  const duplicateCandidates = summarizeDuplicates(
+    groupDuplicateCandidates(
+      rawCandidates.map((c) => ({
+        id: c.id,
+        full_name: null,
+        email: c.email,
+        phone: (c as { phone?: string | null }).phone ?? null,
+        is_seed: c.is_seed,
+      })),
+    ),
+  );
+
+  // (h) Duplicate intakes — repeated applications from one human, matched on
+  // normalized email OR phone (10 of the known candidate groups have no email
+  // at all, so phone matching is not optional here).
+  const duplicateIntakes = summarizeDuplicates(
+    groupDuplicateCandidates(
+      rawIntakes.map((i) => ({
+        id: i.id,
+        full_name: null,
+        email: i.email,
+        phone: (i as { phone?: string | null }).phone ?? null,
+        is_seed: i.is_seed,
+      })),
+    ),
+  );
 
   // Every other metric reflects REAL people only — exclude the excluded seed
   // rows (migration 0044). Filtering both intakes and candidates keeps the
@@ -184,15 +228,25 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
 
   // Headline: everything that warrants a human look. The unreviewed backlog is
   // the loudest signal; the rest are integrity defects that should be ~0.
-  const flags =
-    backlog.unreviewed +
-    stuckRows.length +
-    dupRows.length +
-    unresolvedRows.length +
+  // ALARMS — steady state must be zero. Seed rows are a hard flag (zero is
+  // correct), as are dangling/orphaned references. Anything here is new.
+  const alarms =
+    seedRows.unexcluded +
     danglingPromotedCandidate +
     promotedWithoutCandidateId +
-    danglingPromotedEmployee +
-    seedRows.unexcluded;
+    danglingPromotedEmployee;
+
+  // TRACKED — known and carded; legitimately non-zero today. Counted and shown,
+  // but never turns the headline red.
+  const tracked =
+    duplicateCandidates.records +
+    duplicateIntakes.records +
+    dupRows.length +
+    unresolvedRows.length +
+    stuckRows.length;
+
+  // Total, for the stored trend only.
+  const flags = alarms + tracked + backlog.unreviewed;
 
   return {
     generatedAt,
@@ -203,6 +257,10 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     unresolvedImports: { total: unresolvedRows.length, byReason },
     orphans,
     seedRows,
+    duplicateCandidates,
+    duplicateIntakes,
+    alarms,
+    tracked,
     flags,
   };
 }
