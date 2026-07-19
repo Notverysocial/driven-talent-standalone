@@ -47,6 +47,21 @@ function isPublicPath(pathname: string): boolean {
   // CRON_SECRET itself via checkCronAuth, which fails closed when the secret
   // is unset (src/lib/cron-auth.ts).
   if (isCronPath(pathname)) return true;
+  // Public bug/feedback intake — the form at /report and its write endpoint.
+  // Both must be open: the whole point is that someone who is not signed in
+  // (or cannot sign in, because the thing they are reporting IS the login)
+  // can still tell us. Gating either one would 307 to /login and the report
+  // would be lost.
+  //
+  // Same caveat as the cron block: public here means "not session-gated", not
+  // "unprotected". /api/report/submit does its own validation, honeypot, spam
+  // scoring, and rate limiting in the handler, none of which depend on
+  // AUTH_ENABLED. The resolver at /api/bug-reports/attachment is deliberately
+  // NOT listed — but it does not lean on that either, because both this proxy
+  // and requireUser() no-op on the same AUTH_ENABLED flag; its real control is
+  // a must-exist-in-bug_reports check. See that file's header.
+  if (pathname === "/report") return true;
+  if (pathname === "/api/report/submit") return true;
   return false;
 }
 
