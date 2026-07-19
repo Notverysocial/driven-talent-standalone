@@ -97,22 +97,57 @@ export async function listApplicationIntakes(): Promise<ApplicationIntake[]> {
   return (data ?? []) as ApplicationIntake[];
 }
 
-// Count of "new" status intakes created within the last 24 hours.
-// Used by the Sidebar to show "Applications (N new)".
-// Returns 0 on error so a transient DB blip never breaks navigation.
-export async function countRecentNewApplications(): Promise<number> {
+// The TRUE unreviewed-intake backlog, with an aging signal (card 1cb60f5c).
+//
+// BUG THIS REPLACES: the Sidebar badge previously called a helper that counted
+// only `status='new'` intakes created in the LAST 24 HOURS. That made the badge
+// read "2 new" while 96 unreviewed intakes (many weeks old) sat invisible — the
+// team saw a counter telling them there was nothing to do. This helper counts
+// the whole backlog and reports how old the oldest one is, so an aging pile
+// cannot hide behind a 24h window.
+//
+// Definition of "unreviewed": status = 'new' (the canonical un-triaged state;
+// these rows also have reviewed_at IS NULL). Rows that were reviewed, promoted,
+// rejected, or marked spam are NOT in the backlog.
+//
+// Returns zeros on error so a transient DB blip never breaks navigation.
+export type IntakeBacklogSignal = {
+  count: number; // all unreviewed intakes (no time window)
+  oldestDays: number; // age in days of the oldest unreviewed intake (0 if none)
+  over7: number; // unreviewed and waiting more than 7 days
+  over30: number; // unreviewed and waiting more than 30 days
+};
+
+const EMPTY_BACKLOG: IntakeBacklogSignal = {
+  count: 0,
+  oldestDays: 0,
+  over7: 0,
+  over30: 0,
+};
+
+export async function getNewIntakeBacklog(): Promise<IntakeBacklogSignal> {
   try {
     const sb = await createClient();
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { count, error } = await sb
+    const { data, error } = await sb
       .from("application_intakes")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "new")
-      .gte("created_at", since);
-    if (error) return 0;
-    return count ?? 0;
+      .select("created_at")
+      .eq("status", "new");
+    if (error || !data) return EMPTY_BACKLOG;
+
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+    let oldest = 0;
+    let over7 = 0;
+    let over30 = 0;
+    for (const row of data as { created_at: string }[]) {
+      const ageDays = (now - new Date(row.created_at).getTime()) / DAY;
+      if (ageDays > oldest) oldest = ageDays;
+      if (ageDays > 7) over7 += 1;
+      if (ageDays > 30) over30 += 1;
+    }
+    return { count: data.length, oldestDays: Math.floor(oldest), over7, over30 };
   } catch {
-    return 0;
+    return EMPTY_BACKLOG;
   }
 }
 

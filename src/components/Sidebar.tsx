@@ -100,6 +100,7 @@ export function Sidebar({
   viewer,
   authEnabled = true,
   newApplicationsCount = 0,
+  newApplicationsOldestDays = 0,
   newLeadsCount = 0,
   unreadNotifications = 0,
 }: {
@@ -107,9 +108,13 @@ export function Sidebar({
   // When false, the global AUTH_ENABLED flag is off — hide the Sign out
   // button so the user is never sent to /login.
   authEnabled?: boolean;
-  // Number of application intakes with status "new" from the last 24h.
-  // Rendered as "Applications (N new)" inline on the nav row.
+  // The TRUE unreviewed application-intake backlog (all "new" intakes, not just
+  // the last 24h) — card 1cb60f5c. Rendered as a count badge on the Applicant
+  // Tracking nav row.
   newApplicationsCount?: number;
+  // Age (in days) of the oldest unreviewed intake. Drives a warning treatment on
+  // the badge once the backlog ages past a week, so it cannot be ignored.
+  newApplicationsOldestDays?: number;
   // Number of inbound employer leads (website staffing requests) still in the
   // "new" stage. Rendered as a count badge on the Pipeline nav row.
   newLeadsCount?: number;
@@ -209,21 +214,43 @@ export function Sidebar({
               <span>
                 {t(`nav.${entry.labelKey}`)}
                 {entry.id === "applications" && newApplicationsCount > 0 && (
-                  <span
-                    style={{
-                      marginLeft: 8,
-                      fontSize: 10.5,
-                      fontWeight: 600,
-                      letterSpacing: "0.05em",
-                      color: "#0a0a0a",
-                      background: "#F5C518",
-                      padding: "2px 6px",
-                      borderRadius: 3,
-                      verticalAlign: "middle",
-                    }}
-                  >
-                    {newApplicationsCount} new
-                  </span>
+                  // Backlog aging past a week turns the badge red and shows the
+                  // oldest wait, so an aging pile of unreviewed intakes cannot be
+                  // ignored (card 1cb60f5c).
+                  (() => {
+                    const aging = newApplicationsOldestDays > 7;
+                    return (
+                      <span
+                        title={
+                          `${newApplicationsCount} unreviewed applicant${newApplicationsCount === 1 ? "" : "s"}` +
+                          (newApplicationsOldestDays > 0
+                            ? ` · oldest waiting ${newApplicationsOldestDays} day${newApplicationsOldestDays === 1 ? "" : "s"}`
+                            : "")
+                        }
+                        aria-label={
+                          `${newApplicationsCount} unreviewed applicant intakes` +
+                          (aging
+                            ? `, oldest waiting ${newApplicationsOldestDays} days`
+                            : "")
+                        }
+                        style={{
+                          marginLeft: 8,
+                          fontSize: 10.5,
+                          fontWeight: 600,
+                          letterSpacing: "0.05em",
+                          color: aging ? "#fff" : "#0a0a0a",
+                          background: aging ? "#B23A3A" : "#F5C518",
+                          padding: "2px 6px",
+                          borderRadius: 3,
+                          verticalAlign: "middle",
+                        }}
+                      >
+                        {aging
+                          ? `${newApplicationsCount} · ${newApplicationsOldestDays}d`
+                          : `${newApplicationsCount} new`}
+                      </span>
+                    );
+                  })()
                 )}
                 {entry.id === "pipeline" && newLeadsCount > 0 && (
                   <span
