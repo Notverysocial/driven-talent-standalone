@@ -34,6 +34,7 @@ import { listActivity } from "@/lib/activity-log.server";
 import { Tabs } from "@/components/Tabs";
 import { CandidatePhotos } from "./CandidatePhotos";
 import { CandidateSchedule } from "./CandidateSchedule";
+import { CandidateInterview } from "./CandidateInterview";
 import { listCandidatePhotos } from "@/lib/candidate-photos.server";
 
 export default async function CandidateDetailPage({
@@ -325,6 +326,7 @@ export default async function CandidateDetailPage({
               ariaLabel="Candidate workspace sections"
               tabs={[
                 { key: "notes", label: "Notes", badge: notes.length || undefined },
+                { key: "interview", label: "Interview" },
                 { key: "schedule", label: "Schedule" },
                 { key: "photos", label: "Photos", badge: photos.length || undefined },
                 { key: "log", label: "Change Log", badge: activity.length || undefined },
@@ -370,6 +372,7 @@ export default async function CandidateDetailPage({
                 ),
                 photos: <CandidatePhotos candidateId={cand.id} photos={photos} />,
                 log: <ActivityTimeline entries={activity} />,
+                interview: <CandidateInterview cand={cand} />,
               }}
             />
           </div>
