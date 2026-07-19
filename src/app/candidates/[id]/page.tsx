@@ -115,9 +115,9 @@ export default async function CandidateDetailPage({
             </strong>
             <div style={{ marginTop: 6 }}>
               {duplicates.length === 1
-                ? "Another candidate record"
-                : `${duplicates.length} other candidate records`}{" "}
-              match this person by{" "}
+                ? "1 other candidate record matches"
+                : `${duplicates.length} other candidate records match`}{" "}
+              this person by{" "}
               {phoneOnly ? "phone number" : "email or phone"}.{" "}
               {phoneOnly && (
                 <>
