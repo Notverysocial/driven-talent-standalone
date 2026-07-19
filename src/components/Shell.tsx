@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Sidebar, type SidebarViewer } from "./Sidebar";
 import { AUTH_ENABLED, getCurrentUser } from "@/lib/auth.server";
-import { countRecentNewApplications } from "@/lib/recruiting.server";
+import { getNewIntakeBacklog } from "@/lib/recruiting.server";
 import { countUnreadNotifications } from "@/lib/notifications.server";
 import { countNewInboundLeads } from "@/lib/inbound-leads.server";
 
@@ -15,9 +15,13 @@ export async function Shell({ children }: { children: ReactNode }) {
         initials: initialsFor(me.profile.full_name ?? me.email ?? "DT"),
       }
     : null;
-  // Sidebar badge: number of "new" application intakes from the last 24h.
-  // Safe to call without a signed-in viewer; helper returns 0 on any error.
-  const newApplicationsCount = viewer ? await countRecentNewApplications() : 0;
+  // Sidebar badge: the TRUE unreviewed application-intake backlog + how old the
+  // oldest one is (card 1cb60f5c). Previously this counted only the last 24h,
+  // hiding a multi-week backlog. Safe without a signed-in viewer; returns zeros
+  // on any error so it never breaks navigation.
+  const intakeBacklog = viewer
+    ? await getNewIntakeBacklog()
+    : { count: 0, oldestDays: 0, over7: 0, over30: 0 };
   // Sidebar badge: unread @mention notifications for the signed-in user.
   // Count-only + error-safe (returns 0), so it never breaks a page render.
   const unreadNotifications = viewer ? await countUnreadNotifications() : 0;
@@ -29,7 +33,8 @@ export async function Shell({ children }: { children: ReactNode }) {
       <Sidebar
         viewer={viewer}
         authEnabled={AUTH_ENABLED}
-        newApplicationsCount={newApplicationsCount}
+        newApplicationsCount={intakeBacklog.count}
+        newApplicationsOldestDays={intakeBacklog.oldestDays}
         newLeadsCount={newLeadsCount}
         unreadNotifications={unreadNotifications}
       />
