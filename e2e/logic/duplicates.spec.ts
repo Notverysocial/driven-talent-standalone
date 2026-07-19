@@ -4,6 +4,7 @@ import {
   normalizePhone,
   groupDuplicateCandidates,
   summarizeDuplicates,
+  matchReason,
   type DuplicateCandidateRow,
 } from "../../src/lib/duplicates";
 
@@ -118,4 +119,31 @@ test("three records sharing one email are a single group of three", () => {
   expect(groups).toHaveLength(1);
   expect(groups[0].records).toHaveLength(3);
   expect(summarizeDuplicates(groups)).toMatchObject({ groups: 1, records: 3 });
+});
+
+test("matchReason distinguishes email, phone, and both", () => {
+  const a = { email: "X@Y.com", phone: "(909) 685-3385" };
+  expect(matchReason(a, { email: "x@y.com", phone: "5550000000" })).toBe("email");
+  expect(matchReason(a, { email: "other@y.com", phone: "9096853385" })).toBe("phone");
+  expect(matchReason(a, { email: "x@y.com", phone: "9096853385" })).toBe("both");
+  expect(matchReason(a, { email: "other@y.com", phone: "5550000000" })).toBeNull();
+});
+
+test("matchReason: a record with no email can still match on phone (the sheet-import case)", () => {
+  // 10 of the known duplicate groups have no email at all — all-caps names from
+  // a sheet import. Phone is the ONLY signal that can find them.
+  const noEmail = { email: null, phone: "9094016823" };
+  expect(matchReason(noEmail, { email: null, phone: "(909) 401-6823" })).toBe("phone");
+  // Two records both lacking email and phone must never match.
+  expect(matchReason({ email: null, phone: null }, { email: null, phone: null })).toBeNull();
+});
+
+test("all-caps sheet-import names with no email group by phone only", () => {
+  const groups = groupDuplicateCandidates([
+    row({ id: "a", full_name: "MICHAEL WRIGHT", email: null, phone: "9094016823" }),
+    row({ id: "b", full_name: "MICHAEL WRIGHT", email: null, phone: "(909) 401-6823" }),
+  ]);
+  expect(groups).toHaveLength(1);
+  expect(groups[0].by).toBe("phone");
+  expect(groups[0].records).toHaveLength(2);
 });

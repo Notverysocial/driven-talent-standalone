@@ -82,6 +82,29 @@ export function groupDuplicateCandidates(
   return groups;
 }
 
+/**
+ * Which signal makes two records look like the same human. Reported so a
+ * recruiter can judge confidence: a shared email is near-certain identity, a
+ * shared phone can legitimately be a household or a job-site contact number.
+ */
+export type DuplicateMatchReason = "email" | "phone" | "both";
+
+export function matchReason(
+  a: { email: string | null; phone: string | null },
+  b: { email: string | null; phone: string | null },
+): DuplicateMatchReason | null {
+  const ea = normalizeEmail(a.email);
+  const eb = normalizeEmail(b.email);
+  const pa = normalizePhone(a.phone);
+  const pb = normalizePhone(b.phone);
+  const email = ea != null && ea === eb;
+  const phone = pa != null && pa === pb;
+  if (email && phone) return "both";
+  if (email) return "email";
+  if (phone) return "phone";
+  return null;
+}
+
 /** Flat totals for the integrity audit. */
 export function summarizeDuplicates(groups: DuplicateGroup[]): {
   groups: number;

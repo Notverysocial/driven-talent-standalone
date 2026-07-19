@@ -1,6 +1,23 @@
 import "server-only";
 import { createClient } from "./supabase/server";
-import { normalizeEmail, normalizePhone, type DuplicateCandidateRow } from "./duplicates";
+import {
+  normalizeEmail,
+  normalizePhone,
+  matchReason,
+  type DuplicateCandidateRow,
+  type DuplicateMatchReason,
+} from "./duplicates";
+
+/** A duplicate, plus why it matched and whether it carries interview history. */
+export type DuplicateMatch = DuplicateCandidateRow & {
+  matchedOn: DuplicateMatchReason;
+  /**
+   * True when this duplicate already has rows in `interviews`. If both records
+   * have history, a merge has to reconcile interview rows, not just candidates —
+   * e.g. Geoffrey Enscoe / Jeffrey, who were both backfilled to round 1.
+   */
+  hasInterviewHistory: boolean;
+};
 
 // Find OTHER candidate records that look like the same human as this one.
 //
@@ -16,7 +33,7 @@ export async function findDuplicateCandidatesFor(cand: {
   id: string;
   email: string | null;
   phone: string | null;
-}): Promise<DuplicateCandidateRow[]> {
+}): Promise<DuplicateMatch[]> {
   const email = normalizeEmail(cand.email);
   const phone = normalizePhone(cand.phone);
   if (!email && !phone) return [];
@@ -38,7 +55,34 @@ export async function findDuplicateCandidatesFor(cand: {
       return [];
     }
     // Never surface demo/QA seed rows as a real duplicate (migration 0044).
-    return ((data ?? []) as DuplicateCandidateRow[]).filter((r) => r.is_seed !== true);
+    const rows = ((data ?? []) as DuplicateCandidateRow[]).filter(
+      (r) => r.is_seed !== true,
+    );
+    if (rows.length === 0) return [];
+
+    // Which of these already carry interview history? A merge would have to
+    // reconcile those rows, so the banner has to say so. Fail-safe.
+    let withHistory = new Set<string>();
+    try {
+      const { data: ivs } = await supabase
+        .from("interviews")
+        .select("candidate_id")
+        .in(
+          "candidate_id",
+          rows.map((r) => r.id),
+        );
+      withHistory = new Set(
+        ((ivs ?? []) as { candidate_id: string }[]).map((i) => i.candidate_id),
+      );
+    } catch {
+      // interviews table not there yet — leave the set empty.
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      matchedOn: matchReason(cand, r) ?? "phone",
+      hasInterviewHistory: withHistory.has(r.id),
+    }));
   } catch (e) {
     console.warn(
       "[duplicates] lookup threw (no banner shown):",

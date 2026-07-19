@@ -46,7 +46,17 @@ export type ApplicantIntegrityReport = {
   // phone). These block the Calendly interview write-back — see the profile
   // banner and the change-log entry the webhook writes when it refuses.
   duplicateCandidates: { groups: number; records: number; samples: string[] };
-  // Headline: total count of things needing attention (drives dashboard severity)
+  // (h) the same, on the intake side — repeated applications from one human
+  duplicateIntakes: { groups: number; records: number; samples: string[] };
+  // ALARMS: defects whose correct steady state is ZERO, so any non-zero is new
+  // or unexpected. This is what turns the dashboard red — and only this.
+  alarms: number;
+  // TRACKED: known, owned, carded issues that will legitimately be non-zero for
+  // a while (duplicates, unresolved imports, the drop seam). Reported as counts
+  // on their own line, deliberately NOT holding the headline red: a signal that
+  // stays lit for weeks is a signal everyone learns to ignore.
+  tracked: number;
+  // Total of everything. Kept for the stored trend in integrity_audit_runs.
   flags: number;
 };
 
@@ -105,6 +115,21 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
         email: c.email,
         phone: (c as { phone?: string | null }).phone ?? null,
         is_seed: c.is_seed,
+      })),
+    ),
+  );
+
+  // (h) Duplicate intakes — repeated applications from one human, matched on
+  // normalized email OR phone (10 of the known candidate groups have no email
+  // at all, so phone matching is not optional here).
+  const duplicateIntakes = summarizeDuplicates(
+    groupDuplicateCandidates(
+      rawIntakes.map((i) => ({
+        id: i.id,
+        full_name: null,
+        email: i.email,
+        phone: (i as { phone?: string | null }).phone ?? null,
+        is_seed: i.is_seed,
       })),
     ),
   );
@@ -203,16 +228,25 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
 
   // Headline: everything that warrants a human look. The unreviewed backlog is
   // the loudest signal; the rest are integrity defects that should be ~0.
-  const flags =
-    backlog.unreviewed +
-    stuckRows.length +
-    dupRows.length +
-    unresolvedRows.length +
+  // ALARMS — steady state must be zero. Seed rows are a hard flag (zero is
+  // correct), as are dangling/orphaned references. Anything here is new.
+  const alarms =
+    seedRows.unexcluded +
     danglingPromotedCandidate +
     promotedWithoutCandidateId +
-    danglingPromotedEmployee +
-    seedRows.unexcluded +
-    duplicateCandidates.records;
+    danglingPromotedEmployee;
+
+  // TRACKED — known and carded; legitimately non-zero today. Counted and shown,
+  // but never turns the headline red.
+  const tracked =
+    duplicateCandidates.records +
+    duplicateIntakes.records +
+    dupRows.length +
+    unresolvedRows.length +
+    stuckRows.length;
+
+  // Total, for the stored trend only.
+  const flags = alarms + tracked + backlog.unreviewed;
 
   return {
     generatedAt,
@@ -224,6 +258,9 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     orphans,
     seedRows,
     duplicateCandidates,
+    duplicateIntakes,
+    alarms,
+    tracked,
     flags,
   };
 }
