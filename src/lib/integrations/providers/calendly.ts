@@ -46,6 +46,10 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import type { IntegrationClient, IntegrationRow } from "../types";
+import {
+  decideInterviewWriteback,
+  type InterviewWritebackDecision,
+} from "../calendly-interview";
 
 const PROVIDER = "calendly" as const;
 
@@ -412,6 +416,12 @@ class CalendlyClient implements IntegrationClient {
         status: status ?? "active",
         source: "webhook",
       });
+      // Write-back the interview onto the matched candidate (runbook Phase A).
+      await applyInterviewWriteback(sb, {
+        email: inviteeEmail,
+        eventType: "created",
+        incomingStart: startTime,
+      });
     } else if (event === "invitee.canceled") {
       await reconcileCancellation(sb, {
         email: inviteeEmail,
@@ -419,6 +429,11 @@ class CalendlyClient implements IntegrationClient {
         eventName,
         startTime,
         reason: cancelReason,
+      });
+      await applyInterviewWriteback(sb, {
+        email: inviteeEmail,
+        eventType: "canceled",
+        incomingStart: startTime,
       });
     }
 
@@ -681,6 +696,85 @@ async function reconcileBooking(
   });
 
   return true;
+}
+
+// Write-back the interview schedule onto the matched candidate (runbook Phase A).
+// Sets ONLY interview_scheduled + interview_at, never the human-judgment fields.
+// All guards live in decideInterviewWriteback (pure, unit-tested). Fail-safe:
+// any error is logged and swallowed so the webhook never 500s a booking.
+async function applyInterviewWriteback(
+  sb: ReturnType<typeof createServiceClient>,
+  args: { email: string; eventType: "created" | "canceled"; incomingStart: string | null },
+): Promise<InterviewWritebackDecision> {
+  try {
+    // Exact-email match set (may be 0, 1, or >1 — duplicates are real here).
+    const { data: matches } = await sb
+      .from("candidates")
+      .select("id, interview_at")
+      .eq("email", args.email);
+    const rows = (matches ?? []) as { id: string; interview_at: string | null }[];
+
+    const decision = decideInterviewWriteback({
+      eventType: args.eventType,
+      matchCount: rows.length,
+      currentInterviewAt: rows.length === 1 ? rows[0].interview_at : null,
+      incomingStart: args.incomingStart,
+    });
+
+    if (decision.action === "skip") {
+      // Skips are observability only — never written to the change log.
+      console.log(
+        `[calendly-writeback] skip (${decision.reason}) for ${args.email} matches=${rows.length}`,
+      );
+      return decision;
+    }
+
+    const candidateId = rows[0].id;
+    const oldValue = rows[0].interview_at;
+    const patch =
+      decision.action === "set"
+        ? { interview_scheduled: true, interview_at: decision.interviewAt }
+        : { interview_scheduled: false, interview_at: null };
+
+    const { error: updErr } = await sb
+      .from("candidates")
+      .update(patch)
+      .eq("id", candidateId);
+    if (updErr) {
+      console.error("[calendly-writeback] update failed:", updErr.message);
+      return { action: "skip", reason: "update_failed" };
+    }
+
+    // Guard 3 — log every write to activity_log with actor 'calendly-webhook'.
+    // Best-effort: a logging failure must not undo the write or break the hook.
+    try {
+      await sb.from("activity_log").insert({
+        subject_type: "candidate",
+        subject_id: candidateId,
+        actor_id: null,
+        actor_name: "calendly-webhook",
+        action: decision.action === "set" ? "interview_scheduled" : "interview_canceled",
+        summary:
+          decision.action === "set"
+            ? `Calendly booking set the interview to ${new Date(decision.interviewAt).toLocaleString("en-US")}`
+            : "Calendly cancellation cleared the interview",
+        field: "interview_at",
+        old_value: oldValue,
+        new_value: decision.action === "set" ? decision.interviewAt : null,
+        meta: { source: "calendly-webhook" },
+      });
+    } catch (logErr) {
+      console.error("[calendly-writeback] activity_log insert threw:", logErr);
+    }
+
+    return decision;
+  } catch (e) {
+    console.error(
+      "[calendly-writeback] threw (non-fatal):",
+      e instanceof Error ? e.message : String(e),
+    );
+    return { action: "skip", reason: "exception" };
+  }
 }
 
 async function reconcileCancellation(
