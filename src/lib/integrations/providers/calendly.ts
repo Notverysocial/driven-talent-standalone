@@ -36,6 +36,7 @@
 // Auth mode is "oauth" in types.ts.  CALENDLY_CLIENT_ID + CALENDLY_CLIENT_SECRET
 // must be set in Vercel (see dashboard setup checklist in the report).
 
+import { INTEGRATION_HOSTS } from "../integration-hosts";
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -55,9 +56,9 @@ import { normalizeEmail } from "@/lib/duplicates";
 
 const PROVIDER = "calendly" as const;
 
-const AUTHORIZE_URL = "https://auth.calendly.com/oauth/authorize";
-const TOKEN_URL = "https://auth.calendly.com/oauth/token";
-const API_BASE = "https://api.calendly.com";
+const AUTHORIZE_URL = `${INTEGRATION_HOSTS.calendlyAuth}/oauth/authorize`;
+const TOKEN_URL = `${INTEGRATION_HOSTS.calendlyAuth}/oauth/token`;
+const API_BASE = INTEGRATION_HOSTS.calendlyApi;
 
 const REDIRECT_URI =
   "https://driven-talent-standalone.vercel.app/api/integrations/oauth/calendly/callback";
