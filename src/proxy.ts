@@ -35,6 +35,9 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/api/workflows/tick") return true;
   if (pathname === "/api/analytics/site-traffic") return true;
   if (pathname === "/api/build-direct/submit") return true;
+  // New-employer-lead notification sweep, called by Vercel Cron with its own
+  // CRON_SECRET bearer — must not be session-gated (would 307 to /login).
+  if (pathname === "/api/leads/notify") return true;
   return false;
 }
 

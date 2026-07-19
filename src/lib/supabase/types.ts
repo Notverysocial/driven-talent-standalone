@@ -993,6 +993,9 @@ export type SalesLead = {
   client_id: string | null;
   notes: string | null;
   created_by: string | null;
+  // Stamped once a new-inbound-lead notification email has been sent for this
+  // lead (migration 0043). Null = not yet notified. Powers idempotent sweeps.
+  lead_notified_at: string | null;
   created_at: string;
   updated_at: string;
 };
