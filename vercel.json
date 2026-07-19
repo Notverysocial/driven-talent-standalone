@@ -11,6 +11,10 @@
     {
       "path": "/api/integrity/applicant-audit",
       "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/leads/notify",
+      "schedule": "*/15 * * * *"
     }
   ]
 }
