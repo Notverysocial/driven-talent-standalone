@@ -91,6 +91,10 @@ export async function recordSyncEnd(
   ok: boolean,
   count: number = 0,
   error: string | null = null,
+  // A non-fatal condition worth showing the operator. Written to last_error so
+  // the card stays loud, WITHOUT flipping status to 'error' — an error status
+  // used to be a one-way door out of the cron loop.
+  warning: string | null = null,
 ): Promise<void> {
   const now = new Date();
   const intervalMin = INTEGRATION_DEFAULT_INTERVAL_MIN[provider] ?? 30;
@@ -102,7 +106,7 @@ export async function recordSyncEnd(
         last_sync_at: now.toISOString(),
         next_sync_at: next.toISOString(),
         last_sync_count: count,
-        last_error: null,
+        last_error: warning ? warning.slice(0, 1024) : null,
       }
     : {
         status: "error",

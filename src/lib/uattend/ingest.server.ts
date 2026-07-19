@@ -1,9 +1,11 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { DAYS, emptyDays, punchSpanMinutes, rollupTotals, type DayKey } from "@/lib/timecards";
+import type { TimecardStatus } from "@/lib/supabase/types";
 import { getUattendAdapter } from "./adapter.server";
 import { getIntegration } from "@/lib/integrations/db";
 import { mondayOf, type UattendEmployee } from "./contract";
+import { mayOverwriteTimecard, type IngestTrigger } from "./ingest-policy";
 
 // -------------------------------------------------------------------------
 // uAttend → canonical DB time cards.
@@ -31,6 +33,14 @@ export type UattendIngestSummary = {
   matchedByName: number;
   unmatched: { uattendId: string; name: string; hours: number }[];
   unassigned: { name: string; hours: number }[];
+  /**
+   * Time cards a SCHEDULED run declined to overwrite because a human had
+   * already acted on them (submitted / approved / rejected). Always reported so
+   * the guard is visible rather than a silent no-op — if hours are missing from
+   * an invoice, this list is where the answer is. Always empty for manual runs,
+   * which keep force semantics.
+   */
+  skippedLocked: { name: string; status: string; hours: number }[];
 };
 
 // Normalize a display name for matching: lowercase, drop payroll-ish tokens
@@ -56,7 +66,14 @@ function dayKeyFor(weekStart: string, dateYmd: string): DayKey | null {
 
 export async function importUattendTimecards(opts: {
   weekStart?: string;
+  /**
+   * Defaults to "manual" so every existing caller (the Reports "Pull week"
+   * button) keeps its current force behaviour exactly. Only the cron passes
+   * "scheduled", and only that path is guarded.
+   */
+  trigger?: IngestTrigger;
 }): Promise<UattendIngestSummary> {
+  const trigger: IngestTrigger = opts.trigger ?? "manual";
   const adapter = await getUattendAdapter();
   const sb = await createClient();
 
@@ -134,6 +151,7 @@ export async function importUattendTimecards(opts: {
     matchedByName: 0,
     unmatched: [],
     unassigned: [],
+    skippedLocked: [],
   };
 
   for (const [uid, agg] of byUid) {
@@ -179,13 +197,30 @@ export async function importUattendTimecards(opts: {
 
     const { data: existing } = await sb
       .from("timecards")
-      .select("id")
+      .select("id, status")
       .eq("employee_id", empId)
       .eq("client_id", asg.client_id)
       .eq("week_start", weekStart)
       .maybeSingle();
 
-    if (existing) {
+    const existingRow = existing as { id: string; status: TimecardStatus } | null;
+
+    // The payroll-corruption guard. A scheduled run must not rewrite hours a
+    // human has submitted or approved — previewInvoicesForPeriod reads approved
+    // time cards, so overwriting one moves invoice amounts with nobody asking.
+    // Manual pulls are unaffected.
+    if (
+      !mayOverwriteTimecard({ trigger, existingStatus: existingRow?.status ?? null })
+    ) {
+      summary.skippedLocked.push({
+        name: agg.name,
+        status: existingRow!.status,
+        hours: Math.round(agg.total * 100) / 100,
+      });
+      continue;
+    }
+
+    if (existingRow) {
       const { error } = await sb
         .from("timecards")
         .update({
@@ -194,7 +229,7 @@ export async function importUattendTimecards(opts: {
           ot_hours: totals.ot_hours,
           holiday_hours: totals.holiday_hours,
         })
-        .eq("id", (existing as { id: string }).id);
+        .eq("id", existingRow.id);
       if (!error) summary.timecardsUpserted += 1;
     } else {
       const { error } = await sb.from("timecards").insert({

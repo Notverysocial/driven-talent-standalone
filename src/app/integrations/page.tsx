@@ -4,6 +4,7 @@ import { Badge } from "@/components/Badge";
 import { requireRole } from "@/lib/auth.server";
 import { listIntegrations } from "@/lib/integrations/db";
 import { getClient } from "@/lib/integrations/registry";
+import { syncHealth } from "@/lib/integrations/health";
 import {
   ALL_PROVIDERS,
   INTEGRATION_AUTH_MODE,
@@ -117,6 +118,18 @@ export default async function IntegrationsPage({
   }
 
   const connectedCount = rows.filter((r) => r.status === "connected").length;
+  // "Connected" never meant "running" — uAttend sat here counted as connected
+  // while it had not synced in seventeen days. Count that separately.
+  const nowForHealth = new Date();
+  const staleCount = rows.filter((r) => {
+    const h = syncHealth({
+      provider: r.provider,
+      status: r.status,
+      lastSyncAt: r.last_sync_at,
+      now: nowForHealth,
+    });
+    return h.level === "stale";
+  }).length;
   const errorCount = rows.filter((r) => r.status === "error").length;
   const disconnectedCount = rows.filter(
     (r) => r.status === "disconnected",
@@ -153,8 +166,14 @@ export default async function IntegrationsPage({
         <KPI
           label="Connected"
           value={String(connectedCount)}
-          sub="syncing on schedule"
-          accent="var(--dt-success)"
+          sub={staleCount > 0 ? `${staleCount} not actually running` : "syncing on schedule"}
+          accent={staleCount > 0 ? "var(--dt-warning)" : "var(--dt-success)"}
+        />
+        <KPI
+          label="Stale"
+          value={String(staleCount)}
+          sub="no sync in 8+ intervals"
+          accent={staleCount > 0 ? "var(--dt-danger)" : "var(--dt-black)"}
         />
         <KPI
           label="Disconnected"
@@ -280,9 +299,17 @@ export default async function IntegrationsPage({
                   label="Account"
                   value={row?.account_email ?? "—"}
                 />
+                {/* Age-aware, not just a timestamp — a stale feed has to look
+                    different from a fresh one at a glance. */}
                 <Row
                   label="Last sync"
-                  value={fmtTime(row?.last_sync_at ?? null)}
+                  value={
+                    <SyncFreshness
+                      provider={provider}
+                      status={status}
+                      lastSyncAt={row?.last_sync_at ?? null}
+                    />
+                  }
                 />
                 <Row
                   label="Next sync"
@@ -292,6 +319,7 @@ export default async function IntegrationsPage({
                   label="Last count"
                   value={String(row?.last_sync_count ?? 0)}
                 />
+                {provider === "uattend" && <UattendWeeklyPullRow row={row} />}
                 {provider === "calendly" && <CalendlyCardExtras row={row} />}
                 {status === "error" && row?.last_error && (
                   <details
@@ -451,7 +479,94 @@ function CalendlyCardExtras({ row }: { row: IntegrationRow | undefined }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+// The uAttend card previously showed ONE health record — the punch feed's.
+// The weekly timecard pull, which is what payroll actually depends on, had no
+// row at all, so a dead pull was invisible next to a healthy punch feed. It
+// gets its own line, with its own freshness clock (daily cadence).
+function UattendWeeklyPullRow({ row }: { row: IntegrationRow | undefined }) {
+  const cfg = (row?.config ?? {}) as Record<string, unknown>;
+  const wp = (cfg.weekly_pull ?? null) as {
+    last_run_at?: string;
+    last_pull_window?: string | null;
+    ok?: boolean;
+    error?: string | null;
+    timecards_upserted?: number;
+    skipped_locked?: { name: string; status: string }[];
+  } | null;
+
+  const health = syncHealth({
+    provider: "uattend",
+    status: row?.status ?? "disconnected",
+    lastSyncAt: wp?.last_run_at ?? null,
+    now: new Date(),
+    intervalMinutes: 24 * 60, // runs daily
+  });
+
+  const color =
+    health.level === "ok"
+      ? "var(--dt-warm-700)"
+      : health.level === "warn"
+      ? "var(--dt-warning)"
+      : "var(--dt-danger)";
+
+  return (
+    <Row
+      label="Weekly timecard pull"
+      value={
+        <span style={{ color, fontWeight: health.level === "ok" ? 400 : 500 }}>
+          {wp?.last_run_at ? fmtTime(wp.last_run_at) : "Never run"}
+          <span style={{ fontSize: 11, marginLeft: 6 }}>
+            {wp?.last_pull_window ? `· ${wp.last_pull_window} ` : ""}
+            {health.level === "ok" && wp?.ok !== false
+              ? `(${health.label})`
+              : `· ${wp?.ok === false ? wp.error ?? "failed" : health.label}`}
+          </span>
+          {wp?.skipped_locked && wp.skipped_locked.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--dt-warning)", marginTop: 2 }}>
+              {wp.skipped_locked.length} card
+              {wp.skipped_locked.length === 1 ? "" : "s"} not overwritten
+              (already submitted/approved)
+            </div>
+          )}
+        </span>
+      }
+    />
+  );
+}
+
+// "Jul 2, 3:14 PM" told you when, never whether that was OK. This pairs the
+// timestamp with its age against the provider's own cadence, so a feed that
+// stopped seventeen days ago reads red instead of neutral grey.
+function SyncFreshness({
+  provider,
+  status,
+  lastSyncAt,
+}: {
+  provider: IntegrationProvider;
+  status: IntegrationStatus;
+  lastSyncAt: string | null;
+}) {
+  const health = syncHealth({ provider, status, lastSyncAt, now: new Date() });
+  if (health.level === "off") return <>—</>;
+
+  const color =
+    health.level === "ok"
+      ? "var(--dt-warm-700)"
+      : health.level === "warn"
+      ? "var(--dt-warning)"
+      : "var(--dt-danger)";
+
+  return (
+    <span style={{ color, fontWeight: health.level === "ok" ? 400 : 500 }}>
+      {lastSyncAt ? fmtTime(lastSyncAt) : "—"}
+      <span style={{ fontSize: 11, marginLeft: 6 }}>
+        {health.level === "ok" ? `(${health.label})` : `· ${health.label}`}
+      </span>
+    </span>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div
       style={{

@@ -9,6 +9,7 @@ import { TIMECARD_STATUSES, fmtWeekRange, isoWeekStart, startOfWeek } from "@/li
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { getIntegration } from "@/lib/integrations/db";
+import { syncHealth } from "@/lib/integrations/health";
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -383,10 +384,25 @@ function UAttendStatus({
   );
 
   if (status === "connected") {
-    dot = "var(--dt-success)";
+    // Age, not just status. This banner used to render a flat green dot and an
+    // absolute date, so "synced 3 minutes ago" and "synced seventeen days ago"
+    // looked identical — which is how a dead uAttend feed sat on the timecards
+    // page unnoticed from 2026-07-02.
+    const health = syncHealth({
+      provider: "uattend",
+      status: "connected",
+      lastSyncAt: lastSync,
+      now: new Date(),
+    });
+    dot =
+      health.level === "ok"
+        ? "var(--dt-success)"
+        : health.level === "warn"
+        ? "var(--dt-warning)"
+        : "var(--dt-danger)";
     label = lastSync ? (
       <>
-        Last uAttend sync{" "}
+        {health.level === "ok" ? "Last uAttend sync" : "⚠ uAttend "}
         <span className="tab-num" style={{ color: "var(--dt-black)" }}>
           {new Date(lastSync).toLocaleString(undefined, {
             month: "short",
@@ -395,9 +411,18 @@ function UAttendStatus({
             minute: "2-digit",
           })}
         </span>
+        {health.level !== "ok" && (
+          <>
+            {" "}
+            — {health.label}. Hours may be missing;{" "}
+            <Link href="/integrations" style={{ color: "var(--dt-gold-deep)" }}>
+              check the feed
+            </Link>
+          </>
+        )}
       </>
     ) : (
-      <>uAttend connected — no sync yet</>
+      <>⚠ uAttend connected but has never synced — no hours are arriving</>
     );
   } else if (status === "error") {
     dot = "var(--dt-danger)";
