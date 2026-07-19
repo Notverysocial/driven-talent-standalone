@@ -9,6 +9,7 @@ import {
   type ApplicationIntakeDetail,
 } from "@/lib/recruiting.server";
 import { INTAKE_STATUSES } from "@/lib/recruiting";
+import { IntakeResumeLink } from "../IntakeResumeLink";
 
 function fmtDateTime(d: string | null): string {
   if (!d) return "—";
@@ -92,7 +93,16 @@ export default async function ApplicationDetailPage(props: {
             <DetailRow
               label="Resume"
               value={detail.resume_url ? "Attached" : "—"}
-              valueHref={detail.resume_url ?? undefined}
+              valueNode={
+                detail.resume_url ? (
+                  <IntakeResumeLink
+                    resumeRef={detail.resume_url}
+                    label="Open resume →"
+                    className="dt-btn dt-btn-ghost tiny"
+                    style={{ fontSize: 11.5, padding: "4px 10px" }}
+                  />
+                ) : undefined
+              }
             />
           </div>
 
@@ -263,10 +273,14 @@ function DetailRow({
   label,
   value,
   valueHref,
+  valueNode,
 }: {
   label: string;
   value: string;
   valueHref?: string;
+  // Custom right-hand content (e.g. a resume link that signs on click). When
+  // set it replaces the plain value / valueHref rendering.
+  valueNode?: React.ReactNode;
 }) {
   return (
     <div
@@ -280,7 +294,9 @@ function DetailRow({
       }}
     >
       <span style={{ color: "var(--dt-warm-500)" }}>{label}</span>
-      {valueHref ? (
+      {valueNode ? (
+        <span style={{ textAlign: "right" }}>{valueNode}</span>
+      ) : valueHref ? (
         <a
           href={valueHref}
           target="_blank"

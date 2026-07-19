@@ -11,6 +11,7 @@ import {
   CALENDLY_EVENT_TYPES,
 } from "@/lib/integrations/calendly-events";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
+import { IntakeResumeLink } from "./IntakeResumeLink";
 import {
   promoteIntakeToCandidate,
   setIntakeStatus,
@@ -173,15 +174,14 @@ export function IntakeCard({
               NOTE(mockup): exact claim-card layout (avatar/timestamp/reassign
               arrangement) is governed by Mockup 1; this ships the behavior. */}
           {intake.resume_url ? (
-            <a
-              href={intake.resume_url}
-              target="_blank"
-              rel="noopener noreferrer"
+            // Resume ref may be a private storage key (would 404 as a raw href),
+            // so resolve to a signed URL on click (card 5e3f8a66).
+            <IntakeResumeLink
+              resumeRef={intake.resume_url}
+              label="Download Resume (PDF)"
               className="dt-btn"
               style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", background: "#2E7D46", color: "#fff", borderColor: "#2E7D46" }}
-            >
-              Download Resume (PDF)
-            </a>
+            />
           ) : (
             <button type="button" disabled className="dt-btn" style={{ fontSize: 11.5, padding: "5px 10px", justifyContent: "center", opacity: 0.5 }} title="No resume on file">
               No resume
