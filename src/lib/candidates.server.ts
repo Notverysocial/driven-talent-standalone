@@ -9,7 +9,9 @@ export async function listCandidates(): Promise<Candidate[]> {
     .select("*")
     .order("applied_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as Candidate[];
+  // Drop demo/QA seed rows (e.g. the E2E Resume Test candidate) from the ATS
+  // list (migration 0044). A missing is_seed pre-migration keeps every row.
+  return ((data ?? []) as Candidate[]).filter((c) => c.is_seed !== true);
 }
 
 export async function getCandidate(id: string): Promise<Candidate | null> {

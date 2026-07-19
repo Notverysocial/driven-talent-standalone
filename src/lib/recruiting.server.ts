@@ -6,6 +6,13 @@ import type {
   Position,
 } from "./recruiting";
 
+// Demo/QA seed rows (migration 0044) are excluded from every client-facing ATS
+// read. A missing is_seed (before the migration is applied) is treated as NOT a
+// seed row, so these reads stay correct both before and after the migration.
+export function isSeedRow(r: { is_seed?: boolean | null }): boolean {
+  return r.is_seed === true;
+}
+
 // ---------- Inbound calls ------------------------------------------------
 
 export async function listInboundCalls(): Promise<InboundCall[]> {
@@ -94,7 +101,8 @@ export async function listApplicationIntakes(): Promise<ApplicationIntake[]> {
     .select("*")
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as ApplicationIntake[];
+  // Drop demo/QA seed rows from the client-facing list (migration 0044).
+  return ((data ?? []) as ApplicationIntake[]).filter((r) => !isSeedRow(r));
 }
 
 // The TRUE unreviewed-intake backlog, with an aging signal (card 1cb60f5c).
@@ -128,24 +136,32 @@ const EMPTY_BACKLOG: IntakeBacklogSignal = {
 export async function getNewIntakeBacklog(): Promise<IntakeBacklogSignal> {
   try {
     const sb = await createClient();
+    // select("*") (not just created_at) so is_seed comes through when present;
+    // naming a not-yet-migrated column would error the whole query instead.
     const { data, error } = await sb
       .from("application_intakes")
-      .select("created_at")
+      .select("*")
       .eq("status", "new");
     if (error || !data) return EMPTY_BACKLOG;
+
+    // Exclude demo/QA seed rows so the headline backlog reflects real people
+    // only (migration 0044). The two "56 day" @example.com rows were the badge.
+    const rows = (data as { created_at: string; is_seed?: boolean }[]).filter(
+      (r) => !isSeedRow(r),
+    );
 
     const now = Date.now();
     const DAY = 24 * 60 * 60 * 1000;
     let oldest = 0;
     let over7 = 0;
     let over30 = 0;
-    for (const row of data as { created_at: string }[]) {
+    for (const row of rows) {
       const ageDays = (now - new Date(row.created_at).getTime()) / DAY;
       if (ageDays > oldest) oldest = ageDays;
       if (ageDays > 7) over7 += 1;
       if (ageDays > 30) over30 += 1;
     }
-    return { count: data.length, oldestDays: Math.floor(oldest), over7, over30 };
+    return { count: rows.length, oldestDays: Math.floor(oldest), over7, over30 };
   } catch {
     return EMPTY_BACKLOG;
   }
