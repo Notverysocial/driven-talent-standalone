@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "./supabase/server";
 import { getCurrentUser } from "./auth.server";
 import { parseMentions } from "./notes";
+import { logActivity } from "./activity-log.server";
 import type { NoteSubjectType, NoteMention } from "./supabase/types";
 
 function linkPathFor(subjectType: NoteSubjectType, subjectId: string): string {
@@ -120,6 +121,17 @@ export async function addNote(
     // Non-fatal: a failed notification insert must not lose the note itself.
     await supabase.from("notifications").insert(notify);
   }
+
+  // Change log — record that a note was added (the note body itself lives in the
+  // notes log; this keeps the single activity timeline complete).
+  await logActivity({
+    subjectType,
+    subjectId,
+    action: followupRequired ? "note_added_followup" : "note_added",
+    summary: followupRequired
+      ? `Added a note with a follow-up${followupAssignee ? ` for ${followupAssignee}` : ""}`
+      : "Added a note",
+  });
 
   revalidatePath(link);
 }

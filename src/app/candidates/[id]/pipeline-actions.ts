@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { PipelineStageKey } from "@/lib/pipeline";
+import { logActivity } from "@/lib/activity-log.server";
+import { PIPELINE_STAGES, type PipelineStageKey } from "@/lib/pipeline";
 
 // Y/N select ("" | "yes" | "no") -> nullable boolean, preserving the
 // "not yet answered" (null) state the Excel tracker couldn't express.
@@ -80,6 +81,15 @@ export async function savePipelineStage(
     .update(patch)
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
+
+  const stageLabel =
+    PIPELINE_STAGES.find((s) => s.key === stage)?.label ?? stage;
+  await logActivity({
+    subjectId: candidateId,
+    action: "pipeline_stage_saved",
+    summary: `Updated pipeline stage: ${stageLabel}`,
+    field: stage,
+  });
 
   revalidatePath(`/candidates/${candidateId}`);
   revalidatePath("/candidates");

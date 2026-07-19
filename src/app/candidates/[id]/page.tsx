@@ -19,6 +19,7 @@ import {
 } from "@/lib/integrations/calendly-events";
 import { CriterionRow } from "./CriterionRow";
 import { StatusActions } from "./StatusActions";
+import { DoNotReturnActions } from "./DoNotReturnActions";
 import { ScreeningStatusActions } from "./ScreeningStatusActions";
 import { DoNotReturnActions } from "./DoNotReturnActions";
 import { ResumeBlock } from "./ResumeBlock";
@@ -29,6 +30,8 @@ import { PipelineTracker } from "./PipelineTracker";
 import { CandidateProfileFields } from "./CandidateProfileFields";
 import { CandidateNotes } from "@/components/CandidateNotes";
 import { listNotes } from "@/lib/candidate-notes.server";
+import { ActivityTimeline } from "@/components/ActivityTimeline";
+import { listActivity } from "@/lib/activity-log.server";
 
 export default async function CandidateDetailPage({
   params,
@@ -38,7 +41,10 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const cand = await getCandidate(id);
   if (!cand) notFound();
-  const notes = await listNotes("candidate", cand.id);
+  const [notes, activity] = await Promise.all([
+    listNotes("candidate", cand.id),
+    listActivity("candidate", cand.id),
+  ]);
 
   const score = cand.score ?? weightedScore(cand.criteria);
   const tier = tierLabel(score);
@@ -328,6 +334,19 @@ export default async function CandidateDetailPage({
                 </div>
               )}
               <CandidateNotes subjectType="candidate" subjectId={cand.id} notes={notes} />
+            </div>
+          </div>
+
+          <div className="dt-card">
+            <div className="dt-card-head">
+              <div>
+                <h3>Change Log</h3>
+                <div className="sub">Every edit to this candidate · who changed what · newest first</div>
+              </div>
+              <Badge tone="dark">{activity.length}</Badge>
+            </div>
+            <div style={{ padding: "12px 24px 20px" }}>
+              <ActivityTimeline entries={activity} />
             </div>
           </div>
         </div>
