@@ -59,7 +59,54 @@ by the code on `main`**. Either production is running an older build of
 touched the row since — no disconnect/reconnect, and no `recordSyncStart`
 (which would have set `status='syncing'`).
 
-## The standing hypothesis: the cron is not completing runs
+## ROOT CAUSE — confirmed from Vercel runtime logs, 2026-07-19
+
+```
+/api/leads/notify      200  every 15 min  → "[lead-notify] configured=true considered=0 sent=0"
+/api/integrations/cron 307  every 15 min  → no log line at all, ever   [serverless-middleware]
+```
+
+**The proxy was 307-redirecting `/api/integrations/cron` to `/login` on every
+invocation.** With `AUTH_ENABLED=true` a Vercel Cron request carries no session,
+and the path was not in `isPublicPath` in `src/proxy.ts`. The redirect happens in
+middleware, *before* the route handler runs — so there is no log line, no
+database write, and no trace. The job did not fail; it did not exist.
+
+`/api/leads/notify` was allowlisted (with a comment explaining this exact trap)
+and worked perfectly the whole time. The two were never compared.
+
+This closes every open question above:
+
+- **Why the row state was impossible.** `recordSyncEnd` never ran, so
+  `last_sync_at` / `next_sync_at` / `status` / `updated_at` stayed exactly where
+  the last *manual* sync left them. The code that "cannot produce" that row
+  simply never executed.
+- **Why two providers froze on different dates.** Each froze the day a human
+  last touched it, not on a shared failure date.
+- **Why `CRON_SECRET` was not the issue.** The request died before reaching the
+  secret check.
+
+**Three of the four crons in `vercel.json` were dark**, not one:
+`/api/integrations/cron`, `/api/talent-pool/digest`, and
+`/api/integrity/applicant-audit`. Only `/api/leads/notify` was registered.
+
+### The second-order risk this created
+
+Every cron route used the same shape:
+
+```ts
+const expected = process.env.CRON_SECRET;
+if (expected) { /* check bearer */ }
+```
+
+which does **nothing** when `CRON_SECRET` is unset. That was survivable only
+because the 307 was bouncing unauthenticated callers first — the middleware
+redirect was accidentally the sole protection on these endpoints. Allowlisting
+them removes it. So the check now fails **closed**: no secret configured means
+the endpoint refuses to run (503) rather than running for anyone with the URL.
+See `src/lib/cron-auth.ts`.
+
+## Superseded hypothesis: the cron is not completing runs
 
 With `status='connected'` and `next_sync_at IS NULL`, the existing query —
 
@@ -76,25 +123,11 @@ never synced, `last_sync_count` 0). Two providers, two different freeze dates,
 neither advancing. A per-provider bug does not do that; a scheduler that is not
 executing does.
 
-Leading candidates, in order:
-
-1. **`CRON_SECRET` mismatch.** The route returns 401 *before any database
-   write*. Every invocation would fail leaving zero trace, and every row would
-   freeze at whatever its last manual sync left it — which is exactly the
-   observed shape. Rotating the secret in Vercel without redeploying produces
-   this.
-2. **Crons not registered / plan limits.** `vercel.json` declares `*/15`
-   schedules; sub-daily cron granularity and cron count are plan-gated.
-3. **The run times out.** Weaker: `recordSyncStart` would have set
-   `status='syncing'` and moved `updated_at`, and it did not.
-
-### How to settle it
-
-Vercel → Project → **Cron Jobs**: last invocation time and status per path. Or
-Logs filtered to `/api/integrations/cron`. If there are no invocations, it is
-(2). If there are invocations returning 401, it is (1). If `/api/leads/notify`
-is also silent, the whole scheduler is down and it is not a uAttend problem at
-all.
+Kept for the record: the reasoning that pointed at the scheduler was correct,
+but the specific mechanism guessed here (`CRON_SECRET` mismatch, plan limits,
+timeouts) was wrong. The logs settled it — see ROOT CAUSE above. The lesson
+worth keeping is that the database could not distinguish "job failed" from "job
+never ran", and only the runtime logs could.
 
 ## What changed on 2026-07-19 (PR #68)
 
@@ -108,9 +141,16 @@ all.
   never overwrite a submitted/approved/rejected card, and records its outcome
   on every path including failure and 401.
 
-**None of this fixes a scheduler that is not running.** If the cron is not
-executing, these changes make the next outage visible within a day instead of
-seventeen — they do not prevent it. Settle the Vercel question.
+Then, once the logs identified the 307 (same day):
+
+- **All cron paths allowlisted** in `src/proxy.ts`, sourced from a single list
+  in `src/lib/cron-paths.ts`.
+- **`e2e/logic/cron-registration.spec.ts`** diffs `vercel.json` against that
+  list in the required gate. Adding a cron without registering its path now
+  fails CI instead of failing silently in production. Verified by removing
+  `/api/integrations/cron` from the list and watching the suite go red.
+- **Fail-closed `CRON_SECRET`** on all five cron routes, replacing the
+  `if (expected)` no-op that left them open once the 307 was gone.
 
 ## Deliberately not done
 

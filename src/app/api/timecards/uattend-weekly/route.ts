@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkCronAuth } from "@/lib/cron-auth";
 import { importUattendTimecards } from "@/lib/uattend/ingest.server";
 import { scheduledPullWindows } from "@/lib/uattend/ingest-policy";
 import { getIntegration, updateIntegrationStatus } from "@/lib/integrations/db";
@@ -44,21 +45,20 @@ type WindowResult = {
 };
 
 export async function GET(request: Request): Promise<NextResponse> {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = request.headers.get("authorization") ?? "";
-    const got = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-    if (got !== expected) {
-      // Recorded, not just refused. An unauthorized cron looks exactly like a
-      // cron that never fired — which is the failure mode that hid a dead feed
-      // for seventeen days — so leave a trace an operator can find.
-      await recordOutcome({
-        ok: false,
-        error: "unauthorized — CRON_SECRET mismatch or missing bearer",
-        windows: [],
-      }).catch(() => {});
-      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-    }
+  // Fail-closed shared check. Note this route had the same permissive
+  // `if (expected)` shape as the others — with CRON_SECRET unset it would have
+  // been wide open the moment the path was allowlisted.
+  const denied = checkCronAuth(request);
+  if (denied) {
+    // Recorded, not just refused. A rejected cron looks exactly like a cron
+    // that never fired — the failure mode that hid a dead feed for seventeen
+    // days — so leave a trace an operator can find.
+    await recordOutcome({
+      ok: false,
+      error: `refused: HTTP ${denied.status} — CRON_SECRET missing or mismatched`,
+      windows: [],
+    }).catch(() => {});
+    return denied as unknown as NextResponse;
   }
 
   const todayIso = new Date().toISOString().slice(0, 10);

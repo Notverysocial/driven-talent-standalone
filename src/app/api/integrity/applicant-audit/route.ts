@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkCronAuth } from "@/lib/cron-auth";
 import {
   runApplicantIntegrityAudit,
   saveAuditSnapshot,
@@ -22,14 +23,8 @@ export const dynamic = "force-dynamic";
  * publicly triggerable. Also runnable on demand for verification.
  */
 export async function GET(request: Request): Promise<NextResponse> {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = request.headers.get("authorization") ?? "";
-    const got = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-    if (got !== expected) {
-      return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-    }
-  }
+  const denied = checkCronAuth(request);
+  if (denied) return denied as unknown as NextResponse;
 
   const previousFlags = await getPreviousFlagCount();
   const report = await runApplicantIntegrityAudit();

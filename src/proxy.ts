@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase/middleware";
+import { isCronPath } from "@/lib/cron-paths";
 
 // Wave 3.1 — Next 16 calls this file `proxy.ts` (it was `middleware.ts`
 // in Next 15). The function/config shape is unchanged.
@@ -35,9 +36,17 @@ function isPublicPath(pathname: string): boolean {
   if (pathname === "/api/workflows/tick") return true;
   if (pathname === "/api/analytics/site-traffic") return true;
   if (pathname === "/api/build-direct/submit") return true;
-  // New-employer-lead notification sweep, called by Vercel Cron with its own
-  // CRON_SECRET bearer — must not be session-gated (would 307 to /login).
-  if (pathname === "/api/leads/notify") return true;
+  // Every Vercel Cron endpoint. These carry no session, so gating them here
+  // 307s them to /login and the handler never runs — no log line, no database
+  // write, no trace. /api/leads/notify used to be the only one listed, which is
+  // why it was the only cron that worked; the other three were dead for weeks.
+  // The list lives in cron-paths.ts and is diffed against vercel.json by
+  // e2e/logic/cron-registration.spec.ts, so this cannot silently drift again.
+  //
+  // Being public here does NOT make these endpoints open: each one enforces
+  // CRON_SECRET itself via checkCronAuth, which fails closed when the secret
+  // is unset (src/lib/cron-auth.ts).
+  if (isCronPath(pathname)) return true;
   return false;
 }
 

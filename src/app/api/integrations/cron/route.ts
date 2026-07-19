@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { checkCronAuth } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getClient } from "@/lib/integrations/registry";
 import { isIntegrationProvider } from "@/lib/integrations/types";
@@ -35,17 +36,8 @@ import { recordSyncEnd, recordSyncStart } from "@/lib/integrations/db";
 // the latch does not fix that. See docs/UATTEND-SYNC-OUTAGE.md.
 
 export async function GET(request: Request): Promise<NextResponse> {
-  const expected = process.env.CRON_SECRET;
-  if (expected) {
-    const auth = request.headers.get("authorization") ?? "";
-    const got = auth.startsWith("Bearer ") ? auth.slice("Bearer ".length) : "";
-    if (got !== expected) {
-      return NextResponse.json(
-        { ok: false, error: "unauthorized" },
-        { status: 401 },
-      );
-    }
-  }
+  const denied = checkCronAuth(request);
+  if (denied) return denied as unknown as NextResponse;
 
   const sb = createServiceClient();
   const nowIso = new Date().toISOString();
