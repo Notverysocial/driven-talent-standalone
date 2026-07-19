@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { fmtCurrency } from "../src/lib/sales-pipeline";
+import { fmtCurrency } from "../../src/lib/sales-pipeline";
 
 // Regression for QA Round 3 P1: the Sales Pipeline value strip rendered
 // "$5" for a $5,000 lead and "$13" for a $12,500 lead while the Won YTD

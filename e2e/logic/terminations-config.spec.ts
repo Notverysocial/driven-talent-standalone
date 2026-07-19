@@ -5,7 +5,7 @@ import {
   displayValue,
   isTerminationFieldType,
   type TerminationSection,
-} from "../src/lib/terminations";
+} from "../../src/lib/terminations";
 
 // Pure unit coverage for the config-driven terminations tracker helpers.
 // No DB, no network — locks down the stable-key / progress / display logic

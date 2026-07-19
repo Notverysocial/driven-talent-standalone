@@ -3,8 +3,8 @@ import {
   resolvePrismHrAdapter,
   LivePrismHrAdapter,
   MockPrismHrAdapter,
-} from "../src/lib/prismhr/adapter";
-import type { PrismHrPayrollBatch } from "../src/lib/prismhr/contract";
+} from "../../src/lib/prismhr/adapter";
+import type { PrismHrPayrollBatch } from "../../src/lib/prismhr/contract";
 
 // Pure coverage for the PrismHR scaffold. Proves: mock-until-connected, and the
 // live adapter NEVER makes a call (methods throw not-implemented). No network.

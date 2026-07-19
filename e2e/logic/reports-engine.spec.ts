@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
-import { resolveTemplateKey, isReportTemplateKey } from "../src/lib/reports/templates";
-import { reportToCsv, reportFilename, type ReportResult } from "../src/lib/reports/result";
+import { resolveTemplateKey, isReportTemplateKey } from "../../src/lib/reports/templates";
+import { reportToCsv, reportFilename, type ReportResult } from "../../src/lib/reports/result";
 
 // Pure coverage for the report builder's template resolution + CSV rendering.
 
