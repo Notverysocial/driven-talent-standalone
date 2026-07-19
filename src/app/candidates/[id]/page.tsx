@@ -4,6 +4,7 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
+import { WaitingAge } from "@/components/WaitingAge";
 import {
   CANDIDATE_STATUSES,
   scoreColor,
@@ -163,6 +164,18 @@ export default async function CandidateDetailPage({
                   {cand.experience_years ? ` · ${cand.experience_years} yrs` : ""}
                   {cand.city ? ` · ${cand.city}` : ""}
                 </div>
+                {/* Carry the waiting-age signal onto the candidate record (card
+                    cf34006d): while a promoted candidate is still moving through
+                    the funnel, how long they have waited since applying still
+                    matters. Hidden once hired or rejected. */}
+                {cand.status !== "hired" && cand.status !== "rejected" && (
+                  <div style={{ marginTop: 8 }}>
+                    <WaitingAge
+                      since={cand.applied_at ?? cand.created_at}
+                      verb="in pipeline"
+                    />
+                  </div>
+                )}
                 {cand.certifications.length > 0 && (
                   <div
                     style={{
