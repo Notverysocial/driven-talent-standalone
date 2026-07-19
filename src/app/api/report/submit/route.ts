@@ -19,7 +19,7 @@
 //
 // ATTACHMENTS
 //   Screenshots are stored for real, in the private `bug_attachments` Supabase
-//   Storage bucket (supabase/migrations/0047_bug_attachments.sql), and the key
+//   Storage bucket (supabase/migrations/0048_bug_intake_storage.sql), and the key
 //   is written to bug_reports.attachment_path.
 //
 //   If that bucket does not exist yet, /report does not render a file input at
@@ -224,7 +224,7 @@ export async function POST(req: NextRequest) {
     if (attachmentPath) {
       try {
         // Service role: the bucket grants the anon key INSERT only (migration
-        // 0047), deliberately, so a submitter cannot delete attachments.
+        // 0048), deliberately, so a submitter cannot delete attachments.
         await createServiceClient()
           .storage.from(BUG_ATTACHMENT_BUCKET)
           .remove([attachmentPath]);

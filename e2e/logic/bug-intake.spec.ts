@@ -409,11 +409,11 @@ test("severity values we emit are in the bug_severity enum", async () => {
   }
 });
 
-test("the attachment bucket name matches migration 0047", async () => {
+test("the attachment bucket name matches migration 0048", async () => {
   const fs = await import("node:fs/promises");
   const path = await import("node:path");
   const sql = await fs.readFile(
-    path.resolve(__dirname, "../../supabase/migrations/0047_bug_attachments.sql"),
+    path.resolve(__dirname, "../../supabase/migrations/0048_bug_intake_storage.sql"),
     "utf8",
   );
   expect(sql).toContain(`'${BUG_ATTACHMENT_BUCKET}'`);

@@ -433,7 +433,7 @@ export function attachmentKey(uuid: string, filename: string): string {
   return `public-intake/${uuid}.${ext || "png"}`;
 }
 
-// Bucket name — provisioned by supabase/migrations/0047_bug_attachments.sql.
+// Bucket name — provisioned by supabase/migrations/0048_bug_intake_storage.sql.
 // Until that migration is applied the form does not render a file input at
 // all (see src/app/report/page.tsx). It never accepts a file it cannot store.
 export const BUG_ATTACHMENT_BUCKET = "bug_attachments";

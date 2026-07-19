@@ -26,7 +26,7 @@ export const metadata: Metadata = {
  * Is the attachment bucket actually provisioned?
  *
  * This is the guard that keeps us honest. Migrations are NOT auto-applied in
- * this project, so this code can deploy before 0047_bug_attachments.sql has
+ * this project, so this code can deploy before 0048_bug_intake_storage.sql has
  * been run. Rather than render an upload control that would throw away the
  * file (the exact pattern behind the resume-loss incident, and behind the
  * "[screenshot attached at submission time but storage is not yet
@@ -37,7 +37,7 @@ export const metadata: Metadata = {
  * empty).
  *
  * The service role is used for the probe because the bucket is private and its
- * policies grant the anon key INSERT only (migration 0047) — an anon `list`
+ * policies grant the anon key INSERT only (migration 0048) — an anon `list`
  * would fail even once the bucket exists. If SUPABASE_SERVICE_ROLE_KEY is not
  * configured the probe fails closed, which is the safe direction: no upload
  * control, honest copy, no discarded files.

@@ -12,6 +12,12 @@
 --
 -- Additive and idempotent — safe to re-run.
 --
+-- Numbered 0048, not 0047: the per-employee markup lane claimed 0047 in
+-- parallel on the same working tree and keeps it, being reported first and
+-- touching billing. This migration has no ordering dependency on 0047 — it
+-- creates a storage bucket and touches no table — so the two can be applied
+-- in either order.
+--
 -- ---------------------------------------------------------------------------
 -- BEHAVIOUR BEFORE THIS IS APPLIED
 --
