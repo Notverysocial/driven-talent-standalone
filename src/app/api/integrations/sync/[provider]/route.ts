@@ -60,6 +60,7 @@ export async function POST(
       result.ok,
       result.count ?? 0,
       result.ok ? null : (result.error ?? "sync_failed"),
+      result.warning ?? null,
     );
     return NextResponse.json(result, { status: result.ok ? 200 : 500 });
   } catch (e) {

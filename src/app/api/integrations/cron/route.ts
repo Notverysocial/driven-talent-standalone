@@ -13,9 +13,18 @@ import { recordSyncEnd, recordSyncStart } from "@/lib/integrations/db";
 // for the cron job). Drains every connected integration whose
 // next_sync_at is due.
 //
-// Status filter: only status='connected' rows. Rows in 'syncing' are
-// skipped (in-flight elsewhere) and 'error' rows are picked up again
-// on their next_sync_at (recordSyncEnd reschedules on failure too).
+// Status filter: 'connected' AND 'error' rows are drained. Rows in
+// 'syncing' are skipped (in-flight elsewhere).
+//
+// The 'error' half is a FIX, not a nicety (2026-07-19). This comment
+// previously claimed error rows were "picked up again on their
+// next_sync_at" while the query filtered .eq('status','connected') —
+// the comment described the intent, the code did the opposite. Any
+// single failed run therefore removed an integration from the cron
+// PERMANENTLY: recordSyncEnd set status='error', and nothing ever
+// selected it again. uAttend hit that on 2026-07-02 and went silent
+// for seventeen days. recordSyncEnd does reschedule next_sync_at on
+// failure, so honouring it here is all that was ever missing.
 
 export async function GET(request: Request): Promise<NextResponse> {
   const expected = process.env.CRON_SECRET;
@@ -36,7 +45,7 @@ export async function GET(request: Request): Promise<NextResponse> {
   const { data, error } = await sb
     .from("integrations")
     .select("*")
-    .eq("status", "connected")
+    .in("status", ["connected", "error"])
     .or(`next_sync_at.is.null,next_sync_at.lte.${nowIso}`);
 
   if (error) {
@@ -72,6 +81,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         r.ok,
         r.count ?? 0,
         r.ok ? null : (r.error ?? "sync_failed"),
+        r.warning ?? null,
       );
       results.push({ provider: row.provider, ...r });
     } catch (e) {

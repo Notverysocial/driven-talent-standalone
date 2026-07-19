@@ -36,6 +36,23 @@ export interface IntegrationRow {
   config: Record<string, unknown>;
 }
 
+/**
+ * Outcome of one sync run.
+ *
+ * `warning` is the third state the original two-state result was missing: the
+ * run SUCCEEDED but an operator needs to know something (rows landed, some
+ * could not be mapped). It is surfaced on the card exactly like an error but
+ * does not mark the run failed — a failed run flips status='error', and an
+ * 'error' row used to be permanently skipped by the cron. Conflating "worth
+ * mentioning" with "failed" is what silenced uAttend for seventeen days.
+ */
+export type SyncResult = {
+  ok: boolean;
+  count?: number;
+  error?: string;
+  warning?: string;
+};
+
 export interface IntegrationClient {
   /** Get OAuth authorize URL or return null if the provider uses API-key auth. */
   getOAuthAuthorizeUrl?(state: string): string;
@@ -48,10 +65,16 @@ export interface IntegrationClient {
   refreshToken?(
     integration: IntegrationRow,
   ): Promise<{ ok: boolean; error?: string }>;
-  /** Pull / push data for this provider. */
-  sync(
-    integration: IntegrationRow,
-  ): Promise<{ ok: boolean; count?: number; error?: string }>;
+  /**
+   * Pull / push data for this provider.
+   *
+   * `warning` is for "the run succeeded, but an operator needs to know
+   * something" — e.g. rows landed but some could not be mapped. It is surfaced
+   * on the card like an error but does NOT mark the run failed, because a
+   * failed run used to disable the integration permanently (see the cron
+   * route). Conflating the two is what silenced uAttend for seventeen days.
+   */
+  sync(integration: IntegrationRow): Promise<SyncResult>;
   /** Handle an incoming webhook from the provider. */
   handleWebhook?(
     request: Request,

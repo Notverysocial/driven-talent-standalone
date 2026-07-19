@@ -26,7 +26,7 @@ import {
   updateIntegrationStatus,
   clearIntegrationTokens,
 } from "../db";
-import type { IntegrationClient, IntegrationRow } from "../types";
+import type { IntegrationClient, IntegrationRow, SyncResult } from "../types";
 
 // uAttend REST base.  Their docs list api.uattend.com as the host;
 // the path layout for punch records is `/punches` with a `start` /
@@ -59,9 +59,7 @@ class UAttendClient implements IntegrationClient {
   // INTEGRATION_AUTH_MODE.uattend = "api_key".
 
   // ---------------- sync ----------------
-  async sync(
-    integration: IntegrationRow,
-  ): Promise<{ ok: boolean; count?: number; error?: string }> {
+  async sync(integration: IntegrationRow): Promise<SyncResult> {
     const token = integration.access_token;
     if (!token) {
       return {
@@ -212,13 +210,20 @@ class UAttendClient implements IntegrationClient {
 
     await updateIntegrationStatus("uattend", { config: configPatch });
 
-    // Unmapped employees aren't a hard failure — punches were still
-    // stored with employee_id=null — but spec asks us to surface the
-    // condition via last_error so the admin card stays loud until the
-    // mapping is filled in.  We return ok=false in that case; the
-    // wrapper writes our message to last_error and flips status=error.
+    // Unmapped employees aren't a hard failure — the punches WERE stored, with
+    // employee_id=null — so this is a warning, not a failed run.
+    //
+    // It used to return ok=false here "so the admin card stays loud". That was
+    // catastrophic: ok=false → status='error' → the cron's status filter
+    // dropped the row forever. With 11 of 80 uAttend users unmapped, every
+    // single run reported failure, so the very first one after the 2026-07-02
+    // punch-feed deploy latched the integration off. Seventeen days of no
+    // syncs, caused by a condition that was never fatal.
+    //
+    // `warning` keeps the card just as loud (it still writes last_error) while
+    // leaving status='connected' so the job keeps running.
     if (errMsg) {
-      return { ok: false, count: inserted, error: errMsg };
+      return { ok: true, count: inserted, warning: errMsg };
     }
     return { ok: true, count: inserted };
   }
