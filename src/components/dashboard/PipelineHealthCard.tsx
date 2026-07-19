@@ -88,6 +88,16 @@ export async function PipelineHealthCard() {
       sub: "@example.com seed data in prod",
       severity: "warn",
     },
+    {
+      label: "Duplicate people",
+      value: r.duplicateCandidates.records,
+      sub:
+        r.duplicateCandidates.groups > 0
+          ? `${r.duplicateCandidates.groups} group(s) · blocks interview sync`
+          : "no repeated email or phone",
+      href: "/candidates",
+      severity: "warn",
+    },
   ];
 
   const healthy = r.flags === 0;

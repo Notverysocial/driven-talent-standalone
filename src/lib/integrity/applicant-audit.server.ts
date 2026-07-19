@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { groupDuplicateCandidates, summarizeDuplicates } from "@/lib/duplicates";
 
 // Recurring data-integrity audit for the applicant pipeline (card 1322c60e).
 //
@@ -41,6 +42,10 @@ export type ApplicantIntegrityReport = {
   };
   // (f) demo/QA seed rows that leaked into production without being excluded
   seedRows: { unexcluded: number };
+  // (g) multiple candidate records for the same human (same normalized email or
+  // phone). These block the Calendly interview write-back — see the profile
+  // banner and the change-log entry the webhook writes when it refuses.
+  duplicateCandidates: { groups: number; records: number; samples: string[] };
   // Headline: total count of things needing attention (drives dashboard severity)
   flags: number;
 };
@@ -89,6 +94,20 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
       rawIntakes.filter((i) => isExampleEmail(i.email) && i.is_seed !== true).length +
       rawCandidates.filter((c) => isExampleEmail(c.email) && c.is_seed !== true).length,
   };
+
+  // (g) Duplicate candidate records for one human. Seed rows are excluded
+  // inside groupDuplicateCandidates. Detection only — nothing is merged.
+  const duplicateCandidates = summarizeDuplicates(
+    groupDuplicateCandidates(
+      rawCandidates.map((c) => ({
+        id: c.id,
+        full_name: null,
+        email: c.email,
+        phone: (c as { phone?: string | null }).phone ?? null,
+        is_seed: c.is_seed,
+      })),
+    ),
+  );
 
   // Every other metric reflects REAL people only — exclude the excluded seed
   // rows (migration 0044). Filtering both intakes and candidates keeps the
@@ -192,7 +211,8 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     danglingPromotedCandidate +
     promotedWithoutCandidateId +
     danglingPromotedEmployee +
-    seedRows.unexcluded;
+    seedRows.unexcluded +
+    duplicateCandidates.records;
 
   return {
     generatedAt,
@@ -203,6 +223,7 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     unresolvedImports: { total: unresolvedRows.length, byReason },
     orphans,
     seedRows,
+    duplicateCandidates,
     flags,
   };
 }
