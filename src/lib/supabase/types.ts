@@ -1195,3 +1195,21 @@ export type CandidateNote = {
   followup_status: FollowupStatus | null;
   created_at: string;
 };
+
+// Change Log (migration 0041). Append-only record of every meaningful edit to a
+// candidate / onboarding / employee record. Reuses the notes subject_type shape.
+// actor_* is stamped server-side; field/old_value/new_value carry per-field diffs.
+export type ActivityLogEntry = {
+  id: string;
+  subject_type: NoteSubjectType;
+  subject_id: string;
+  actor_id: string | null;
+  actor_name: string;
+  action: string;
+  summary: string;
+  field: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  meta: Record<string, unknown>;
+  created_at: string;
+};
