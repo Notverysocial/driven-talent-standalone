@@ -1,5 +1,6 @@
 import type {
   CandidateCriterion,
+  CandidateScreeningStatus,
   CandidateStatus,
 } from "./supabase/types";
 
@@ -11,6 +12,25 @@ export const CANDIDATE_STATUSES: { id: CandidateStatus; label: string; tone: "wa
   { id: "hired",      label: "Hired",      tone: "green" },
   { id: "rejected",   label: "Rejected",   tone: "red" },
 ];
+
+// Candidate-level screening outcome (card c2ad6f4f). Recruiter-set, independent
+// of the pipeline stage above: a candidate can sit "On Hold" (approved, ready to
+// send anytime) at any pipeline stage so strong people are never lost between
+// requisitions. `id: null` is the "Not reviewed" default shown in the picker.
+export const CANDIDATE_SCREENING_STATUSES: {
+  id: CandidateScreeningStatus;
+  label: string;
+  tone: "warm" | "gold" | "amber" | "green" | "red" | "dark";
+}[] = [
+  { id: "approved", label: "Screening Approved", tone: "green" },
+  { id: "on_hold",  label: "On Hold",            tone: "amber" },
+];
+
+export function screeningStatusLabel(
+  id: CandidateScreeningStatus | null,
+): string {
+  return CANDIDATE_SCREENING_STATUSES.find((s) => s.id === id)?.label ?? "Not reviewed";
+}
 
 // 6 evaluation criteria seeded on every new candidate so the scoring UI has
 // something to render. Operator can edit values + notes after.

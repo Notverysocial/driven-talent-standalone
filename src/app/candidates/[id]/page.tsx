@@ -20,6 +20,7 @@ import {
 import { CriterionRow } from "./CriterionRow";
 import { StatusActions } from "./StatusActions";
 import { DoNotReturnActions } from "./DoNotReturnActions";
+import { ScreeningStatusActions } from "./ScreeningStatusActions";
 import { ResumeBlock } from "./ResumeBlock";
 import { SendOnboardingDoc } from "./SendOnboardingDoc";
 import { LanguagePrefSelect } from "@/components/LanguagePrefSelect";
@@ -88,6 +89,10 @@ export default async function CandidateDetailPage({
             <Link href="/candidates" className="dt-btn">
               ← All Candidates
             </Link>
+            <ScreeningStatusActions
+              candidateId={cand.id}
+              current={cand.screening_status}
+            />
             <DoNotReturnActions
               candidateId={cand.id}
               isDnr={cand.lifecycle_status === "do_not_return"}

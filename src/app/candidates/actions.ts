@@ -11,6 +11,7 @@ import {
 import { seedTemplateForEmployee } from "@/lib/onboarding.server";
 import type {
   CandidateCriterion,
+  CandidateScreeningStatus,
   CandidateStatus,
   LanguagePref,
 } from "@/lib/supabase/types";
@@ -169,6 +170,25 @@ export async function setStatus(candidateId: string, status: CandidateStatus) {
   const { error } = await supabase
     .from("candidates")
     .update({ status })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+  revalidatePath(`/candidates/${candidateId}`);
+  revalidatePath("/candidates");
+}
+
+// Candidate-level screening outcome (Estefany, card c2ad6f4f). Setting it to
+// null clears the flag ("Not reviewed"). Distinct from the pipeline `status`.
+export async function setScreeningStatus(
+  candidateId: string,
+  next: CandidateScreeningStatus | null,
+) {
+  if (next !== null && next !== "approved" && next !== "on_hold") {
+    throw new Error(`Invalid screening status: ${next}`);
+  }
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("candidates")
+    .update({ screening_status: next })
     .eq("id", candidateId);
   if (error) throw new Error(error.message);
   revalidatePath(`/candidates/${candidateId}`);
