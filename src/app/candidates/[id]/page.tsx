@@ -31,6 +31,7 @@ import { CandidatePhotos } from "./CandidatePhotos";
 import { CandidateSchedule } from "./CandidateSchedule";
 import { CandidateInterview } from "./CandidateInterview";
 import { listCandidatePhotos } from "@/lib/candidate-photos.server";
+import { listCandidateInterviews } from "@/lib/interviews.server";
 
 export default async function CandidateDetailPage({
   params,
@@ -40,10 +41,14 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const cand = await getCandidate(id);
   if (!cand) notFound();
-  const [notes, activity, photos] = await Promise.all([
+  const [notes, activity, photos, interviews] = await Promise.all([
     listNotes("candidate", cand.id),
     listActivity("candidate", cand.id),
     listCandidatePhotos(cand.id, cand.photo_url),
+    // Multi-round interview history (migration 0045). Fail-safe: returns [] if
+    // the migration is not applied yet, and the tab falls back to the candidate
+    // columns exactly as before.
+    listCandidateInterviews(cand.id),
   ]);
 
   const score = cand.score ?? weightedScore(cand.criteria);
@@ -340,7 +345,7 @@ export default async function CandidateDetailPage({
                 schedule: <CandidateSchedule cand={cand} />,
                 photos: <CandidatePhotos candidateId={cand.id} photos={photos} />,
                 log: <ActivityTimeline entries={activity} />,
-                interview: <CandidateInterview cand={cand} />,
+                interview: <CandidateInterview cand={cand} interviews={interviews} />,
               }}
             />
           </div>
