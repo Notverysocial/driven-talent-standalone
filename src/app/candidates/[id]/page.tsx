@@ -33,6 +33,7 @@ import { CandidateInterview } from "./CandidateInterview";
 import { listCandidatePhotos } from "@/lib/candidate-photos.server";
 import { listCandidateInterviews } from "@/lib/interviews.server";
 import { findDuplicateCandidatesFor } from "@/lib/duplicates.server";
+import { isIntegrationWorking } from "@/lib/integrations/health.server";
 
 export default async function CandidateDetailPage({
   params,
@@ -42,7 +43,7 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const cand = await getCandidate(id);
   if (!cand) notFound();
-  const [notes, activity, photos, interviews, duplicates] = await Promise.all([
+  const [notes, activity, photos, interviews, duplicates, pandadocWorking, calendlyWorking] = await Promise.all([
     listNotes("candidate", cand.id),
     listActivity("candidate", cand.id),
     listCandidatePhotos(cand.id, cand.photo_url),
@@ -53,6 +54,11 @@ export default async function CandidateDetailPage({
     // Other candidate records that look like the same human. Computed at read
     // time (never a stored flag, which would go stale). Fail-safe: [] on error.
     findDuplicateCandidatesFor({ id: cand.id, email: cand.email, phone: cand.phone }),
+    // Derived integration truth — drives the honest disabled state on the offer
+    // document and the "calendar sync is not running" notice. Defaults to true
+    // on any failure so a diagnostic outage never disables a working control.
+    isIntegrationWorking("pandadoc"),
+    isIntegrationWorking("calendly"),
   ]);
 
   const score = cand.score ?? weightedScore(cand.criteria);
@@ -420,7 +426,13 @@ export default async function CandidateDetailPage({
                 schedule: <CandidateSchedule cand={cand} />,
                 photos: <CandidatePhotos candidateId={cand.id} photos={photos} />,
                 log: <ActivityTimeline entries={activity} />,
-                interview: <CandidateInterview cand={cand} interviews={interviews} />,
+                interview: (
+                  <CandidateInterview
+                    cand={cand}
+                    interviews={interviews}
+                    calendarSyncWorking={calendlyWorking}
+                  />
+                ),
               }}
             />
           </div>
@@ -529,6 +541,10 @@ export default async function CandidateDetailPage({
                 candidateId={cand.id}
                 hasEmail={Boolean(cand.email)}
                 alreadySentDocId={cand.pandadoc_document_id}
+                pandadocWorking={pandadocWorking}
+                manualSentAt={cand.offer_doc_manual_sent_at ?? null}
+                manualSentBy={cand.offer_doc_manual_sent_by ?? null}
+                signedDocPath={cand.offer_doc_signed_path ?? null}
               />
             </div>
           )}

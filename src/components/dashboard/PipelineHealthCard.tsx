@@ -70,6 +70,16 @@ export async function PipelineHealthCard() {
       sub: "dangling promote / hire refs",
       tier: "alarm",
     },
+    {
+      label: "Integrations not working",
+      value: r.integrations.alarm,
+      sub:
+        r.integrations.broken.length > 0
+          ? `${r.integrations.broken.join(", ")} · expired token or zero events`
+          : "all connected integrations are live",
+      href: "/integrations",
+      tier: "alarm",
+    },
   ];
 
   // TRACKED — known, carded, owned. Legitimately non-zero today.
@@ -116,6 +126,13 @@ export async function PipelineHealthCard() {
       value: r.duplicateEmails.count,
       sub: "intake email already a candidate",
       href: "/applications",
+      tier: "tracked",
+    },
+    {
+      label: "Integrations stale",
+      value: r.integrations.stale,
+      sub: "connected but overdue for a sync",
+      href: "/integrations",
       tier: "tracked",
     },
     {

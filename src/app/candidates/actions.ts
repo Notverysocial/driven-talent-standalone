@@ -544,3 +544,79 @@ export async function updateCandidateProfile(
   revalidatePath(`/candidates/${candidateId}`);
   revalidatePath("/candidates");
 }
+
+// ---------------------------------------------------------------------------
+// Manual offer-document fallback (migration 0049).
+//
+// PandaDoc is disconnected in production, so the automated send cannot work.
+// Rather than let the button fire into a dead integration and fail with an
+// unexplained error, a recruiter can record that the offer went out
+// out-of-band and attach the counter-signed copy. Onboarding keeps moving
+// while OAuth waits on a meeting. Both actions are additive — the PandaDoc
+// path resumes working untouched the moment it is reconnected.
+// ---------------------------------------------------------------------------
+
+export async function markOfferDocSentManually(
+  candidateId: string,
+): Promise<void> {
+  const supabase = await createClient();
+  const me = await getCurrentUser();
+  const who = me?.profile.full_name ?? "Unknown";
+  const { error } = await supabase
+    .from("candidates")
+    .update({
+      offer_doc_manual_sent_at: new Date().toISOString(),
+      offer_doc_manual_sent_by: who,
+    })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+
+  await logActivity({
+    subjectId: candidateId,
+    action: "offer_doc_sent_manually",
+    summary: `Offer document sent manually by ${who} (PandaDoc is disconnected)`,
+    field: "offer_doc_manual_sent_at",
+  });
+  revalidatePath(`/candidates/${candidateId}`);
+}
+
+export async function uploadSignedOfferDoc(
+  candidateId: string,
+  formData: FormData,
+): Promise<void> {
+  const file = formData.get("signed_doc") as File | null;
+  if (!file || file.size === 0) return;
+
+  const supabase = await createClient();
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "pdf";
+  const path = `${candidateId}/${Date.now()}.${ext}`;
+
+  const { error: upErr } = await supabase.storage
+    .from("onboarding_docs")
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (upErr) throw new Error(upErr.message);
+
+  const { error } = await supabase
+    .from("candidates")
+    .update({ offer_doc_signed_path: path })
+    .eq("id", candidateId);
+  if (error) throw new Error(error.message);
+
+  await logActivity({
+    subjectId: candidateId,
+    action: "offer_doc_signed_uploaded",
+    summary: `Signed offer document attached (${file.name})`,
+    field: "offer_doc_signed_path",
+  });
+  revalidatePath(`/candidates/${candidateId}`);
+}
+
+// Short-lived signed URL for a counter-signed offer doc (private bucket).
+export async function getSignedOfferDocUrl(path: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.storage
+    .from("onboarding_docs")
+    .createSignedUrl(path, 60 * 10);
+  if (error) return null;
+  return data.signedUrl;
+}

@@ -213,6 +213,11 @@ export type Candidate = {
   recruiter: string | null;
   pandadoc_document_id: string | null;
   pandadoc_document_status: string | null;
+  // Manual offer-doc fallback (migration 0049) used while PandaDoc is
+  // disconnected. Optional so reads stay graceful before the migration lands.
+  offer_doc_manual_sent_at?: string | null;
+  offer_doc_manual_sent_by?: string | null;
+  offer_doc_signed_path?: string | null;
   // Candidate-level screening outcome (migration 0040). null = not reviewed.
   screening_status: CandidateScreeningStatus | null;
   // Seasonal Talent Pool lifecycle layer (migration 0036).
