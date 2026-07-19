@@ -157,3 +157,81 @@ Then, once the logs identified the 307 (same day):
 - **No backfill.** 2026-06-29 → 2026-07-19 remains un-pulled. The scheduled job
   covers current + previous week only and will not reach it. Three weeks of
   payroll data is a decision for a person; the Stale indicators surface it.
+
+---
+
+# The reusable lesson: a second implementation is a latent outage
+
+Once the cron actually ran (PR #68), it failed immediately with `fetch failed`.
+The cause was not the scheduler and not the credential:
+
+`src/lib/integrations/providers/uattend.ts` carried its **own** HTTP client
+pointed at `https://api.uattend.com` — a hostname with **no DNS record**.
+`git log -S` shows that value was present in the file's first commit and was
+never once changed. The real API is `https://api.workwelltech.com`, POST with an
+`x-api-key` header, endpoints `/user` `/timecard` `/reports/punch`. That was
+established on 2026-07-02 and written into `src/lib/uattend/adapter.ts` — the
+*other* uAttend client. The provider was not updated, because nobody remembered
+it existed.
+
+**So the punch feed never worked. Not "stopped" — never, in its entire life.**
+
+## The pattern, stated generally
+
+> **Two implementations of the same integration is a latent outage.**
+>
+> The moment a vendor's contract is corrected in one of them, the other is
+> wrong. Nothing reports the drift: both compile, both typecheck, both pass
+> review, and one of them demonstrably works — which is precisely what makes the
+> broken one invisible. The failure surfaces only when something independently
+> starts exercising the dead path, which here took months and a separate bug fix
+> to trigger.
+
+The duplication is the defect. The wrong hostname was only its first symptom.
+
+This has now happened **twice in this codebase family**. Antonio reports the same
+shape in the email path: the marketing site's routes default to a sender domain
+that is not Driven Talent's, while the ops app uses a different sender entirely —
+two clients, one corrected, one never touched. (Recorded here as a reported
+parallel; that investigation is owned elsewhere and was not verified as part of
+this write-up.)
+
+## Cheap structural guards worth considering
+
+Proposed, **not built** — these need a decision before anyone spends time on them.
+
+1. **One source for provider hosts.** An `integration-hosts.ts` exporting a
+   single constant per vendor, imported by every client. Then a logic-suite test
+   that scans the integration source files for `https://` string literals and
+   fails on any host defined outside that module. This catches the exact defect:
+   a second file quietly carrying its own base URL. It is a grep in a test, so
+   it costs nothing to run and cannot be forgotten.
+
+2. **One HTTP client per vendor.** A test asserting that `fetch(` appears in at
+   most one module per integration namespace. Blunter than (1) and would need an
+   explicit opt-out list, but it targets the duplication itself rather than one
+   of its symptoms.
+
+3. **Resolve every declared host in CI.** A non-required job that DNS-resolves
+   each host in the hosts module. `api.uattend.com` would have failed this on the
+   day it was written, years before anything else noticed. Needs network, so it
+   belongs in the non-required workflow next to the browser specs, not in the
+   required gate.
+
+(1) plus (3) is the strongest pairing for the least work: (1) makes the hosts
+enumerable, and enumerable is what makes (3) possible at all.
+
+## The instrument lesson, restated
+
+Three separate times tonight the database could not distinguish between
+"the job failed", "the job never ran", and "the job ran against a host that does
+not exist". Each time, the answer was one layer further out than the place we
+were looking:
+
+| Question | Instrument that could answer it |
+|---|---|
+| Did the job run? | Vercel runtime logs (not the `integrations` row) |
+| Did the request reach the handler? | The log's `source` field: `serverless` vs `serverless-middleware` |
+| Why did the network call fail? | `err.cause`, not `err.message` |
+
+Reach for the outer instrument sooner.
