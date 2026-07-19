@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { decideInterviewWriteback } from "../src/lib/integrations/calendly-interview";
+import { decideInterviewWriteback } from "../../src/lib/integrations/calendly-interview";
 
 // Guard coverage for the Calendly -> candidate interview write-back (runbook
 // Phase A). Pure-function tests, no server/DB needed — they exercise every guard

@@ -6,7 +6,7 @@ import {
   PEOPLEASE_EXPORT_PROFILES,
   PEOPLEASE_PAYROLL_COLUMNS,
   type PeopleaseExportRow,
-} from "../src/lib/peoplease-export";
+} from "../../src/lib/peoplease-export";
 
 // Pure coverage for the configurable Peoplease payroll export. No DB/network.
 

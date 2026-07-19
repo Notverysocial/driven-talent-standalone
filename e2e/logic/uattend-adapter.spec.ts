@@ -4,8 +4,8 @@ import {
   normalizeTimecard,
   mondayOf,
   unwrapList,
-} from "../src/lib/uattend/contract";
-import { MockUattendAdapter } from "../src/lib/uattend/adapter";
+} from "../../src/lib/uattend/contract";
+import { MockUattendAdapter } from "../../src/lib/uattend/adapter";
 
 // Unit coverage for the uAttend (WorkwellTech) data adapter. Pure — no DB, no
 // network. Locks down the contract so swapping to the live key is a config

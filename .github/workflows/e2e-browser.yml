@@ -1,0 +1,86 @@
+# NON-REQUIRED, INFORMATIONAL — browser/data e2e specs (card 91fa1361)
+#
+# These are the 7 browser specs from e2e/browser. Every one of them is intact:
+# nothing was deleted and nothing was marked skipped. They were moved out of the
+# required `ci` gate on 2026-07-19 for one reason:
+#
+#   CI HAS NO DATABASE. NEXT_PUBLIC_SUPABASE_URL is a placeholder host that does
+#   not resolve, so Supabase-backed pages spend tens of seconds in retry/backoff
+#   (measured warm: /bonuses 28.2s -> 200, /candidates ~7.3s -> 500). That put
+#   bonuses.spec.ts on the 30s per-test timeout boundary, which made the required
+#   check red most of the time and trained everyone to ignore it — and that is
+#   how a genuine main-breaking regression went unnoticed for an hour.
+#
+# A database-less environment cannot give these tests a fair verdict, so running
+# them on every push would just recreate a permanently-red check nobody trusts,
+# one layer down. Instead this workflow is MANUAL (workflow_dispatch): the tests
+# stay alive and runnable on demand, and they become genuinely meaningful the
+# moment CI has a real backend.
+#
+# TO MAKE THIS MEANINGFUL: see docs/CI-REAL-BACKEND-FOLLOWUP.md. Once a real
+# backend exists, add `pull_request` / `push` triggers here and promote these
+# specs back into the required `ci` gate.
+#
+# Run against a deployed environment instead of a local build by dispatching with
+# base_url set (plus a storage-state secret if the target requires login).
+
+name: e2e-browser (non-required · needs a real backend)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Optional: test against this URL instead of a local production build"
+        required: false
+        type: string
+
+jobs:
+  browser:
+    name: browser e2e (informational — not a merge gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+
+      - name: Warn when no real backend is configured
+        if: ${{ !secrets.NEXT_PUBLIC_SUPABASE_URL && !inputs.base_url }}
+        run: |
+          echo "::warning::No real backend configured. These specs are running against an"
+          echo "::warning::unreachable placeholder Supabase host, so slow renders and timeouts"
+          echo "::warning::are EXPECTED and are not evidence of an application regression."
+          echo "::warning::See docs/CI-REAL-BACKEND-FOLLOWUP.md."
+
+      - name: Run browser tests (production build via next start)
+        run: npx playwright test --project=browser
+        env:
+          # fix C — exercise the production build, i.e. what actually deploys.
+          E2E_WITH_SERVER: "1"
+          E2E_BASE_URL: ${{ inputs.base_url }}
+          E2E_STORAGE_STATE: ${{ secrets.E2E_STORAGE_STATE_PATH }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-browser
+          path: playwright-report
+          retention-days: 14
