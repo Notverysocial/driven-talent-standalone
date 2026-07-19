@@ -19,7 +19,6 @@ import {
 } from "@/lib/integrations/calendly-events";
 import { CriterionRow } from "./CriterionRow";
 import { StatusActions } from "./StatusActions";
-import { DoNotReturnActions } from "./DoNotReturnActions";
 import { ScreeningStatusActions } from "./ScreeningStatusActions";
 import { DoNotReturnActions } from "./DoNotReturnActions";
 import { ResumeBlock } from "./ResumeBlock";
