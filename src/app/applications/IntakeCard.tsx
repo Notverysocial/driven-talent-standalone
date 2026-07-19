@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Fragment, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
 import { Avatar } from "@/components/Avatar";
+import { WaitingAge } from "@/components/WaitingAge";
 import { CalendlyScheduler } from "@/components/CalendlyScheduler";
 import {
   buildCalendlyBookingUrl,
@@ -81,6 +82,14 @@ export function IntakeCard({
     intake.status !== "rejected" &&
     intake.status !== "spam" &&
     intake.status !== "promoted";
+
+  // Waiting age matters while the applicant is still open (not yet promoted,
+  // rejected, or marked spam) — that is the pile that should be worked oldest-
+  // first (card cf34006d).
+  const showWaiting =
+    intake.status !== "rejected" &&
+    intake.status !== "spam" &&
+    intake.status !== "promoted";
   const phoneScreenUrl = calendly.schedulingUrl
     ? buildCalendlyBookingUrl({
         schedulingUrl: calendly.schedulingUrl,
@@ -141,6 +150,7 @@ export function IntakeCard({
                 NEW
               </span>
             )}
+            {showWaiting && <WaitingAge since={intake.created_at} verb="waiting" />}
           </div>
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             {intake.position_of_interest ?? "No position specified"} ·{" "}
