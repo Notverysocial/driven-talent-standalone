@@ -41,6 +41,7 @@ export default async function ApplicationsPage({
     position?: string;
     city?: string;
     minExp?: string;
+    sort?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -53,6 +54,10 @@ export default async function ApplicationsPage({
   const filterCity = (sp.city ?? "").trim();
   const filterMinExpRaw = (sp.minExp ?? "").trim();
   const filterMinExp = filterMinExpRaw ? Number(filterMinExpRaw) : null;
+  // Waiting-age sort (card cf34006d). DEFAULT is oldest-first so the longest-
+  // waiting applicants surface at the top of the New queue instead of being
+  // buried under the newest — the whole point is to work the queue oldest-first.
+  const sortMode = sp.sort === "newest" ? "newest" : "oldest";
 
   const tb = (await getServerDictionary()).topbar.applications;
   const all = await listApplicationIntakes();
@@ -125,7 +130,14 @@ export default async function ApplicationsPage({
   for (const s of INTAKE_STATUSES) counts.set(s.id, 0);
   for (const i of all) counts.set(i.status, (counts.get(i.status) ?? 0) + 1);
 
-  const newIntakes = intakes.filter((i) => i.status === "new");
+  // Sort by waiting age (created_at). Oldest-first (default) puts the longest-
+  // waiting applicants on top of the New queue.
+  const byAge = (a: ApplicationIntake, b: ApplicationIntake) => {
+    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return sortMode === "oldest" ? ta - tb : tb - ta;
+  };
+  const newIntakes = intakes.filter((i) => i.status === "new").sort(byAge);
   const reviewed = intakes.filter((i) => i.status !== "new" && i.status !== "promoted");
   const promoted = intakes.filter((i) => i.status === "promoted");
 
@@ -138,6 +150,38 @@ export default async function ApplicationsPage({
   if (filterPosition) baseParams.set("position", filterPosition);
   if (filterCity) baseParams.set("city", filterCity);
   if (filterMinExpRaw) baseParams.set("minExp", filterMinExpRaw);
+  if (sortMode !== "oldest") baseParams.set("sort", sortMode);
+
+  // Sort toggle for the New queue (oldest-first is the default and the point).
+  const sortToggle = (() => {
+    const oldestParams = new URLSearchParams(baseParams);
+    oldestParams.delete("sort");
+    if (validStatus) oldestParams.set("status", validStatus);
+    const newestParams = new URLSearchParams(baseParams);
+    newestParams.set("sort", "newest");
+    if (validStatus) newestParams.set("status", validStatus);
+    return (
+      <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+        <span className="tiny muted" style={{ fontSize: 10.5, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+          Sort
+        </span>
+        <Link
+          href={`/applications?${oldestParams}`}
+          className={"dt-btn tiny" + (sortMode === "oldest" ? " dt-btn-gold" : " dt-btn-ghost")}
+          style={{ fontSize: 11, padding: "3px 9px" }}
+        >
+          Longest waiting
+        </Link>
+        <Link
+          href={`/applications?${newestParams}`}
+          className={"dt-btn tiny" + (sortMode === "newest" ? " dt-btn-gold" : " dt-btn-ghost")}
+          style={{ fontSize: 11, padding: "3px 9px" }}
+        >
+          Newest
+        </Link>
+      </div>
+    );
+  })();
 
   return (
     <Shell>
@@ -298,7 +342,7 @@ export default async function ApplicationsPage({
           empty state). With a status filter active, only render the groups
           that actually have matching rows. */}
       {(!validStatus || newIntakes.length > 0) && (
-        <Section title="New" subtitle="Awaiting first review" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} hideWhenEmpty={Boolean(validStatus)} />
+        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
       )}
       {reviewed.length > 0 && (
         <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} />
@@ -348,6 +392,7 @@ function Section({
   calendly,
   recruiters,
   hideWhenEmpty = false,
+  action,
 }: {
   title: string;
   subtitle: string;
@@ -356,6 +401,7 @@ function Section({
   calendly: IntakeCalendlyContext;
   recruiters: string[];
   hideWhenEmpty?: boolean;
+  action?: React.ReactNode;
 }) {
   if (rows.length === 0 && hideWhenEmpty) return null;
   if (rows.length === 0 && title === "New") {
@@ -382,6 +428,7 @@ function Section({
           <h3>{title}</h3>
           <div className="sub">{rows.length} · {subtitle}</div>
         </div>
+        {action}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
         {rows.map((intake) => (
