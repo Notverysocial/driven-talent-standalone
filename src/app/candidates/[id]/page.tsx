@@ -31,6 +31,10 @@ import { CandidateNotes } from "@/components/CandidateNotes";
 import { listNotes } from "@/lib/candidate-notes.server";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { listActivity } from "@/lib/activity-log.server";
+import { Tabs } from "@/components/Tabs";
+import { CandidatePhotos } from "./CandidatePhotos";
+import { CandidateSchedule } from "./CandidateSchedule";
+import { listCandidatePhotos } from "@/lib/candidate-photos.server";
 
 export default async function CandidateDetailPage({
   params,
@@ -40,9 +44,10 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const cand = await getCandidate(id);
   if (!cand) notFound();
-  const [notes, activity] = await Promise.all([
+  const [notes, activity, photos] = await Promise.all([
     listNotes("candidate", cand.id),
     listActivity("candidate", cand.id),
+    listCandidatePhotos(cand.id, cand.photo_url),
   ]);
 
   const score = cand.score ?? weightedScore(cand.criteria);
@@ -306,47 +311,67 @@ export default async function CandidateDetailPage({
             </div>
           </div>
 
-          <div className="dt-card">
+          {/* Unified candidate workspace (card 0631ab59) — notes, schedule,
+              photos, and the change log in ONE tabbed interface so nothing is
+              scattered and processing is faster. */}
+          <div className="dt-card gold-edge">
             <div className="dt-card-head">
               <div>
-                <h3>Notes</h3>
-                <div className="sub">Authored + timestamped · @mention to tag · newest first</div>
+                <h3>Candidate Workspace</h3>
+                <div className="sub">Notes, schedule, photos, and history in one place</div>
               </div>
             </div>
-            <div style={{ padding: "18px 24px 22px" }}>
-              {cand.notes && cand.notes.trim() !== "" && (
-                <div
-                  style={{
-                    marginBottom: 16,
-                    padding: "10px 12px",
-                    background: "var(--dt-warm-50)",
-                    border: "1px solid var(--dt-warm-150)",
-                    fontSize: 12.5,
-                    color: "var(--dt-warm-600, #555)",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  <div className="tiny muted" style={{ letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>
-                    Legacy note
-                  </div>
-                  {cand.notes}
-                </div>
-              )}
-              <CandidateNotes subjectType="candidate" subjectId={cand.id} notes={notes} />
-            </div>
-          </div>
-
-          <div className="dt-card">
-            <div className="dt-card-head">
-              <div>
-                <h3>Change Log</h3>
-                <div className="sub">Every edit to this candidate · who changed what · newest first</div>
-              </div>
-              <Badge tone="dark">{activity.length}</Badge>
-            </div>
-            <div style={{ padding: "12px 24px 20px" }}>
-              <ActivityTimeline entries={activity} />
-            </div>
+            <Tabs
+              ariaLabel="Candidate workspace sections"
+              tabs={[
+                { key: "notes", label: "Notes", badge: notes.length || undefined },
+                { key: "schedule", label: "Schedule" },
+                { key: "photos", label: "Photos", badge: photos.length || undefined },
+                { key: "log", label: "Change Log", badge: activity.length || undefined },
+              ]}
+              panels={{
+                notes: (
+                  <>
+                    {cand.notes && cand.notes.trim() !== "" && (
+                      <div
+                        style={{
+                          marginBottom: 16,
+                          padding: "10px 12px",
+                          background: "var(--dt-warm-50)",
+                          border: "1px solid var(--dt-warm-150)",
+                          fontSize: 12.5,
+                          color: "var(--dt-warm-600, #555)",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        <div
+                          className="tiny muted"
+                          style={{ letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}
+                        >
+                          Legacy note
+                        </div>
+                        {cand.notes}
+                      </div>
+                    )}
+                    <CandidateNotes subjectType="candidate" subjectId={cand.id} notes={notes} />
+                  </>
+                ),
+                schedule: (
+                  <CandidateSchedule cand={cand}>
+                    {schedulingActive ? (
+                      <CalendlyScheduler
+                        connected={cal.connected}
+                        options={calOptions}
+                        size="sm"
+                        emptyHint="Connect Calendly in Integrations to schedule."
+                      />
+                    ) : null}
+                  </CandidateSchedule>
+                ),
+                photos: <CandidatePhotos candidateId={cand.id} photos={photos} />,
+                log: <ActivityTimeline entries={activity} />,
+              }}
+            />
           </div>
         </div>
 
@@ -435,28 +460,6 @@ export default async function CandidateDetailPage({
               />
             </div>
           </div>
-
-          {schedulingActive && (
-            <div className="dt-card" style={{ padding: 18 }}>
-              <div
-                className="tiny muted"
-                style={{
-                  letterSpacing: "0.18em",
-                  textTransform: "uppercase",
-                  fontWeight: 400,
-                  marginBottom: 10,
-                }}
-              >
-                Schedule
-              </div>
-              <CalendlyScheduler
-                connected={cal.connected}
-                options={calOptions}
-                size="sm"
-                emptyHint="Connect Calendly in Integrations to schedule."
-              />
-            </div>
-          )}
 
           {cand.status === "offer" && (
             <div className="dt-card" style={{ padding: 18 }}>
