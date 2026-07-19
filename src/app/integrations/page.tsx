@@ -319,6 +319,7 @@ export default async function IntegrationsPage({
                   label="Last count"
                   value={String(row?.last_sync_count ?? 0)}
                 />
+                {provider === "uattend" && <UattendWeeklyPullRow row={row} />}
                 {provider === "calendly" && <CalendlyCardExtras row={row} />}
                 {status === "error" && row?.last_error && (
                   <details
@@ -475,6 +476,61 @@ function CalendlyCardExtras({ row }: { row: IntegrationRow | undefined }) {
         })}
       </div>
     </>
+  );
+}
+
+// The uAttend card previously showed ONE health record — the punch feed's.
+// The weekly timecard pull, which is what payroll actually depends on, had no
+// row at all, so a dead pull was invisible next to a healthy punch feed. It
+// gets its own line, with its own freshness clock (daily cadence).
+function UattendWeeklyPullRow({ row }: { row: IntegrationRow | undefined }) {
+  const cfg = (row?.config ?? {}) as Record<string, unknown>;
+  const wp = (cfg.weekly_pull ?? null) as {
+    last_run_at?: string;
+    last_pull_window?: string | null;
+    ok?: boolean;
+    error?: string | null;
+    timecards_upserted?: number;
+    skipped_locked?: { name: string; status: string }[];
+  } | null;
+
+  const health = syncHealth({
+    provider: "uattend",
+    status: row?.status ?? "disconnected",
+    lastSyncAt: wp?.last_run_at ?? null,
+    now: new Date(),
+    intervalMinutes: 24 * 60, // runs daily
+  });
+
+  const color =
+    health.level === "ok"
+      ? "var(--dt-warm-700)"
+      : health.level === "warn"
+      ? "var(--dt-warning)"
+      : "var(--dt-danger)";
+
+  return (
+    <Row
+      label="Weekly timecard pull"
+      value={
+        <span style={{ color, fontWeight: health.level === "ok" ? 400 : 500 }}>
+          {wp?.last_run_at ? fmtTime(wp.last_run_at) : "Never run"}
+          <span style={{ fontSize: 11, marginLeft: 6 }}>
+            {wp?.last_pull_window ? `· ${wp.last_pull_window} ` : ""}
+            {health.level === "ok" && wp?.ok !== false
+              ? `(${health.label})`
+              : `· ${wp?.ok === false ? wp.error ?? "failed" : health.label}`}
+          </span>
+          {wp?.skipped_locked && wp.skipped_locked.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--dt-warning)", marginTop: 2 }}>
+              {wp.skipped_locked.length} card
+              {wp.skipped_locked.length === 1 ? "" : "s"} not overwritten
+              (already submitted/approved)
+            </div>
+          )}
+        </span>
+      }
+    />
   );
 }
 

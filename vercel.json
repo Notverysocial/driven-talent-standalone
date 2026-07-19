@@ -15,6 +15,10 @@
     {
       "path": "/api/leads/notify",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/timecards/uattend-weekly",
+      "schedule": "0 11 * * *"
     }
   ]
 }

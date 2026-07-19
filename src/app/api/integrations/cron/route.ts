@@ -22,9 +22,17 @@ import { recordSyncEnd, recordSyncStart } from "@/lib/integrations/db";
 // the comment described the intent, the code did the opposite. Any
 // single failed run therefore removed an integration from the cron
 // PERMANENTLY: recordSyncEnd set status='error', and nothing ever
-// selected it again. uAttend hit that on 2026-07-02 and went silent
-// for seventeen days. recordSyncEnd does reschedule next_sync_at on
+// selected it again. recordSyncEnd does reschedule next_sync_at on
 // failure, so honouring it here is all that was ever missing.
+//
+// NOTE ON THE 2026-07 uAttend OUTAGE: this latch is real, but it was
+// NOT what stopped uAttend. The live row read status='connected',
+// last_error=null, next_sync_at=null — which this query already
+// selects (next_sync_at.is.null). It had still not run in seventeen
+// days, and calendly was frozen the same way since 2026-06-25. Two
+// providers, two freeze dates, neither advancing, means the row was
+// never the gate: the cron itself was not completing a run. Fixing
+// the latch does not fix that. See docs/UATTEND-SYNC-OUTAGE.md.
 
 export async function GET(request: Request): Promise<NextResponse> {
   const expected = process.env.CRON_SECRET;
