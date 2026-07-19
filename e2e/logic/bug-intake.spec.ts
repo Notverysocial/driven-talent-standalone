@@ -12,6 +12,7 @@ import {
   labelForArea,
   INTAKE_KINDS,
   BUG_ATTACHMENT_BUCKET,
+  classifyAttachmentRef,
   LIMITS,
   SPAM_REJECT_THRESHOLD,
 } from "../../src/lib/bug-intake";
@@ -420,4 +421,79 @@ test("the attachment bucket name matches migration 0048", async () => {
   // The bucket must stay PRIVATE — screenshots of this app carry wages,
   // names, and timecard detail.
   expect(sql).toContain("'bug_attachments', 'bug_attachments', false");
+});
+
+// ---------- attachment resolver: open-redirect + traversal guards ---------
+
+// Regression suite for two real defects found by hand-testing
+// /api/bug-reports/attachment with AUTH_ENABLED unset (its default):
+//
+//   1. It was an OPEN REDIRECT. Any ^https?:// value went straight to
+//      NextResponse.redirect, so ?path=https://evil.example bounced a visitor
+//      off the app's own domain. Verified: 307 -> https://example.com.
+//   2. Its only auth was requireUser(), which returns a synthetic OWNER when
+//      AUTH_ENABLED is off — the same flag that makes the proxy a pass-through.
+//      Two gates, one switch, no enforcement.
+//
+// classifyAttachmentRef is the pure half of the fix. The other half is a
+// must-exist-in-bug_reports check in the route, which is what makes the
+// redirect target non-arbitrary regardless of any auth flag.
+
+test("resolver: the exact open-redirect payload is refused", () => {
+  // This is the request that returned 307 -> https://example.com before the fix.
+  expect(
+    classifyAttachmentRef("https://example.com/evidence.png").kind,
+  ).toBe("external");
+  // ...still classified, but `external` is now only reachable after the route
+  // proves the value is present in bug_reports. What must NEVER classify is a
+  // scheme that lets the value do something other than name a file:
+  for (const hostile of [
+    "javascript:alert(1)",
+    "data:text/html;base64,PHNjcmlwdD4=",
+    "file:///etc/passwd",
+    "http://evil.example/x.png", // plain http downgraded
+  ]) {
+    expect(classifyAttachmentRef(hostile).kind, hostile).toBe("invalid");
+  }
+});
+
+test("resolver: protocol-relative and backslash tricks do not become storage keys", () => {
+  for (const hostile of [
+    "//evil.example/x.png",
+    "/\\evil.example",
+    "public-intake/../../secrets/key.png",
+    "public-intake//nested/x.png",
+    "other-bucket/x.png",
+    "../0014_bug_reports.sql",
+  ]) {
+    expect(classifyAttachmentRef(hostile).kind, hostile).toBe("invalid");
+  }
+});
+
+test("resolver: a real key produced by attachmentKey round-trips", () => {
+  const key = attachmentKey("11111111-2222-3333-4444-555555555555", "shot.png");
+  const ref = classifyAttachmentRef(key);
+  expect(ref.kind).toBe("storage");
+  if (ref.kind === "storage") expect(ref.key).toBe(key);
+});
+
+test("resolver: empty and whitespace refs are invalid, never 'external'", () => {
+  expect(classifyAttachmentRef("").kind).toBe("invalid");
+  expect(classifyAttachmentRef("   ").kind).toBe("invalid");
+});
+
+test("resolver: every key the uploader can generate is accepted", () => {
+  // Guards the pair: if attachmentKey's shape ever drifts out of the prefix or
+  // charset classifyAttachmentRef allows, uploads would succeed and then be
+  // permanently unopenable.
+  for (const name of [
+    "screenshot.png",
+    "Screen Shot 2026-07-19 at 4.02.11 PM.PNG",
+    "../../../etc/passwd.sh;rm -rf",
+    "no-extension",
+    "weird..name..jpeg",
+  ]) {
+    const key = attachmentKey("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", name);
+    expect(classifyAttachmentRef(key).kind, `${name} -> ${key}`).toBe("storage");
+  }
 });

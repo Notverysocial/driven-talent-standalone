@@ -437,3 +437,59 @@ export function attachmentKey(uuid: string, filename: string): string {
 // Until that migration is applied the form does not render a file input at
 // all (see src/app/report/page.tsx). It never accepts a file it cannot store.
 export const BUG_ATTACHMENT_BUCKET = "bug_attachments";
+
+export const ATTACHMENT_KEY_PREFIX = "public-intake/";
+
+/**
+ * Classify a raw `bug_reports.attachment_path` value.
+ *
+ * Two shapes exist in that column: storage keys written by /report, and plain
+ * URLs from older rows. `/api/bug-reports/attachment` treats them differently,
+ * so the decision is isolated here and tested.
+ *
+ * SECURITY: this function is what stops the resolver being an open redirect.
+ * An earlier version passed anything matching /^https?:\/\//i straight to
+ * NextResponse.redirect, which meant
+ *   /api/bug-reports/attachment?path=https://evil.example
+ * bounced a visitor off the app's own trusted domain to anywhere. Verified by
+ * hand: it returned 307 -> https://example.com. Now only https is eligible for
+ * passthrough, and the caller must additionally prove the value really appears
+ * in a bug_reports row before acting on it.
+ */
+export type AttachmentRef =
+  | { kind: "storage"; key: string }
+  | { kind: "external"; url: string }
+  | { kind: "invalid"; reason: string };
+
+export function classifyAttachmentRef(raw: string): AttachmentRef {
+  const value = (raw ?? "").trim();
+  if (!value) return { kind: "invalid", reason: "empty" };
+
+  if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+    // Anything with a scheme is treated as a URL candidate. http: is refused
+    // along with everything exotic (javascript:, data:, file:, //evil.example).
+    let u: URL;
+    try {
+      u = new URL(value);
+    } catch {
+      return { kind: "invalid", reason: "unparseable_url" };
+    }
+    if (u.protocol !== "https:") {
+      return { kind: "invalid", reason: "non_https_scheme" };
+    }
+    return { kind: "external", url: u.toString() };
+  }
+
+  // Otherwise it must be a storage key, confined to the prefix this app writes.
+  if (!value.startsWith(ATTACHMENT_KEY_PREFIX)) {
+    return { kind: "invalid", reason: "outside_prefix" };
+  }
+  if (value.includes("..") || value.includes("//")) {
+    return { kind: "invalid", reason: "traversal" };
+  }
+  const rest = value.slice(ATTACHMENT_KEY_PREFIX.length);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(rest)) {
+    return { kind: "invalid", reason: "malformed_key" };
+  }
+  return { kind: "storage", key: value };
+}
