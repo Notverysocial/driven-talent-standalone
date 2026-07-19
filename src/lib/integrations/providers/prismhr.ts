@@ -13,6 +13,7 @@
 
 import "server-only";
 import { clearIntegrationTokens, getIntegration, updateIntegrationStatus } from "../db";
+import { describeError } from "../describe-error";
 import type { IntegrationClient, IntegrationRow } from "../types";
 
 const PROVIDER = "prismhr" as const;
@@ -67,7 +68,7 @@ class PrismHrClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "disconnect_failed",
+        error: describeError(e, "disconnect_failed"),
       };
     }
   }

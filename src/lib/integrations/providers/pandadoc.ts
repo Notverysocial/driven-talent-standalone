@@ -34,6 +34,7 @@ import {
   updateIntegrationStatus,
   clearIntegrationTokens,
 } from "../db";
+import { describeError } from "../describe-error";
 import type { IntegrationClient, IntegrationRow } from "../types";
 
 const PROVIDER = "pandadoc" as const;
@@ -140,7 +141,7 @@ class PandaDocClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "exchange_threw",
+        error: describeError(e, "exchange_threw"),
       };
     }
   }
@@ -198,7 +199,7 @@ class PandaDocClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "refresh_threw",
+        error: describeError(e, "refresh_threw"),
       };
     }
   }
@@ -296,7 +297,7 @@ class PandaDocClient implements IntegrationClient {
       return {
         ok: false,
         count: 0,
-        error: e instanceof Error ? e.message : "pandadoc_sync_threw",
+        error: describeError(e, "pandadoc_sync_threw"),
       };
     }
   }
@@ -418,7 +419,7 @@ class PandaDocClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "disconnect_failed",
+        error: describeError(e, "disconnect_failed"),
       };
     }
   }
@@ -557,7 +558,7 @@ class PandaDocClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "pandadoc_send_threw",
+        error: describeError(e, "pandadoc_send_threw"),
       };
     }
   }
