@@ -2,11 +2,14 @@ import type { IntegrationHealthRow } from "@/lib/integrations/health.server";
 
 // The integration truth surface.
 //
-// Shows, per integration, what is ACTUALLY true — derived from token expiry,
-// last-sync age, and whether the provider has ever produced a single event —
-// rather than the stored `status` column. Calendly read "connected" for three
-// weeks with an expired token and zero bookings ever processed; this panel is
-// what would have caught that on day one.
+// Shows, per integration, what is ACTUALLY true — derived from whether the last
+// sync SUCCEEDED, how long ago it ran, and whether credentials can still recover
+// — rather than the stored `status` column, which is written at connect time and
+// never revised.
+//
+// Verdicts and facts are rendered separately on purpose. An expired access token
+// with a working refresh token, or an event count of zero, are FACTS that appear
+// as neutral observations; neither is allowed to become a verdict of "broken".
 
 const LEVEL_STYLE: Record<
   IntegrationHealthRow["level"],
@@ -34,8 +37,9 @@ export function IntegrationHealthPanel({ rows }: { rows: IntegrationHealthRow[] 
         <div>
           <h3>Actually working?</h3>
           <div className="sub">
-            Derived from real signals: token expiry, last sync age, and whether the
-            provider has ever sent an event. Not from the stored status field.
+            Derived from whether the last sync actually succeeded, how long ago it
+            ran, and whether credentials can recover. Not from the stored status
+            field. Counts below are facts, not verdicts.
           </div>
         </div>
         <span
@@ -72,9 +76,9 @@ export function IntegrationHealthPanel({ rows }: { rows: IntegrationHealthRow[] 
             {lying} integration{lying === 1 ? "" : "s"} report a healthy status that the
             evidence contradicts.
           </strong>{" "}
-          The status field is set when a connection is made and is not updated when a
-          token later expires, so it can stay green indefinitely on a dead integration.
-          Trust the rows below.
+          The status field is written when a connection is first made and is never
+          revised, so it can stay green indefinitely on an integration that has since
+          started failing. Trust the rows below.
         </div>
       )}
 
@@ -142,6 +146,22 @@ export function IntegrationHealthPanel({ rows }: { rows: IntegrationHealthRow[] 
                 {r.staleAfterHours != null ? ` · expected every ${r.staleAfterHours}h` : ""}
                 {r.accountEmail ? ` · ${r.accountEmail}` : ""}
               </div>
+
+              {r.observations.length > 0 && (
+                <ul
+                  style={{
+                    margin: "8px 0 0",
+                    paddingLeft: 18,
+                    fontSize: 11.5,
+                    color: "var(--dt-warm-600, #555)",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {r.observations.map((o, i) => (
+                    <li key={i}>{o}</li>
+                  ))}
+                </ul>
+              )}
 
               {r.reasons.length > 0 && (
                 <ul

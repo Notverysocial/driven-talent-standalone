@@ -126,8 +126,10 @@ export async function getIntegrationHealth(): Promise<IntegrationHealthRow[]> {
       const input: IntegrationHealthInput = {
         provider,
         status: (row?.status ?? "disconnected") as IntegrationStatus,
-        // Boolean only — the token value itself never leaves the row object.
+        // Booleans only — token values never leave the row object.
         hasCredentials: Boolean(row?.access_token),
+        // An expired access token is recoverable when a refresh token exists.
+        hasRefreshToken: Boolean(row?.refresh_token),
         tokenExpiresAt: row?.token_expires_at ?? null,
         lastSyncAt: row?.last_sync_at ?? null,
         lastError: row?.last_error ?? null,
