@@ -26,6 +26,7 @@ import {
   updateIntegrationStatus,
   clearIntegrationTokens,
 } from "../db";
+import { describeError } from "../describe-error";
 import type { IntegrationClient, IntegrationRow, SyncResult } from "../types";
 
 // uAttend REST base.  Their docs list api.uattend.com as the host;
@@ -142,7 +143,7 @@ class UAttendClient implements IntegrationClient {
       return {
         ok: false,
         count: 0,
-        error: e instanceof Error ? e.message : "uattend_fetch_failed",
+        error: describeError(e, "uattend_fetch_failed"),
       };
     }
 
@@ -320,7 +321,7 @@ class UAttendClient implements IntegrationClient {
     } catch (e) {
       return {
         ok: false,
-        error: e instanceof Error ? e.message : "disconnect_failed",
+        error: describeError(e, "disconnect_failed"),
       };
     }
   }
