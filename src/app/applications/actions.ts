@@ -11,6 +11,27 @@ export type PromoteResult =
   | { ok: true; candidateId: string }
   | { ok: false; error: string };
 
+// Resolve an intake's resume reference to an openable URL (card 5e3f8a66).
+// `application_intakes.resume_url` holds EITHER an external http(s) URL (a link
+// the applicant pasted) OR a bare storage key in the private `resumes` bucket
+// (an uploaded file — see api/intake/application). Rendering the bare key as an
+// href 404s. Mirror the Candidates page: pass external URLs through, and sign
+// storage keys on demand (fresh 10-minute signed URL). Returns null when there
+// is nothing to open or signing fails.
+export async function getIntakeResumeHref(
+  resumeRef: string | null | undefined,
+): Promise<string | null> {
+  const ref = resumeRef?.trim();
+  if (!ref) return null;
+  if (/^https?:\/\//i.test(ref)) return ref; // external URL — already openable
+  const sb = await createClient();
+  const { data, error } = await sb.storage
+    .from("resumes")
+    .createSignedUrl(ref, 60 * 10); // 10 minutes
+  if (error) return null;
+  return data.signedUrl;
+}
+
 export async function setIntakeStatus(
   intakeId: string,
   status: ApplicationIntakeStatus,
