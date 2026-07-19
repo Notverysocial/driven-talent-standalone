@@ -411,6 +411,15 @@ export default async function IntegrationsPage({
 // (no candidate name/email) — those are added at the point of use.
 function CalendlyCardExtras({ row }: { row: IntegrationRow | undefined }) {
   const cfg = (row?.config ?? {}) as Record<string, unknown>;
+  // "Last count" on the card is `reconciled` — bookings newly logged. A healthy
+  // Calendly with no new bookings and a broken one that saw nothing both read
+  // 0, which is the number that flatters rather than the one that informs.
+  // `last_sync_events_seen` was already being written to config and never
+  // shown; it is what actually distinguishes the two.
+  const eventsSeen =
+    typeof cfg.last_sync_events_seen === "number"
+      ? cfg.last_sync_events_seen
+      : null;
   const schedulingUrl =
     typeof cfg.scheduling_url === "string" && cfg.scheduling_url.trim()
       ? cfg.scheduling_url.trim()
@@ -421,6 +430,23 @@ function CalendlyCardExtras({ row }: { row: IntegrationRow | undefined }) {
   return (
     <>
       <Row label="Scheduling URL" value={schedulingUrl ?? "—"} />
+      <Row
+        label="Events seen (24h)"
+        value={
+          eventsSeen === null ? (
+            "—"
+          ) : (
+            <span title="Scheduled events returned by the Calendly API on the last run. 'Last count' above is bookings reconciled, which is 0 whenever nothing NEW was booked — this number tells you the API was actually reached.">
+              {eventsSeen}
+              {eventsSeen === 0 && (
+                <span style={{ fontSize: 11, color: "var(--dt-warm-500)", marginLeft: 6 }}>
+                  (API reached, no bookings in window)
+                </span>
+              )}
+            </span>
+          )
+        }
+      />
       <div
         style={{
           marginTop: 4,

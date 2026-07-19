@@ -1,19 +1,28 @@
 // uAttend integration — timeclock punches sync to /timecards.
 //
-// uAttend (trackmytime.com) is an API-key authenticated REST service.
-// Employees clock in/out via physical devices or the uAttend mobile
-// app; we pull recent punches every 15 minutes (cron) and insert them
-// into the `timeclock_punches` table.  Each punch carries the uAttend
-// employee id; admins map that id to a DT employees.id via
-// integration.config.employee_mapping (edited on the /integrations
-// page).  Unmapped ids still get stored — they're flagged in
-// integration.last_error so an admin knows to map them.
+// uAttend (WorkwellTech) is an API-key authenticated REST service at
+// https://api.workwelltech.com — POST + JSON body, header `x-api-key`.
+// Employees clock in/out on devices or the mobile app; the cron pulls the
+// punch report and writes `timeclock_punches`. Admins map the uAttend user id
+// to a DT employees.id via integration.config.employee_mapping (edited on the
+// /integrations page). Unmapped ids are still stored, flagged as a warning.
 //
-// uAttend's webhook offering is inconsistent across plans, so we
-// rely on cron sync as the primary path.  handleWebhook() is a
-// best-effort hook that accepts uAttend "PunchAdded" callbacks if the
-// account is provisioned for them, verifies the optional shared
-// secret, and writes through the same path as sync().
+// ONE CLIENT. All HTTP goes through LiveUattendAdapter (src/lib/uattend/
+// adapter.ts), which is the implementation that was verified against the real
+// API on 2026-07-02. This file used to carry a SECOND, hand-written client
+// pointed at `https://api.uattend.com` with GET /punches and a Bearer token.
+// That hostname has no DNS record and never had one — it was wrong in this
+// file's first commit and was not corrected when the adapter was fixed. Every
+// run failed at `getaddrinfo ENOTFOUND`, reported only as "fetch failed", and
+// nobody saw it because the cron was separately being 307'd by the auth proxy.
+// The lesson is the duplication: two clients for one vendor let one of them
+// stay broken for its entire life. Do not add a third.
+//
+// uAttend's webhook offering is inconsistent across plans, so cron sync is the
+// primary path. handleWebhook() accepts "PunchAdded" callbacks if the account
+// is provisioned for them and verifies the optional shared secret. NOTE: its
+// payload normalizer is still written from the docs and has never been
+// exercised against a real callback — treat it as unverified.
 //
 // Auth mode is "api_key" in types.ts — Antonio pastes the key via
 // the /integrations Connect modal.
@@ -26,32 +35,18 @@ import {
   updateIntegrationStatus,
   clearIntegrationTokens,
 } from "../db";
-import { describeError } from "../describe-error";
+import { describeError, isDnsFailure } from "../describe-error";
+import { resolveUattendAdapter } from "@/lib/uattend/adapter";
+import {
+  punchLineToEvents,
+  clampLookback,
+  shiftDays,
+  DEFAULT_LOOKBACK_DAYS,
+  DEFAULT_TIMEZONE,
+  type PunchType,
+} from "@/lib/uattend/punch-events";
+import type { UattendPunch } from "@/lib/uattend/contract";
 import type { IntegrationClient, IntegrationRow, SyncResult } from "../types";
-
-// uAttend REST base.  Their docs list api.uattend.com as the host;
-// the path layout for punch records is `/punches` with a `start` /
-// `end` window (ISO-8601).  If the host moves we override via
-// integration.config.api_base.
-const DEFAULT_API_BASE = "https://api.uattend.com";
-
-// How far back to look on each sync.  We default to 24h to absorb
-// brief outages of the cron loop; the unique constraint on
-// uattend_punch_id makes re-pulling the same window safe.
-const SYNC_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-// Cap how many punches we ingest in one cron pass.  Real-world
-// punches per 15-min window are < 100, but we don't want a stuck
-// account to balloon a single run.
-const MAX_PUNCHES_PER_SYNC = 500;
-
-type PunchType =
-  | "in"
-  | "out"
-  | "lunch_in"
-  | "lunch_out"
-  | "break_in"
-  | "break_out";
 
 class UAttendClient implements IntegrationClient {
   // uAttend uses API-key auth.  No OAuth methods.
@@ -60,6 +55,15 @@ class UAttendClient implements IntegrationClient {
   // INTEGRATION_AUTH_MODE.uattend = "api_key".
 
   // ---------------- sync ----------------
+  //
+  // Delegates to LiveUattendAdapter — the ONE verified uAttend client. This
+  // method used to hand-roll its own HTTP against `https://api.uattend.com`
+  // with GET /punches and a Bearer token. That host has no DNS record and
+  // never has (`getaddrinfo ENOTFOUND`); the value was wrong in the very first
+  // commit of this file and was never corrected when adapter.ts was fixed
+  // against the real API on 2026-07-02. So this sync has never once succeeded.
+  // Two clients for one vendor is what allowed one of them to stay broken and
+  // unnoticed, so the second one is gone rather than repointed.
   async sync(integration: IntegrationRow): Promise<SyncResult> {
     const token = integration.access_token;
     if (!token) {
@@ -72,161 +76,119 @@ class UAttendClient implements IntegrationClient {
     }
 
     const config = (integration.config ?? {}) as Record<string, unknown>;
-    const apiBase =
-      typeof config.api_base === "string" && config.api_base
-        ? (config.api_base as string).replace(/\/+$/, "")
-        : DEFAULT_API_BASE;
     const employeeMapping =
       (config.employee_mapping as Record<string, string> | undefined) ?? {};
+    const apiBase =
+      typeof config.api_base === "string" && config.api_base
+        ? (config.api_base as string)
+        : undefined;
 
-    const since =
-      typeof config.last_punch_cursor === "string"
-        ? (config.last_punch_cursor as string)
-        : new Date(Date.now() - SYNC_WINDOW_MS).toISOString();
-    const until = new Date().toISOString();
-
-    // Fetch recent punches.  uAttend's docs describe a GET /punches
-    // endpoint accepting start/end query params (ISO-8601) plus the
-    // API key in an `Authorization: Bearer` header.  Some installs
-    // use `?api_key=` query param instead — we try Bearer first.
-    let punches: Record<string, unknown>[] = [];
-    let usedFallbackAuth = false;
-    try {
-      const url = new URL(`${apiBase}/punches`);
-      url.searchParams.set("start", since);
-      url.searchParams.set("end", until);
-      url.searchParams.set("limit", String(MAX_PUNCHES_PER_SYNC));
-
-      let res = await fetch(url.toString(), {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
-
-      // Some uAttend tenants accept the API key only as a query
-      // param.  Fall back if Bearer is rejected.
-      if (res.status === 401 || res.status === 403) {
-        const altUrl = new URL(`${apiBase}/punches`);
-        altUrl.searchParams.set("start", since);
-        altUrl.searchParams.set("end", until);
-        altUrl.searchParams.set("limit", String(MAX_PUNCHES_PER_SYNC));
-        altUrl.searchParams.set("api_key", token);
-        res = await fetch(altUrl.toString(), {
-          method: "GET",
-          headers: { Accept: "application/json" },
-        });
-        usedFallbackAuth = true;
-      }
-
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        return {
-          ok: false,
-          count: 0,
-          error: `uAttend API ${res.status}: ${body.slice(0, 200) || "no body"}`,
-        };
-      }
-
-      const json = (await res.json()) as Record<string, unknown>;
-      // Accept either {punches: [...]} or {data: [...]} or a bare
-      // array — uAttend's response shape varies by plan.
-      const candidate =
-        (json.punches as unknown) ??
-        (json.data as unknown) ??
-        (Array.isArray(json) ? (json as unknown) : []);
-      if (Array.isArray(candidate)) {
-        punches = candidate as Record<string, unknown>[];
-      }
-    } catch (e) {
+    // A token is present, so this always resolves to the LIVE adapter. Asserted
+    // rather than assumed: the mock adapter returns invented punches, and
+    // writing those into timeclock_punches would be indistinguishable from real
+    // clock data once stored.
+    const adapter = resolveUattendAdapter({ apiKey: token, apiBase });
+    if (adapter.mode !== "live") {
       return {
         ok: false,
         count: 0,
-        error: describeError(e, "uattend_fetch_failed"),
+        error:
+          "Refusing to sync: adapter resolved to mock mode despite an API key being present. Mock punches must never reach timeclock_punches.",
       };
     }
 
-    // Persist punches.
-    const sb = createServiceClient();
-    const unmapped = new Set<string>();
-    let inserted = 0;
+    // Window: resume from the cursor, else the trailing week. Clamped to
+    // MAX_LOOKBACK_DAYS so a long outage cannot make one run pull a year.
+    const todayYmd = new Date().toISOString().slice(0, 10);
+    const cursor =
+      typeof config.last_punch_cursor === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(config.last_punch_cursor)
+        ? config.last_punch_cursor
+        : null;
+    const startDate = clampLookback(cursor ?? shiftDays(todayYmd, -DEFAULT_LOOKBACK_DAYS), todayYmd);
 
-    for (const p of punches) {
-      const normalized = normalizePunch(p);
-      if (!normalized) continue;
-      const dtEmployeeId =
-        normalized.uattend_employee_id &&
-        employeeMapping[normalized.uattend_employee_id]
-          ? employeeMapping[normalized.uattend_employee_id]
-          : null;
-      if (!dtEmployeeId && normalized.uattend_employee_id) {
-        unmapped.add(normalized.uattend_employee_id);
-      }
-
-      const { error } = await sb
-        .from("timeclock_punches")
-        .upsert(
-          {
-            employee_id: dtEmployeeId,
-            uattend_employee_id: normalized.uattend_employee_id,
-            uattend_punch_id: normalized.uattend_punch_id,
-            punch_type: normalized.punch_type,
-            punch_time: normalized.punch_time,
-            device_name: normalized.device_name,
-            notes: normalized.notes,
-            raw_payload: p,
-          },
-          { onConflict: "uattend_punch_id" },
-        );
-      if (!error) inserted += 1;
+    let punches: UattendPunch[];
+    try {
+      punches = await adapter.getPunchReport({ startDate, endDate: todayYmd });
+    } catch (e) {
+      // describeError surfaces err.cause, so a DNS/TLS/timeout failure names
+      // itself in last_error instead of reading "fetch failed".
+      const detail = describeError(e, "uattend_punch_report_failed");
+      return {
+        ok: false,
+        count: 0,
+        error: isDnsFailure(e)
+          ? `${detail} — the API host does not resolve, so no credential was sent. This is a URL problem, not a key problem.`
+          : detail,
+      };
     }
 
-    // Stash cursor + auth hint + unmapped list for the admin UI.
-    const nextCursor = until;
+    // Derive discrete clock events from the report's day-level line items.
+    const timezone =
+      typeof config.timezone === "string" && config.timezone
+        ? config.timezone
+        : DEFAULT_TIMEZONE;
+    const events = punches.flatMap((p) => punchLineToEvents(p, timezone));
+
+    const sb = createServiceClient();
+    const unmapped = new Set<string>();
+    let stored = 0;
+
+    for (const ev of events) {
+      const dtEmployeeId = employeeMapping[ev.uattendId] ?? null;
+      if (!dtEmployeeId) unmapped.add(ev.uattendId);
+
+      const { error } = await sb.from("timeclock_punches").upsert(
+        {
+          employee_id: dtEmployeeId,
+          uattend_employee_id: ev.uattendId,
+          uattend_punch_id: ev.punchId,
+          punch_type: ev.punchType,
+          punch_time: ev.punchTime,
+          device_name: null, // the punch report carries no device field
+          notes: ev.note,
+          raw_payload: ev.raw,
+        },
+        { onConflict: "uattend_punch_id" },
+      );
+      if (!error) stored += 1;
+    }
+
+    // Advance the cursor only on a clean run, and only to the start of today —
+    // today's punches are still accumulating, so re-pulling from today next
+    // time is deliberate. Synthetic ids make that re-pull an update, not a
+    // duplicate.
     const configPatch: Record<string, unknown> = {
       ...config,
-      api_base: apiBase,
-      last_punch_cursor: nextCursor,
-      auth_mode: usedFallbackAuth ? "query_param" : "bearer",
+      last_punch_cursor: todayYmd,
+      timezone,
       unmapped_employees: Array.from(unmapped).sort(),
       last_pull_stats: {
-        fetched_at: until,
-        window_start: since,
-        punches_seen: punches.length,
-        punches_stored: inserted,
+        fetched_at: new Date().toISOString(),
+        window_start: startDate,
+        window_end: todayYmd,
+        line_items_seen: punches.length,
+        events_derived: events.length,
+        events_stored: stored,
         unmapped_count: unmapped.size,
       },
     };
-
-    // If we hit unmapped ids, surface them via last_error so admins
-    // see the warning even though the sync technically succeeded.
-    const errMsg =
-      unmapped.size > 0
-        ? `Unmapped uAttend employees: ${Array.from(unmapped)
-            .sort()
-            .slice(0, 10)
-            .join(", ")}${unmapped.size > 10 ? "…" : ""}`
-        : null;
-
     await updateIntegrationStatus("uattend", { config: configPatch });
 
-    // Unmapped employees aren't a hard failure — the punches WERE stored, with
-    // employee_id=null — so this is a warning, not a failed run.
-    //
-    // It used to return ok=false here "so the admin card stays loud". That was
-    // catastrophic: ok=false → status='error' → the cron's status filter
-    // dropped the row forever. With 11 of 80 uAttend users unmapped, every
-    // single run reported failure, so the very first one after the 2026-07-02
-    // punch-feed deploy latched the integration off. Seventeen days of no
-    // syncs, caused by a condition that was never fatal.
-    //
-    // `warning` keeps the card just as loud (it still writes last_error) while
-    // leaving status='connected' so the job keeps running.
-    if (errMsg) {
-      return { ok: true, count: inserted, warning: errMsg };
+    // Unmapped employees are a warning, not a failure: the punches WERE stored
+    // with employee_id=null. Returning ok:false here used to flip status=error,
+    // which removed the row from the cron loop permanently.
+    if (unmapped.size > 0) {
+      const list = Array.from(unmapped).sort();
+      return {
+        ok: true,
+        count: stored,
+        warning: `Unmapped uAttend employees: ${list.slice(0, 10).join(", ")}${
+          list.length > 10 ? "…" : ""
+        }`,
+      };
     }
-    return { ok: true, count: inserted };
+    return { ok: true, count: stored };
   }
 
   // ---------------- webhook ----------------
@@ -419,6 +381,7 @@ function isoOrNull(v: string): string | null {
   return d.toISOString();
 }
 
+
 export const uattendClient = new UAttendClient();
 
-export { UAttendClient, DEFAULT_API_BASE };
+export { UAttendClient };
