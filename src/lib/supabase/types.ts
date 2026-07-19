@@ -135,6 +135,11 @@ export type EmployeeAssignment = {
   // Added in 0006 — what the client is billed per hour. Falls back to
   // hourly_rate × (1 + client.service_fee_pct/100) at invoice time when null.
   bill_rate: number | null;
+  // Added (unused) in 0018, wired into invoicing in 0047 — the per-employee
+  // markup over pay rate, as a percentage. Sits below bill_rate and above
+  // clients.service_fee_pct in the resolution chain (src/lib/markup.ts).
+  // null = not set (falls back); 0 = deliberately billed at cost.
+  markup_percent: number | null;
   branch: string | null;
   active: boolean;
   created_at: string;

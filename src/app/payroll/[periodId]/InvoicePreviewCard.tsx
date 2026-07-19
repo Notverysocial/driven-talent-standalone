@@ -32,6 +32,31 @@ export function InvoicePreviewCard({ preview }: { preview: PeriodInvoicePreview 
         </div>
       </div>
 
+      {/* Billing-at-cost banner. This is the one failure mode that silently
+          loses money: no markup anywhere means the client is charged exactly
+          what we pay, and nothing else on the page would say so. */}
+      {totals.missingMarkup > 0 && (
+        <div
+          style={{
+            margin: "0 26px 14px",
+            padding: "10px 14px",
+            borderRadius: 6,
+            border: "1px solid var(--dt-danger)",
+            background: "color-mix(in srgb, var(--dt-danger) 8%, transparent)",
+            fontSize: 12,
+            color: "var(--dt-danger)",
+          }}
+        >
+          <strong>
+            {totals.missingMarkup} employee{totals.missingMarkup === 1 ? "" : "s"} ha
+            {totals.missingMarkup === 1 ? "s" : "ve"} no markup set
+          </strong>{" "}
+          — at the employee level or the client level. These lines will bill at
+          cost (zero margin). Set a markup on the client&rsquo;s Active
+          Assignments table, then re-run this preview.
+        </div>
+      )}
+
       {/* Totals strip */}
       <div
         style={{
@@ -42,7 +67,17 @@ export function InvoicePreviewCard({ preview }: { preview: PeriodInvoicePreview 
         }}
       >
         <Mini label="Invoices" value={String(totals.invoices)} />
-        <Mini label="Employees" value={String(totals.employees)} />
+        <Mini
+          label="Employees"
+          value={String(totals.employees)}
+          sub={
+            totals.missingMarkup > 0
+              ? `${totals.missingMarkup} with no markup`
+              : totals.clientDefaultMarkup > 0
+              ? `${totals.clientDefaultMarkup} on client default`
+              : "all on own rate"
+          }
+        />
         <Mini label="Billed" value={`$${fmtMoney(totals.billed)}`} accent="var(--dt-gold-deep)" />
         <Mini label="Cost" value={`$${fmtMoney(totals.cost)}`} />
         <Mini
@@ -78,6 +113,7 @@ export function InvoicePreviewCard({ preview }: { preview: PeriodInvoicePreview 
                 <th style={{ paddingLeft: 22 }}>Client</th>
                 <th>Department</th>
                 <th>Branch</th>
+                <th>Markup</th>
                 <th>Employees</th>
                 <th>Reg hrs</th>
                 <th>OT hrs</th>
@@ -90,21 +126,43 @@ export function InvoicePreviewCard({ preview }: { preview: PeriodInvoicePreview 
               {groups.map((g) => {
                 const totalReg = g.lines.reduce((s, l) => s + l.regHours + l.holidayHours, 0);
                 const totalOt = g.lines.reduce((s, l) => s + l.otHours, 0);
-                const noBillRate = g.lines.some(
-                  (l) => Math.abs(l.billRate - l.payRate * (1 + g.serviceFeePct / 100)) < 0.01,
-                );
+                const src = g.markupSources;
                 return (
                   <tr key={`${g.clientId}::${g.department}::${g.branch ?? ""}`}>
                     <td style={{ paddingLeft: 22, fontWeight: 400 }}>{g.clientName}</td>
                     <td>
                       <Badge tone="warm">{g.department}</Badge>
-                      {noBillRate && (
-                        <span
-                          title="No explicit bill_rate set — using pay × (1 + service fee %)."
-                          style={{ marginLeft: 8, fontSize: 10, color: "var(--dt-warning)" }}
+                    </td>
+                    {/* Where every rate on this invoice came from. Sources are
+                        shown together rather than collapsed to one badge — an
+                        invoice that mixes deliberate rates with fallbacks is
+                        exactly the case worth seeing before committing. */}
+                    <td style={{ fontSize: 10.5, lineHeight: 1.5 }}>
+                      {src.employee > 0 && (
+                        <div style={{ color: "var(--dt-success)" }}>
+                          {src.employee} per-employee
+                        </div>
+                      )}
+                      {src.fixedRate > 0 && (
+                        <div style={{ color: "var(--dt-warm-500)" }}>
+                          {src.fixedRate} fixed $/hr
+                        </div>
+                      )}
+                      {src.clientDefault > 0 && (
+                        <div
+                          style={{ color: "var(--dt-warning)" }}
+                          title={`No per-employee markup — billing at this client's default of ${g.serviceFeePct}%.`}
                         >
-                          ⚠ fallback rate
-                        </span>
+                          {src.clientDefault} @ client {g.serviceFeePct}%
+                        </div>
+                      )}
+                      {src.missing > 0 && (
+                        <div
+                          style={{ color: "var(--dt-danger)", fontWeight: 500 }}
+                          title="No markup set at the employee OR client level — these lines bill at cost. Set a markup on the client's roster."
+                        >
+                          ⚠ {src.missing} at cost
+                        </div>
                       )}
                     </td>
                     <td style={{ fontSize: 11, color: "var(--dt-warm-500)" }}>
