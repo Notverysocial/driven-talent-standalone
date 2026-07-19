@@ -20,6 +20,8 @@ import {
   updateClientConfig,
 } from "../actions";
 import { ClientInfoEditor } from "./ClientInfoEditor";
+import { MarkupCell } from "./MarkupCell";
+import { MarkupSummary } from "./MarkupSummary";
 
 function fmtPeriod(start: string, end: string): string {
   const s = new Date(start + "T00:00:00").toLocaleDateString("en-US", {
@@ -609,10 +611,11 @@ export default async function ClientMarginDetailPage(props: {
           <div>
             <h3>Active Assignments</h3>
             <div className="sub">
-              Per-employee bill vs. pay rate · italicized bill = inferred from
-              service-fee fallback
+              Per-employee bill vs. pay rate · click a markup to set it once —
+              invoicing applies it from then on · italic = falling back
             </div>
           </div>
+          <MarkupSummary assignments={assignments} slug={slug} canEdit={isAdmin} />
         </div>
         <div className="dt-table-wrap">
           <table className="dt-table">
@@ -623,6 +626,7 @@ export default async function ClientMarginDetailPage(props: {
                 <th>Dept</th>
                 <th>Shift</th>
                 <th style={{ textAlign: "right" }}>Pay</th>
+                <th>Markup</th>
                 <th style={{ textAlign: "right" }}>Bill</th>
                 <th style={{ textAlign: "right" }}>Gross/hr</th>
                 <th
@@ -670,6 +674,9 @@ export default async function ClientMarginDetailPage(props: {
                     >
                       ${fmtUSD2(a.hourly_rate)}
                     </td>
+                    <td style={{ fontSize: 12 }}>
+                      <MarkupCell assignment={a} slug={slug} canEdit={isAdmin} />
+                    </td>
                     <td
                       className="tab-num"
                       style={{
@@ -706,7 +713,7 @@ export default async function ClientMarginDetailPage(props: {
               {assignments.length === 0 && (
                 <tr>
                   <td
-                    colSpan={8}
+                    colSpan={9}
                     style={{
                       textAlign: "center",
                       padding: "32px 22px",
