@@ -59,13 +59,16 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co' }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-anon-key' }}
 
-      - name: Warn when no real backend is configured
-        if: ${{ !secrets.NEXT_PUBLIC_SUPABASE_URL && !inputs.base_url }}
+      # NOTE: deliberately unconditional. The `secrets` context is NOT allowed in
+      # a step-level `if:` expression — using it there makes the whole workflow
+      # file invalid, which makes GitHub emit a FAILED run on every push. That is
+      # exactly the permanently-red second check this split exists to avoid.
+      - name: Caveat — results are only meaningful with a real backend
         run: |
-          echo "::warning::No real backend configured. These specs are running against an"
-          echo "::warning::unreachable placeholder Supabase host, so slow renders and timeouts"
-          echo "::warning::are EXPECTED and are not evidence of an application regression."
-          echo "::warning::See docs/CI-REAL-BACKEND-FOLLOWUP.md."
+          echo "::warning::These browser specs need a real, seeded database."
+          echo "::warning::Without one (placeholder Supabase host is unreachable), pages take"
+          echo "::warning::~28s via retry/backoff and timeouts are EXPECTED — not evidence of"
+          echo "::warning::an application regression. See docs/CI-REAL-BACKEND-FOLLOWUP.md."
 
       - name: Run browser tests (production build via next start)
         run: npx playwright test --project=browser
