@@ -35,8 +35,16 @@
 -- PRIVATE (public => false), unlike candidate_photos. Screenshots of the ops
 -- app routinely contain employee names, wages, and timecard detail, so the
 -- objects must not be world-readable by URL. Triagers reach them through
--- /api/bug-reports/attachment, which requires a signed-in user and mints a
--- 5-minute signed URL with the service role.
+-- /api/bug-reports/attachment, which mints a 5-minute signed URL with the
+-- service role.
+--
+-- That route calls requireUser(), but do NOT read this as "only signed-in
+-- users can reach these objects": requireUser() returns a synthetic owner when
+-- AUTH_ENABLED is off, which is its default. The control that actually holds
+-- in every configuration is that the requested key must already appear in
+-- bug_reports.attachment_path, so a caller can only ever name an object the
+-- app itself recorded. Keys are random UUIDs and are never enumerable —
+-- the anon policy below grants INSERT only, so anon cannot list the bucket.
 insert into storage.buckets (id, name, public)
   values ('bug_attachments', 'bug_attachments', false)
   on conflict (id) do nothing;
