@@ -11,12 +11,6 @@ import {
   weightedScore,
 } from "@/lib/candidates";
 import { getCandidate } from "@/lib/candidates.server";
-import { CalendlyScheduler } from "@/components/CalendlyScheduler";
-import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
-import {
-  buildCalendlyBookingUrl,
-  CALENDLY_EVENT_TYPES,
-} from "@/lib/integrations/calendly-events";
 import { CriterionRow } from "./CriterionRow";
 import { StatusActions } from "./StatusActions";
 import { ScreeningStatusActions } from "./ScreeningStatusActions";
@@ -56,38 +50,10 @@ export default async function CandidateDetailPage({
   const tierColor = scoreColor(score);
   const status = CANDIDATE_STATUSES.find((s) => s.id === cand.status)!;
 
-  // Calendly scheduling — surface Phone Screen + Interview while the candidate
-  // is still moving through the pipeline (no point once hired/rejected/offer).
-  const cal = await getCalendlySchedulingContext();
-  const schedulingActive = ["applied", "screening", "interview"].includes(
-    cand.status,
-  );
-  const calOptions = cal.schedulingUrl
-    ? [
-        {
-          key: "phone_screen",
-          label: "Phone Screen",
-          durationMinutes: CALENDLY_EVENT_TYPES.phone_screen.durationMinutes,
-          url: buildCalendlyBookingUrl({
-            schedulingUrl: cal.schedulingUrl,
-            slug: cal.eventSlugs.phone_screen,
-            name: cand.full_name,
-            email: cand.email,
-          }),
-        },
-        {
-          key: "interview",
-          label: "Interview",
-          durationMinutes: CALENDLY_EVENT_TYPES.interview.durationMinutes,
-          url: buildCalendlyBookingUrl({
-            schedulingUrl: cal.schedulingUrl,
-            slug: cal.eventSlugs.interview,
-            name: cand.full_name,
-            email: cand.email,
-          }),
-        },
-      ]
-    : [];
+  // Calendly scheduling was removed from the candidate view — Calendly is kept
+  // to the clients / employer side only (per the two DT scheduling cards). The
+  // Schedule tab still shows the interview / contact / decision dates from the
+  // candidate record; booking is no longer offered here.
 
   return (
     <Shell>
@@ -358,18 +324,7 @@ export default async function CandidateDetailPage({
                     <CandidateNotes subjectType="candidate" subjectId={cand.id} notes={notes} />
                   </>
                 ),
-                schedule: (
-                  <CandidateSchedule cand={cand}>
-                    {schedulingActive ? (
-                      <CalendlyScheduler
-                        connected={cal.connected}
-                        options={calOptions}
-                        size="sm"
-                        emptyHint="Connect Calendly in Integrations to schedule."
-                      />
-                    ) : null}
-                  </CandidateSchedule>
-                ),
+                schedule: <CandidateSchedule cand={cand} />,
                 photos: <CandidatePhotos candidateId={cand.id} photos={photos} />,
                 log: <ActivityTimeline entries={activity} />,
                 interview: <CandidateInterview cand={cand} />,
