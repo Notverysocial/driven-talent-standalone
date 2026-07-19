@@ -39,6 +39,8 @@ export type ApplicantIntegrityReport = {
     promotedWithoutCandidateId: number; // status='promoted' but no promoted_candidate_id
     danglingPromotedEmployee: number; // candidate.promoted_employee_id -> missing employee
   };
+  // (f) demo/QA seed rows that leaked into production without being excluded
+  seedRows: { unexcluded: number };
   // Headline: total count of things needing attention (drives dashboard severity)
   flags: number;
 };
@@ -55,23 +57,45 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
   const generatedAt = new Date().toISOString();
 
   // --- Pull the raw rows we need. Each is guarded independently. -----------
+  // select("*") so is_seed (migration 0044) comes through when present; naming a
+  // not-yet-migrated column would error the whole query instead.
   type IntakeRow = {
     id: string;
     email: string | null;
     status: string | null;
     promoted_candidate_id: string | null;
     created_at: string;
+    is_seed?: boolean;
   };
-  const { data: intakeData } = await supabase
-    .from("application_intakes")
-    .select("id, email, status, promoted_candidate_id, created_at");
-  const intakes = (intakeData ?? []) as IntakeRow[];
+  const { data: intakeData } = await supabase.from("application_intakes").select("*");
+  const rawIntakes = (intakeData ?? []) as IntakeRow[];
 
-  type CandRow = { id: string; email: string | null; promoted_employee_id: string | null };
-  const { data: candData } = await supabase
-    .from("candidates")
-    .select("id, email, promoted_employee_id");
-  const candidates = (candData ?? []) as CandRow[];
+  type CandRow = {
+    id: string;
+    email: string | null;
+    promoted_employee_id: string | null;
+    is_seed?: boolean;
+  };
+  const { data: candData } = await supabase.from("candidates").select("*");
+  const rawCandidates = (candData ?? []) as CandRow[];
+
+  // (f) Standing seed-data guard: any @example.com row NOT excluded via is_seed
+  // is a test row that has leaked into production unnoticed. Zero after Phase B;
+  // > 0 flags a regression so this can never silently recur.
+  const isExampleEmail = (e: string | null | undefined): boolean =>
+    /@example\.com\s*$/i.test((e ?? "").trim());
+  const seedRows = {
+    unexcluded:
+      rawIntakes.filter((i) => isExampleEmail(i.email) && i.is_seed !== true).length +
+      rawCandidates.filter((c) => isExampleEmail(c.email) && c.is_seed !== true).length,
+  };
+
+  // Every other metric reflects REAL people only — exclude the excluded seed
+  // rows (migration 0044). Filtering both intakes and candidates keeps the
+  // orphan check honest (a seed intake promoted to a seed candidate is neither
+  // a dangling ref nor a real backlog row).
+  const intakes = rawIntakes.filter((i) => i.is_seed !== true);
+  const candidates = rawCandidates.filter((c) => c.is_seed !== true);
 
   const { data: empData } = await supabase.from("employees").select("id");
   const employeeIds = new Set(((empData ?? []) as { id: string }[]).map((e) => e.id));
@@ -167,7 +191,8 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     unresolvedRows.length +
     danglingPromotedCandidate +
     promotedWithoutCandidateId +
-    danglingPromotedEmployee;
+    danglingPromotedEmployee +
+    seedRows.unexcluded;
 
   return {
     generatedAt,
@@ -177,6 +202,7 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     duplicateEmails: { count: dupRows.length, samples: dupEmails.slice(0, 10) },
     unresolvedImports: { total: unresolvedRows.length, byReason },
     orphans,
+    seedRows,
     flags,
   };
 }

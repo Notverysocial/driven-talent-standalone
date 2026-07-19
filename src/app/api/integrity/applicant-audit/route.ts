@@ -43,7 +43,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     `(${report.backlog.over7} >7d, ${report.backlog.over30} >30d, oldest ${report.backlog.oldestDays}d), ` +
     `${report.stuck.count} stuck, ${report.duplicateEmails.count} dup-email, ` +
     `${report.unresolvedImports.total} unresolved-import, ` +
-    `${report.orphans.danglingPromotedCandidate + report.orphans.promotedWithoutCandidateId + report.orphans.danglingPromotedEmployee} orphan(s)`;
+    `${report.orphans.danglingPromotedCandidate + report.orphans.promotedWithoutCandidateId + report.orphans.danglingPromotedEmployee} orphan(s), ` +
+    `${report.seedRows.unexcluded} unexcluded-seed`;
   console.log(summary);
 
   return NextResponse.json({

@@ -82,6 +82,12 @@ export async function PipelineHealthCard() {
       sub: "dangling promote / hire refs",
       severity: "warn",
     },
+    {
+      label: "Unexcluded test rows",
+      value: r.seedRows.unexcluded,
+      sub: "@example.com seed data in prod",
+      severity: "warn",
+    },
   ];
 
   const healthy = r.flags === 0;

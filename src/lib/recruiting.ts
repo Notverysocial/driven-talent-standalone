@@ -123,6 +123,9 @@ export type ApplicationIntake = {
   // Applicant-Tracking claim (Change 1, migration 0038).
   claimed_by: string | null;
   claimed_at: string | null;
+  // Migration 0044 — true for demo/QA seed rows (e.g. @example.com). Optional so
+  // reads stay graceful before the migration is applied.
+  is_seed?: boolean;
   created_at: string;
   updated_at: string;
 };

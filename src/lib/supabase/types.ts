@@ -226,6 +226,10 @@ export type Candidate = {
   // Added in 0031 — used by the per-recruiter candidate tabs (#14).
   photo_url: string | null;
   responded: boolean;
+  // Migration 0044 — true for demo/QA seed rows (e.g. @example.com) so they can
+  // be excluded from the client-facing ATS without being deleted. Optional at
+  // the type level so reads stay graceful before the migration is applied.
+  is_seed?: boolean;
   // Added in 0033 — document-language preference (task 86e20w8yz).
   language_pref: LanguagePref;
   // ---- Candidates v2 (migration 0038) ----------------------------------
