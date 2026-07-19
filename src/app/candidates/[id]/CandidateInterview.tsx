@@ -167,16 +167,45 @@ function RoundCard({ r, isLatest }: { r: InterviewRound; isLatest: boolean }) {
 export function CandidateInterview({
   cand,
   interviews = [],
+  calendarSyncWorking = true,
 }: {
   cand: Candidate;
   interviews?: InterviewRow[];
+  /**
+   * Derived from real Calendly health. When false, calendar bookings are NOT
+   * flowing into this record, so a recruiter must enter the interview by hand.
+   * Nothing used to say so, which made it reasonable to assume sync was working.
+   */
+  calendarSyncWorking?: boolean;
 }) {
   const rounds = mergeInterviewRounds(interviews, cand);
+
+  const syncNotice = !calendarSyncWorking ? (
+    <div
+      style={{
+        marginBottom: 14,
+        padding: "10px 12px",
+        borderRadius: 6,
+        background: "rgba(230,145,0,0.08)",
+        border: "1px solid rgba(230,145,0,0.35)",
+        color: "#9A5B00",
+        fontSize: 12.5,
+        lineHeight: 1.5,
+      }}
+    >
+      <strong>Calendar sync is not running.</strong> Interviews booked in the
+      calendar are <strong>not</strong> appearing here automatically. Enter the
+      interview by hand in the <strong>Recruitment Pipeline</strong> above (Video
+      Interview and Interview Evaluation stages) so it is on the record.
+    </div>
+  ) : null;
 
   if (rounds.length === 0) {
     // Preserved verbatim — this empty state is what closed the original bug.
     return (
-      <div
+      <>
+        {syncNotice}
+        <div
         style={{
           padding: "28px 20px",
           textAlign: "center",
@@ -192,13 +221,15 @@ export function CandidateInterview({
           Interview details show here once they are entered. Add them in the{" "}
           <strong>Recruitment Pipeline</strong> above, under the{" "}
           <strong>Video Interview</strong> and <strong>Interview Evaluation</strong> stages.
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
     <div>
+      {syncNotice}
       {rounds.length > 1 && (
         <div className="tiny muted" style={{ marginBottom: 12, fontSize: 11.5 }}>
           {rounds.length} interview rounds · newest first

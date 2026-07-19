@@ -1,6 +1,8 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { groupDuplicateCandidates, summarizeDuplicates } from "@/lib/duplicates";
+import { getIntegrationHealth } from "@/lib/integrations/health.server";
+import { summarizeIntegrationTruth } from "@/lib/integrations/integration-truth";
 
 // Recurring data-integrity audit for the applicant pipeline (card 1322c60e).
 //
@@ -48,6 +50,16 @@ export type ApplicantIntegrityReport = {
   duplicateCandidates: { groups: number; records: number; samples: string[] };
   // (h) the same, on the intake side — repeated applications from one human
   duplicateIntakes: { groups: number; records: number; samples: string[] };
+  // (i) integration health, derived from real signals rather than the status
+  // column. An expired token or an integration that has never produced a single
+  // event is an ALARM; merely overdue for a sync is TRACKED.
+  integrations: {
+    alarm: number;
+    stale: number;
+    notConfigured: number;
+    disagreeing: number;
+    broken: string[];
+  };
   // ALARMS: defects whose correct steady state is ZERO, so any non-zero is new
   // or unexpected. This is what turns the dashboard red — and only this.
   alarms: number;
@@ -133,6 +145,16 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
       })),
     ),
   );
+
+  // (i) Integration health. uAttend sat 17 days stale and Calendly had an
+  // expired token with zero bookings ever, both while reading "connected" —
+  // this is the check that would have caught them.
+  const health = await getIntegrationHealth();
+  const hs = summarizeIntegrationTruth(health);
+  const integrations = {
+    ...hs,
+    broken: health.filter((h) => h.level === "alarm").map((h) => h.provider),
+  };
 
   // Every other metric reflects REAL people only — exclude the excluded seed
   // rows (migration 0044). Filtering both intakes and candidates keeps the
@@ -234,11 +256,14 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     seedRows.unexcluded +
     danglingPromotedCandidate +
     promotedWithoutCandidateId +
-    danglingPromotedEmployee;
+    danglingPromotedEmployee +
+    // Expired token or never-produced-an-event: actively broken, not workload.
+    integrations.alarm;
 
   // TRACKED — known and carded; legitimately non-zero today. Counted and shown,
   // but never turns the headline red.
   const tracked =
+    integrations.stale +
     duplicateCandidates.records +
     duplicateIntakes.records +
     dupRows.length +
@@ -259,6 +284,7 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     seedRows,
     duplicateCandidates,
     duplicateIntakes,
+    integrations,
     alarms,
     tracked,
     flags,

@@ -2,6 +2,8 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
 import { requireRole } from "@/lib/auth.server";
+import { getIntegrationHealth } from "@/lib/integrations/health.server";
+import { IntegrationHealthPanel } from "./IntegrationHealthPanel";
 import { listIntegrations } from "@/lib/integrations/db";
 import { getClient } from "@/lib/integrations/registry";
 import { syncHealth } from "@/lib/integrations/health";
@@ -97,6 +99,10 @@ export default async function IntegrationsPage({
     listError = e instanceof Error ? e.message : "Failed to load integrations";
   }
 
+  // Derived truth surface — what is ACTUALLY working, from real signals rather
+  // than the stored status column. Fail-safe: [] renders nothing.
+  const health = await getIntegrationHealth();
+
   const byProvider = indexByProvider(rows);
 
   // For the uAttend card mapping editor, pre-load the unmapped ids
@@ -142,6 +148,8 @@ export default async function IntegrationsPage({
         scriptWord="Integrations"
         title="Third-Party Services"
       />
+
+      <IntegrationHealthPanel rows={health} />
 
       {connectedFlash && (
         <FlashBanner tone="success">

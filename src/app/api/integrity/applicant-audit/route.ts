@@ -41,7 +41,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     `${report.orphans.danglingPromotedCandidate + report.orphans.promotedWithoutCandidateId + report.orphans.danglingPromotedEmployee} orphan(s), ` +
     `${report.seedRows.unexcluded} unexcluded-seed, ` +
     `${report.duplicateCandidates.records} duplicate-person record(s) in ${report.duplicateCandidates.groups} group(s), ` +
-    `${report.duplicateIntakes.records} duplicate-intake record(s) in ${report.duplicateIntakes.groups} group(s)`;
+    `${report.duplicateIntakes.records} duplicate-intake record(s) in ${report.duplicateIntakes.groups} group(s), ` +
+    `integrations: ${report.integrations.alarm} not working${report.integrations.broken.length ? ` (${report.integrations.broken.join("/")})` : ""}, ${report.integrations.stale} stale`;
   console.log(summary);
 
   return NextResponse.json({
