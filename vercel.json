@@ -7,6 +7,10 @@
     {
       "path": "/api/talent-pool/digest",
       "schedule": "0 14 * * 1"
+    },
+    {
+      "path": "/api/integrity/applicant-audit",
+      "schedule": "0 13 * * *"
     }
   ]
 }
