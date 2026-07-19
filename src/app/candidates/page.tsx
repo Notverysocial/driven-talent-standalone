@@ -55,12 +55,13 @@ function eqi(a: string | null | undefined, b: string | null | undefined): boolea
 export default async function CandidatesListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pos?: string; client?: string; tab?: string }>;
+  searchParams: Promise<{ q?: string; pos?: string; client?: string; tab?: string; status?: string }>;
 }) {
   const sp = await searchParams;
   const nameQuery = (sp.q ?? "").trim();
   const posQuery = (sp.pos ?? "").trim();
   const clientQuery = (sp.client ?? "").trim();
+  const statusQuery = (sp.status ?? "").trim();
 
   // My Candidates is the default on login for a real recruiter; managers /
   // the auth-off synthetic owner default to All (they see everyone).
@@ -72,6 +73,26 @@ export default async function CandidatesListPage({
   // The two lifecycle tabs (rehire pool / DNR) get a Reactivate action in the
   // Move column instead of the recruitment-stage menu (ported from Talent Pool).
   const isLifecycleTab = tab === "available_for_rehire" || tab === "do_not_return";
+
+  // Simplify the ATS (card 02e36588) — build a candidates URL that preserves the
+  // current search/tab/status context. Pass null to drop a key; defaults (tab
+  // "all", empty values) are omitted so links stay clean.
+  function hrefWith(overrides: Record<string, string | null>): string {
+    const base: Record<string, string> = {
+      q: nameQuery,
+      pos: posQuery,
+      client: clientQuery,
+      tab: tab === "all" ? "" : tab,
+      status: statusQuery,
+    };
+    const merged = { ...base, ...overrides };
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(merged)) {
+      if (v) params.set(k, v);
+    }
+    const qs = params.toString();
+    return `/candidates${qs ? `?${qs}` : ""}`;
+  }
 
   const [allCandidates, clients, recruiters] = await Promise.all([
     listCandidates(),
@@ -94,6 +115,9 @@ export default async function CandidatesListPage({
       default: return eqi(c.recruiter, tab) || eqi(c.claimed_by, tab);
     }
   }
+  // Candidates in the current tab + text/client context (before the stage
+  // filter). Drives the stage-tile counts so those counts don't change when a
+  // tile is selected.
   const candidates = allCandidates.filter(
     (c) =>
       textMatches(c.full_name, nameQuery) &&
@@ -101,6 +125,11 @@ export default async function CandidatesListPage({
       idMatches(c.client_id, clientQuery) &&
       matchesTab(c),
   );
+  // The rows actually shown in the (now single) table — narrowed by the clicked
+  // stage tile, if any.
+  const visible = statusQuery
+    ? candidates.filter((c) => c.status === statusQuery)
+    : candidates;
   const clientName =
     clients.find((cl) => cl.id === clientQuery)?.name ?? clientQuery;
 
@@ -110,11 +139,14 @@ export default async function CandidatesListPage({
   ).sort();
 
   const filtering =
-    nameQuery !== "" || posQuery !== "" || clientQuery !== "";
+    nameQuery !== "" || posQuery !== "" || clientQuery !== "" || statusQuery !== "";
 
-  const byStatus = new Map<CandidateStatus, Candidate[]>();
-  for (const s of CANDIDATE_STATUSES) byStatus.set(s.id, []);
-  for (const c of candidates) byStatus.get(c.status)?.push(c);
+  // Per-stage counts for the tiles (tab/search-scoped, stage-filter independent).
+  const statusCounts = new Map<CandidateStatus, number>();
+  for (const s of CANDIDATE_STATUSES) statusCounts.set(s.id, 0);
+  for (const c of candidates) {
+    statusCounts.set(c.status, (statusCounts.get(c.status) ?? 0) + 1);
+  }
   const tb = (await getServerDictionary()).topbar.candidates;
 
   return (
@@ -151,16 +183,12 @@ export default async function CandidatesListPage({
         }}
       >
         {ATS_TABS.map((t) => {
-          const params = new URLSearchParams();
-          if (nameQuery) params.set("q", nameQuery);
-          if (posQuery) params.set("pos", posQuery);
-          if (clientQuery) params.set("client", clientQuery);
-          if (t.key !== "all") params.set("tab", t.key);
           const active = tab === t.key;
+          // Switching tab resets the stage-tile filter so counts read cleanly.
           return (
             <Link
               key={t.key}
-              href={`/candidates${params.toString() ? `?${params}` : ""}`}
+              href={hrefWith({ tab: t.key === "all" ? "" : t.key, status: null })}
               className={"dt-btn" + (active ? " dt-btn-gold" : " dt-btn-ghost")}
               style={{ fontSize: 12, padding: "5px 12px" }}
             >
@@ -179,15 +207,37 @@ export default async function CandidatesListPage({
         }}
       >
         {CANDIDATE_STATUSES.map((s) => {
-          const n = byStatus.get(s.id)?.length ?? 0;
+          const n = statusCounts.get(s.id) ?? 0;
+          const selected = statusQuery === s.id;
+          // One-click stage filter — click a tile to narrow the table to that
+          // stage, click again (or the selected tile) to clear. Replaces the old
+          // six stacked per-stage tables with one filterable table.
           return (
-            <div key={s.id} className="dt-card" style={{ padding: "14px 16px" }}>
+            <Link
+              key={s.id}
+              href={hrefWith({ status: selected ? null : s.id })}
+              className="dt-card"
+              aria-pressed={selected}
+              style={{
+                padding: "14px 16px",
+                display: "block",
+                textDecoration: "none",
+                color: "inherit",
+                cursor: "pointer",
+                border: selected
+                  ? "1px solid var(--dt-gold, #d4af37)"
+                  : undefined,
+                boxShadow: selected
+                  ? "0 0 0 1px var(--dt-gold, #d4af37) inset"
+                  : undefined,
+              }}
+            >
               <div
                 style={{
                   fontSize: 10.5,
                   letterSpacing: "0.18em",
                   textTransform: "uppercase",
-                  color: "var(--dt-warm-500)",
+                  color: selected ? "var(--dt-gold-deep)" : "var(--dt-warm-500)",
                   fontWeight: 400,
                 }}
               >
@@ -204,7 +254,7 @@ export default async function CandidatesListPage({
               >
                 {n}
               </div>
-            </div>
+            </Link>
           );
         })}
       </div>
@@ -281,26 +331,32 @@ export default async function CandidatesListPage({
             marginBottom: 14,
           }}
         >
-          {candidates.length} {candidates.length === 1 ? "match" : "matches"}
+          {visible.length} {visible.length === 1 ? "match" : "matches"}
           {nameQuery && ` · name “${nameQuery}”`}
           {posQuery && ` · position “${posQuery}”`}
           {clientQuery && ` · client “${clientName}”`}
+          {statusQuery &&
+            ` · stage “${CANDIDATE_STATUSES.find((s) => s.id === statusQuery)?.label ?? statusQuery}”`}
         </div>
       )}
 
-      {CANDIDATE_STATUSES.map((s) => {
-        const rows = byStatus.get(s.id) ?? [];
-        if (rows.length === 0) return null;
-        return (
-          <div key={s.id} className="dt-card" style={{ marginBottom: 18 }}>
+      {visible.length > 0 && (
+          <div className="dt-card" style={{ marginBottom: 18 }}>
             <div className="dt-card-head">
               <div>
-                <h3>{s.label}</h3>
+                <h3>Candidates</h3>
                 <div className="sub">
-                  {rows.length} {rows.length === 1 ? "candidate" : "candidates"}
+                  {visible.length} {visible.length === 1 ? "candidate" : "candidates"}
+                  {statusQuery
+                    ? ` · ${CANDIDATE_STATUSES.find((s) => s.id === statusQuery)?.label ?? statusQuery} stage`
+                    : " · all stages, newest first"}
                 </div>
               </div>
-              <Badge tone={s.tone}>{s.label}</Badge>
+              {statusQuery && (
+                <Link href={hrefWith({ status: null })} className="dt-btn dt-btn-ghost" style={{ fontSize: 12 }}>
+                  Clear stage
+                </Link>
+              )}
             </div>
             <div className="dt-table-wrap">
               <table className="dt-table">
@@ -308,6 +364,7 @@ export default async function CandidatesListPage({
                   <tr>
                     <th style={{ paddingLeft: 22 }}>Candidate</th>
                     <th>Applied For</th>
+                    <th>Stage</th>
                     <th>Owner</th>
                     <th>Source</th>
                     <th>Applied</th>
@@ -316,9 +373,10 @@ export default async function CandidatesListPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((c) => {
+                  {visible.map((c) => {
                     const score = c.score ?? 0;
                     const color = scoreColor(score);
+                    const stage = CANDIDATE_STATUSES.find((s) => s.id === c.status);
                     return (
                       <tr key={c.id}>
                         <td style={{ paddingLeft: 22 }}>
@@ -363,6 +421,9 @@ export default async function CandidatesListPage({
                           </Link>
                         </td>
                         <td>{c.applied_for ?? "—"}</td>
+                        <td>
+                          {stage ? <Badge tone={stage.tone}>{stage.label}</Badge> : "—"}
+                        </td>
                         <td>
                           {(() => {
                             // Owner = the recruiter who claimed the applicant,
@@ -448,10 +509,9 @@ export default async function CandidatesListPage({
               </table>
             </div>
           </div>
-        );
-      })}
+      )}
 
-      {candidates.length === 0 && (
+      {visible.length === 0 && (
         <div
           className="dt-card"
           style={{
