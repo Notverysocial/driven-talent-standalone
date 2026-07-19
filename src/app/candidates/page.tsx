@@ -3,7 +3,13 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
-import { CANDIDATE_STATUSES, scoreColor, tierLabel } from "@/lib/candidates";
+import {
+  CANDIDATE_STATUSES,
+  CANDIDATE_SCREENING_STATUSES,
+  screeningStatusLabel,
+  scoreColor,
+  tierLabel,
+} from "@/lib/candidates";
 import { listCandidates } from "@/lib/candidates.server";
 import { listClientsForPicker } from "@/lib/legal-tasks.server";
 import { textMatches, idMatches } from "@/lib/filters";
@@ -36,6 +42,8 @@ const ATS_TABS: { key: string; label: string }[] = [
   { key: "Rodrigo", label: "Rodrigo" },
   { key: "Priscila", label: "Priscila" },
   { key: "Nathalia", label: "Nathalia" },
+  { key: "screening_approved", label: "✅ Screening Approved" },
+  { key: "on_hold", label: "⏸ On Hold" },
   { key: "available_for_rehire", label: "Available for Rehire" },
   { key: "do_not_return", label: "Do Not Return" },
 ];
@@ -79,6 +87,8 @@ export default async function CandidatesListPage({
       case "all": return true;
       case "mine": return eqi(c.recruiter, viewerName) || eqi(c.claimed_by, viewerName);
       case "unassigned": return !c.recruiter && !c.claimed_by;
+      case "screening_approved": return c.screening_status === "approved";
+      case "on_hold": return c.screening_status === "on_hold";
       case "available_for_rehire": return c.lifecycle_status === "available_for_rehire";
       case "do_not_return": return c.lifecycle_status === "do_not_return";
       default: return eqi(c.recruiter, tab) || eqi(c.claimed_by, tab);
@@ -318,7 +328,23 @@ export default async function CandidatesListPage({
                           >
                             <Avatar name={c.full_name} />
                             <div>
-                              <div className="name">{c.full_name}</div>
+                              <div
+                                className="name"
+                                style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
+                              >
+                                {c.full_name}
+                                {c.screening_status && (
+                                  <Badge
+                                    tone={
+                                      CANDIDATE_SCREENING_STATUSES.find(
+                                        (s) => s.id === c.screening_status,
+                                      )?.tone ?? "amber"
+                                    }
+                                  >
+                                    {screeningStatusLabel(c.screening_status)}
+                                  </Badge>
+                                )}
+                              </div>
                               <div className="meta">
                                 {c.city ?? "—"}
                                 {c.experience_years ? ` · ${c.experience_years} yrs` : ""}
