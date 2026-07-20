@@ -41,6 +41,13 @@ type WindowResult = {
   skippedLocked?: { name: string; status: string; hours: number }[];
   unmatched?: number;
   unassigned?: number;
+  /**
+   * Days whose meal did not reconcile against the In→Out span. Reported as a
+   * COUNT and deliberately does NOT influence `ok` — an `ok:false` for a
+   * warning is a one-way door out of the cron, which is how the feed sat dark
+   * for seventeen days. A wrong number should be loud, not self-disabling.
+   */
+  unreconciled?: number;
   error?: string;
 };
 
@@ -78,6 +85,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         skippedLocked: summary.skippedLocked,
         unmatched: summary.unmatched.length,
         unassigned: summary.unassigned.length,
+        unreconciled: summary.unreconciled.length,
       });
     } catch (e) {
       // One bad week must not stop the other. Both outcomes are recorded.

@@ -5,7 +5,7 @@ import { Avatar } from "@/components/Avatar";
 import { Badge } from "@/components/Badge";
 import { listTimecards } from "@/lib/timecards.server";
 import type { ResolvedTimecard } from "@/lib/timecards.server";
-import { TIMECARD_STATUSES, fmtWeekRange, isoWeekStart, startOfWeek } from "@/lib/timecards";
+import { TIMECARD_STATUSES, fmtWeekRange, currentWeekStart, startOfWeek } from "@/lib/timecards";
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { getIntegration } from "@/lib/integrations/db";
@@ -19,12 +19,12 @@ function shiftWeek(weekStart: string, deltaWeeks: number): string {
   d.setDate(d.getDate() + deltaWeeks * 7);
   return isoDate(d);
 }
-// Snap an arbitrary ?week= value to its Monday; ignore unparseable input so a
+// Snap an arbitrary ?week= value to its Sunday; ignore unparseable input so a
 // bad query string can never 500 the page.
 function resolveWeek(raw: string | undefined): string {
-  if (!raw) return isoWeekStart();
+  if (!raw) return currentWeekStart();
   const d = new Date(raw + "T00:00:00");
-  if (Number.isNaN(d.getTime())) return isoWeekStart();
+  if (Number.isNaN(d.getTime())) return currentWeekStart();
   return isoDate(startOfWeek(d));
 }
 
@@ -36,7 +36,7 @@ export default async function TimecardsListPage({
   const sp = await searchParams;
 
   // View mode: a single week (default = current week) or all weeks. When a
-  // week is passed we snap it to that week's Monday so any date works.
+  // week is passed we snap it to that week's Sunday so any date works.
   const showAll = sp.all === "1";
   const selectedWeek = showAll ? null : resolveWeek(sp.week);
 
@@ -108,7 +108,7 @@ export default async function TimecardsListPage({
             </Link>
             <div style={{ minWidth: 150, textAlign: "center", fontWeight: 400 }}>
               {fmtWeekRange(selectedWeek)}
-              {selectedWeek === isoWeekStart() && (
+              {selectedWeek === currentWeekStart() && (
                 <span style={{ marginLeft: 6, fontSize: 10.5, color: "var(--dt-gold-deep)" }}>
                   (this week)
                 </span>

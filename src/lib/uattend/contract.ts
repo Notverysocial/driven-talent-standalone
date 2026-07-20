@@ -60,7 +60,7 @@ export type UattendDayHours = {
 
 export type UattendTimecard = {
   uattendId: string; // the employee's uAttend id
-  weekStart: string; // Monday, YYYY-MM-DD
+  weekStart: string; // Sunday (pay-week start), YYYY-MM-DD
   department: string | null;
   clientCode: string | null;
   days: UattendDayHours[];
@@ -160,11 +160,14 @@ function hm(v: unknown): string | null {
   return null;
 }
 
-// Monday-of-week for a YYYY-MM-DD date (matches the DB timecards.week_start rule).
-export function mondayOf(dateYmd: string): string {
-  const d = new Date(`${dateYmd}T00:00:00`);
-  const dow = (d.getDay() + 6) % 7; // 0 = Monday
-  d.setDate(d.getDate() - dow);
+// Sunday-of-week for a YYYY-MM-DD date (matches the DB timecards.week_start
+// rule). DT's pay period runs Sun–Sat; this was `mondayOf` until 2026-07-20,
+// which snapped every ingest window one day early.
+export function weekStartOf(dateYmd: string): string {
+  // Parse as UTC and shift in UTC so the result never depends on the server's
+  // zone (Vercel is UTC, a dev laptop is not).
+  const d = new Date(`${dateYmd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay()); // getUTCDay(): 0 = Sunday
   return d.toISOString().slice(0, 10);
 }
 
@@ -218,7 +221,7 @@ export function normalizeTimecard(raw: RawUattendTimecard): UattendTimecard | nu
 
   // weekStart: explicit, else derived from the first day, else the period start.
   const explicitWeek = ymd(raw.weekStart ?? raw.week_start ?? raw.periodStart ?? raw.period_start);
-  const weekStart = explicitWeek ?? (days[0] ? mondayOf(days[0].date) : null);
+  const weekStart = explicitWeek ?? (days[0] ? weekStartOf(days[0].date) : null);
   if (!weekStart) return null;
 
   const reg = n(raw.regularHours, raw.regular_hours, raw.regular) ?? days.reduce((a, d) => a + d.regular, 0);

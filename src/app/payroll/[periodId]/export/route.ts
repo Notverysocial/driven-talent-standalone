@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPayrollPeriodDetail } from "@/lib/payroll.server";
 import { fmtPeriodRange } from "@/lib/payroll";
+import { DAYS } from "@/lib/timecards";
 import { buildPeopleaseExportRows } from "@/lib/peoplease-export.server";
 import {
   buildPeopleaseCsv,
@@ -202,7 +203,10 @@ export async function GET(
       const lines = [
         ["Employee", "Date", "Day", "Regular", "OT", "In", "Out"].map(csv).join(","),
       ];
-      const days: ("mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun")[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+      // Use the shared positional DAYS array — a local copy here is how the
+      // Sun–Sat pay week previously stayed Monday-ordered in this one export
+      // even after the rest of the app was corrected.
+      const days = DAYS;
       for (const t of tcs) {
         const weekStart = new Date(t.week_start + "T00:00:00");
         for (let i = 0; i < 7; i++) {

@@ -25,7 +25,7 @@ export default async function PayrollPage() {
     periodSummaries(),
   ]);
 
-  // The Mon..Sun week that contains today — used for the "create this week"
+  // The Sun..Sat week that contains today — used for the "create this week"
   // one-click CTA and to prefill the new-period form when nothing covers today.
   const thisWeekStart = startOfWeek(new Date());
   const thisWeekEnd = new Date(thisWeekStart);
@@ -33,7 +33,7 @@ export default async function PayrollPage() {
 
   // Default for the new-period form. When no period covers today, prefill to
   // the current week so the operator can just click Create. Otherwise default
-  // to the next Mon..Sun after the most recent period.
+  // to the next Sun..Sat after the most recent period.
   let nextStart: Date;
   if (!current) {
     nextStart = new Date(thisWeekStart);

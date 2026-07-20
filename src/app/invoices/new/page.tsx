@@ -3,20 +3,21 @@ import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { listClientsForInvoicing } from "@/lib/invoices.server";
 import { generateInvoiceFromTimecards } from "../actions";
+import { startOfWeek, ymdLocal } from "@/lib/timecards";
 
 export default async function NewInvoicePage() {
   const clients = await listClientsForInvoicing();
 
-  // Default period: previous Mon..Sun two weeks
-  const today = new Date();
-  const monday = new Date(today);
-  const day = monday.getDay() === 0 ? 7 : monday.getDay();
-  monday.setDate(monday.getDate() - (day - 1) - 14);
-  const sunday = new Date(monday);
-  sunday.setDate(sunday.getDate() + 13);
+  // Default period: the previous two Sun..Sat pay weeks. Uses the shared
+  // startOfWeek so this default can never drift from the pay-period boundary
+  // the timecards are grouped on (it hand-rolled an ISO Monday until 2026-07-20).
+  const periodStart = startOfWeek(new Date());
+  periodStart.setDate(periodStart.getDate() - 14);
+  const periodEnd = new Date(periodStart);
+  periodEnd.setDate(periodEnd.getDate() + 13);
 
-  const startDefault = monday.toISOString().slice(0, 10);
-  const endDefault = sunday.toISOString().slice(0, 10);
+  const startDefault = ymdLocal(periodStart);
+  const endDefault = ymdLocal(periodEnd);
 
   return (
     <Shell>

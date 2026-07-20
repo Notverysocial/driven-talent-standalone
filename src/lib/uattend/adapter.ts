@@ -24,7 +24,7 @@ import {
   normalizeEmployee,
   normalizeTimecard,
   normalizePunch,
-  mondayOf,
+  weekStartOf,
   type UattendDateRange,
   type UattendEmployee,
   type UattendTimecard,
@@ -104,7 +104,7 @@ export class LiveUattendAdapter implements UattendAdapter {
   // the single bulk source for a whole week.
   async getTimecards(range: UattendDateRange): Promise<UattendTimecard[]> {
     const punches = await this.getPunchReport(range);
-    const weekStart = mondayOf(range.startDate);
+    const weekStart = weekStartOf(range.startDate);
     const byUid = new Map<string, UattendTimecard>();
     for (const p of punches) {
       if (p.paycodeId != null && p.paycodeId !== 1) continue; // Regular only
@@ -150,14 +150,14 @@ export class MockUattendAdapter implements UattendAdapter {
   }
 
   async getTimecards(range: UattendDateRange): Promise<UattendTimecard[]> {
-    const weekStart = mondayOf(range.startDate);
+    const weekStart = weekStartOf(range.startDate);
     return mockRawTimecards(weekStart)
       .map(normalizeTimecard)
       .filter((t): t is UattendTimecard => t !== null);
   }
 
   async getPunchReport(range: UattendDateRange): Promise<UattendPunch[]> {
-    const weekStart = mondayOf(range.startDate);
+    const weekStart = weekStartOf(range.startDate);
     return mockRawPunches(weekStart)
       .map(normalizePunch)
       .filter((p): p is UattendPunch => p !== null);

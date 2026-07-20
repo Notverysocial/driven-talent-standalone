@@ -50,6 +50,18 @@ export function UattendPullButton({ weekStart }: { weekStart: string }) {
               {" "}· unassigned ({summary.unassigned.length}): {summary.unassigned.map((u) => u.name).join(", ")}
             </span>
           )}
+          {/* Days whose unpaid meal did not reconcile against the In→Out span.
+              The safe (lower) number is written, but it is named here so a
+              wrong meal rule shows up as a list rather than as a quietly
+              inflated invoice — which is exactly how lunch came to be billed. */}
+          {summary.unreconciled.length > 0 && (
+            <span style={{ color: "var(--dt-warning)" }}>
+              {" "}· lunch not reconciled ({summary.unreconciled.length}):{" "}
+              {summary.unreconciled
+                .map((u) => `${u.name} ${u.day.toUpperCase()} (${u.in ?? "?"}–${u.out ?? "?"}, ${u.mealMinutes}m meal)`)
+                .join(", ")}
+            </span>
+          )}
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { Topbar } from "@/components/Topbar";
 import { listAssignmentsForTimecards } from "@/lib/timecards.server";
-import { isoWeekStart, startOfWeek } from "@/lib/timecards";
+import { currentWeekStart, startOfWeek } from "@/lib/timecards";
 import { createOrOpenTimecard } from "../actions";
 
 export default async function NewTimecardPage({
@@ -19,7 +19,7 @@ export default async function NewTimecardPage({
   const thisWeek =
     parsedWeek && !Number.isNaN(parsedWeek.getTime())
       ? startOfWeek(parsedWeek).toISOString().slice(0, 10)
-      : isoWeekStart();
+      : currentWeekStart();
 
   return (
     <Shell>
