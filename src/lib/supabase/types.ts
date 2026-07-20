@@ -1195,7 +1195,18 @@ export type PeriodVerification = {
 // Candidates v2 — threaded notes (migration 0038)
 // ---------------------------------------------------------------------------
 
-export type NoteSubjectType = "candidate" | "onboarding" | "employee";
+// "applicant" = an application_intakes row, the stage BEFORE promotion to a
+// candidate. Added 2026-07-20 so the one notes log covers the whole funnel
+// rather than starting at the candidate stage (migration 0050).
+export type NoteSubjectType =
+  | "applicant"
+  | "candidate"
+  | "onboarding"
+  | "employee";
+
+// The four call results the recruiting team distinguishes on a phone screen.
+export type CallOutcome = "reached" | "no_answer" | "left_message" | "declined";
+export type NoteKind = "note" | "phone_screen";
 export type FollowupStatus = "in_review" | "resolved";
 export type NoteMention = { name: string; team_member_id?: string | null };
 
@@ -1210,6 +1221,13 @@ export type CandidateNote = {
   followup_required: boolean;
   followup_assignee: string | null;
   followup_status: FollowupStatus | null;
+  // A phone-screen result is a NOTE that carries structure, not a separate
+  // object — so it lands in the same timeline and survives promotion the same
+  // way. `call_outcome` is non-null exactly when note_kind is "phone_screen"
+  // (enforced by a CHECK constraint in migration 0050).
+  note_kind: NoteKind;
+  call_outcome: CallOutcome | null;
+  next_step: string | null;
   created_at: string;
 };
 

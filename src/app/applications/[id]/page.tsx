@@ -10,6 +10,8 @@ import {
 } from "@/lib/recruiting.server";
 import { INTAKE_STATUSES } from "@/lib/recruiting";
 import { IntakeResumeLink } from "../IntakeResumeLink";
+import { CandidateNotes } from "@/components/CandidateNotes";
+import { listNotes } from "@/lib/candidate-notes.server";
 
 function fmtDateTime(d: string | null): string {
   if (!d) return "—";
@@ -34,6 +36,23 @@ export default async function ApplicationDetailPage(props: {
     notFound();
   }
   if (!detail) notFound();
+
+  // Notes for the APPLICANT stage. Same log, same component, same server-side
+  // author stamping as candidates — see migration 0050 for why this reuses
+  // candidate_notes rather than adding a second notes table.
+  //
+  // Tolerant read: until 0050 is applied the subject_type CHECK rejects
+  // 'applicant', so this would throw and take the whole page down. An empty
+  // log plus a console error is the right failure here — the rest of the
+  // applicant record still renders.
+  let notes: Awaited<ReturnType<typeof listNotes>> = [];
+  let notesUnavailable = false;
+  try {
+    notes = await listNotes("applicant", id);
+  } catch (err) {
+    notesUnavailable = true;
+    console.error(`[applications/${id}] notes unavailable (is migration 0050 applied?)`, err);
+  }
 
   const statusMeta = INTAKE_STATUSES.find((s) => s.id === detail.status);
   const statusLabel = statusMeta?.label ?? detail.status;
@@ -216,6 +235,46 @@ export default async function ApplicationDetailPage(props: {
                 </Link>
               )}
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Notes + phone-screen outcome. Placed ABOVE the raw payload: what the
+          team writes about this person matters more than the unmapped form
+          body, and the gap Leangel reported was having nowhere to write it. */}
+      <div className="dt-card" style={{ marginBottom: 22 }}>
+        <div className="dt-card-head">
+          <div>
+            <h3>Notes &amp; Call Log</h3>
+            <div className="sub">
+              Comments and phone-screen outcomes. Stays with this person after
+              promotion to the pipeline.
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: "20px 24px" }}>
+          {notesUnavailable ? (
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--dt-warm-700)",
+                background: "var(--dt-warm-50)",
+                borderLeft: "2px solid var(--dt-warning, var(--dt-gold))",
+                padding: "14px 16px",
+              }}
+            >
+              Notes are not available yet — database migration{" "}
+              <code>0050_applicant_notes</code> has not been applied to this
+              environment. Nothing has been lost; the log appears as soon as it
+              runs.
+            </div>
+          ) : (
+            <CandidateNotes
+              subjectType="applicant"
+              subjectId={id}
+              notes={notes}
+              allowPhoneScreen
+            />
           )}
         </div>
       </div>

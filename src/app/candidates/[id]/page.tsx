@@ -23,7 +23,7 @@ import { setCandidateLanguagePref } from "../actions";
 import { PipelineTracker } from "./PipelineTracker";
 import { CandidateProfileFields } from "./CandidateProfileFields";
 import { CandidateNotes } from "@/components/CandidateNotes";
-import { listNotes } from "@/lib/candidate-notes.server";
+import { listNotesForCandidateWithApplicantHistory } from "@/lib/candidate-notes.server";
 import { ActivityTimeline } from "@/components/ActivityTimeline";
 import { listActivity } from "@/lib/activity-log.server";
 import { Tabs } from "@/components/Tabs";
@@ -44,7 +44,11 @@ export default async function CandidateDetailPage({
   const cand = await getCandidate(id);
   if (!cand) notFound();
   const [notes, activity, photos, interviews, duplicates, pandadocWorking, calendlyWorking] = await Promise.all([
-    listNotes("candidate", cand.id),
+    // Candidate notes PLUS everything written while they were still an
+    // applicant, merged newest-first and labelled. Read-through by lineage —
+    // nothing is moved on promotion, so notes cannot be lost by a partial
+    // promote. See listNotesForCandidateWithApplicantHistory().
+    listNotesForCandidateWithApplicantHistory(cand.id),
     listActivity("candidate", cand.id),
     listCandidatePhotos(cand.id, cand.photo_url),
     // Multi-round interview history (migration 0045). Fail-safe: returns [] if
@@ -420,7 +424,12 @@ export default async function CandidateDetailPage({
                         {cand.notes}
                       </div>
                     )}
-                    <CandidateNotes subjectType="candidate" subjectId={cand.id} notes={notes} />
+                    <CandidateNotes
+                      subjectType="candidate"
+                      subjectId={cand.id}
+                      notes={notes}
+                      allowPhoneScreen
+                    />
                   </>
                 ),
                 schedule: <CandidateSchedule cand={cand} />,
