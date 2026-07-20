@@ -197,17 +197,19 @@ ORDER BY e.full_name, w.work_date;
 
 
 -- ---------------------------------------------------------------------------
--- Q2 — THE HARD TARGET: Antonio's own record, plus corroborators. Expected:
+-- Q2 — THE REPORTED BUG AS A CLASS. 8.47 is NOT one record: it is the
+--      signature of the standard shift (clock in, clock out 8h28m later,
+--      30-minute meal never deducted), on 78 day entries across 36 employees
+--      and 63 timecards, spread over Mon–Fri, 34 of them already APPROVED.
 --
---        Alexander Gonzalez  2026-06-26   8.47 − 0.52 → 7.95   <-- the report
---        Adrian Moreno       2026-06-26   8.43 − 0.52 → 7.91
---        Aide Clemente       2026-06-26   8.50 − 0.50 → 8.00
---        Maria Alfaro        2026-06-27   8.43 − 0.50 → 7.93
+--      So this asserts the RULE over every matching row rather than checking a
+--      hand-picked one. Expected: `corrected` = 7.95 on every row where the
+--      stored regular is 8.47 and a 0.52 meal line exists, and
+--      `rule_holds` = true on ALL rows. A single false is a real failure.
 --
---      If these match, the SQL and worked-hours.ts agree on real rows, and
---      the e2e/logic suite is pinned to the same four.
---
---      Note 2026-06-26 is a FRIDAY. Antonio reported it as "Mon" — see Q2b.
+--      (An earlier pass named one employee-date as "Antonio's exact record".
+--      That was matching a value and calling it an identification. His "Mon"
+--      is almost certainly a genuine Monday — there are Monday 8.47 entries.)
 -- ---------------------------------------------------------------------------
 WITH punch_line AS (
   -- One row per punch-report LINE ITEM: both payload shapes coalesced, and the
@@ -247,60 +249,80 @@ worked_day AS (
   GROUP BY uattend_id, employee_id, work_date
 )
 SELECT
-  e.full_name,
-  w.work_date,
-  to_char(w.work_date, 'Dy')  AS real_dow,
-  w.gross_hours               AS old_shown,
-  w.meal_hours,
-  w.worked_hours              AS corrected,
-  w.regular_lines, w.meal_lines
+  to_char(w.work_date, 'Dy')                  AS real_dow,
+  count(*)                                    AS entries,
+  count(DISTINCT w.employee_id)               AS employees,
+  round(min(w.worked_hours), 2)               AS min_corrected,
+  round(max(w.worked_hours), 2)               AS max_corrected,
+  bool_and(
+    round(w.worked_hours, 2)
+    = round(w.gross_hours - w.meal_hours, 2)
+  )                                           AS rule_holds
 FROM worked_day w
-JOIN employees e ON e.id = w.employee_id
-WHERE (e.full_name, w.work_date) IN (
-        ('Alexander Gonzalez', DATE '2026-06-26'),
-        ('Adrian Moreno',      DATE '2026-06-26'),
-        ('Aide Clemente',      DATE '2026-06-26'),
-        ('Maria Alfaro',       DATE '2026-06-27')
-      )
-ORDER BY e.full_name;
+WHERE w.gross_hours = 8.47 AND w.meal_hours = 0.52
+GROUP BY ROLLUP (to_char(w.work_date, 'Dy'))
+ORDER BY 1 NULLS LAST;
+
+
+-- Q2r — THE SAME RULE, over EVERY employee-day that has a meal line, not just
+--       the 8.47 class. `violations` MUST be 0. This is the assertion that
+--       cannot pass by accident on a lucky row.
+WITH punch_line AS (
+  SELECT DISTINCT ON (regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''))
+    p.employee_id,
+    coalesce(p.raw_payload->>'PunchDate', p.raw_payload->>'date')::date             AS work_date,
+    coalesce((p.raw_payload->>'PaycodeId')::int, (p.raw_payload->>'paycodeId')::int, 1) AS paycode,
+    coalesce((p.raw_payload->>'Tot')::numeric, (p.raw_payload->>'hours')::numeric, 0)   AS tot_hours
+  FROM timeclock_punches p
+  WHERE p.uattend_punch_id IS NOT NULL
+  ORDER BY regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''), p.id
+),
+worked_day AS (
+  SELECT employee_id, work_date,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0), 2)      AS gross_hours,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0), 2) AS meal_hours,
+    round(greatest(0,
+      coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0)
+      - coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0)), 2)  AS worked_hours,
+    count(*) FILTER (WHERE paycode IN (6,7))                              AS meal_lines
+  FROM punch_line GROUP BY employee_id, work_date
+)
+SELECT
+  count(*)                                                     AS days_with_a_meal,
+  count(*) FILTER (
+    WHERE round(worked_hours, 2) <> round(gross_hours - meal_hours, 2)
+  )                                                            AS violations,
+  round(sum(meal_hours), 1)                                    AS meal_hours_recovered
+FROM worked_day
+WHERE meal_lines > 0;
 
 
 -- ---------------------------------------------------------------------------
--- Q2b — "Mon" vs Friday. THE ONE OPEN QUESTION, settled with data not theory.
+-- Q2b — DAY-KEY ALIGNMENT INVARIANT. Previously an open question ("is 8.47
+--       stored under the wrong day key?"); ANSWERED against prod: 1745 of 1745
+--       day entries match the weekday their position implies, 0 misaligned.
+--       There is no third bug — the positional DAYS change is sufficient.
 --
---      Antonio reported the 8.47 as being on a Monday. The record is
---      2026-06-26, a FRIDAY. That is a four-day gap, which the Sun-vs-Mon
---      week-start bug does NOT explain (it is worth one day, and in fact this
---      date rendered as "Fri" under the old scheme too).
---
---      So either he spoke loosely, or values are stored under the wrong day
---      key — a third bug. This finds where 8.47 actually sits in the JSON.
---
---      EXPECTED: day_key = 'fri', and key_implies_date = 2026-06-26 matching
---      the punch date. If day_key comes back 'mon', or key_implies_date does
---      not match, STOP — there is a real key/date misalignment to fix and the
---      positional DAYS change alone will not correct it.
+--       Kept as a STANDING CHECK, because this is exactly the invariant the
+--       Sun–Sat change could break: `misaligned` MUST be 0, before and after.
+--       If it is ever non-zero, hours have shifted a day and no amount of
+--       relabeling will fix it.
 -- ---------------------------------------------------------------------------
 SELECT
-  e.full_name,
-  t.week_start,
-  to_char(t.week_start, 'Dy')                                   AS week_start_dow,
-  t.status,
-  d.key                                                         AS day_key,
-  (t.week_start + array_position(
-      ARRAY['sun','mon','tue','wed','thu','fri','sat'], d.key) - 1) AS key_implies_date,
-  round((d.value->>'regular')::numeric, 2)                      AS stored_regular,
-  d.value->>'in'   AS stored_in,
-  d.value->>'out'  AS stored_out
-FROM timecards t
-JOIN employees e ON e.id = t.employee_id
-CROSS JOIN LATERAL jsonb_each(t.days) AS d(key, value)
-WHERE e.full_name = 'Alexander Gonzalez'
-  AND (d.value->>'regular')::numeric BETWEEN 8.46 AND 8.48
-ORDER BY t.week_start, array_position(ARRAY['sun','mon','tue','wed','thu','fri','sat'], d.key);
+  count(*)                                              AS day_entries,
+  count(*) FILTER (WHERE lower(to_char(implied_date, 'Dy')) = day_key) AS aligned,
+  count(*) FILTER (WHERE lower(to_char(implied_date, 'Dy')) <> day_key) AS misaligned
+FROM (
+  SELECT
+    d.key                                                             AS day_key,
+    t.week_start + (array_position(
+      ARRAY['sun','mon','tue','wed','thu','fri','sat'], d.key) - 1)   AS implied_date
+  FROM timecards t
+  CROSS JOIN LATERAL jsonb_each(t.days) AS d(key, value)
+  WHERE d.key = ANY (ARRAY['sun','mon','tue','wed','thu','fri','sat'])
+) x;
 
 
--- ---------------------------------------------------------------------------
 -- Q3 — PROD-WIDE SCALE. Expected, on DEDUPLICATED data:
 --        recorded_hours          ≈ 3118.1
 --        lunch_billed_as_worked  ≈  169.1

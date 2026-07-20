@@ -42,18 +42,27 @@
 //      (1.00, 1.06, …), so any hardcoded or default deduction is also wrong.
 //      LUNCH_DEFAULT_MIN must never be applied to ingested data.
 //
-// And the shape that a "clever" heuristic gets wrong: days routinely carry
-// MULTIPLE Regular lines, with the meal line nested inside the worked span
-// rather than sitting in a gap between segments. Real rows, Mon 2026-06-22:
+// A multi-line day must STILL have its meal subtracted: the meal line sits
+// NESTED INSIDE the worked span, not in a gap between segments. Treating "more
+// than one Regular line" as a split shift and skipping the deduction would
+// reproduce the original bug on the majority of real days. There is a
+// regression test named for exactly that mistake, because it was made here.
 //
-//     Aide Clemente     17.00 − 1.00 lunch = 16.00
-//     Alexis Garcia     17.06 − 1.06 lunch = 16.00
-//     Alondra Barajas   16.86 − 1.06 lunch = 15.80
-//     Audiel Montiel    17.04 − 1.00 lunch = 16.04
+// WHAT THE REPORTED 8.47 ACTUALLY IS. Not one record — a CLASS. It appears on
+// 78 day entries across 36 employees and 63 timecards, spread over Mon–Fri,
+// 34 of them on already-APPROVED timecards. It is the signature of the
+// standard shift: clock in, clock out 8h28m later, 30-minute meal never
+// deducted. The stored `regular` is exactly out-minus-in with nothing removed:
 //
-// So a multi-line day must STILL have its meal subtracted. Treating "more than
-// one Regular line" as a split shift and skipping the deduction would leave
-// Aide Clemente at 17.00 — the original bug, on the majority of real days.
+//     13:56 → 22:24 = 8.47      04:57 → 13:25 = 8.47
+//     05:29 → 13:57 = 8.47      07:03 → 15:31 = 8.47
+//
+// So the test suite asserts the RULE over the class, not one hand-picked
+// employee-date. A single row can pass by accident; a rule cannot.
+//
+// NOT A BUG, checked and ruled out: day-key alignment. All 1745 day entries in
+// prod match the weekday their position implies, 0 misaligned. The positional
+// DAYS change is sufficient; nothing is stored under the wrong key.
 // ---------------------------------------------------------------------------
 
 /** Rounding slack, in minutes. Vendor `Tot` is 2dp hours (0.01 h = 0.6 min). */

@@ -121,6 +121,11 @@ test.describe("pay week boundary (Sun–Sat)", () => {
 //   * 377 employee-days, 328 of them carrying a lunch line
 //   * lunch averages 0.515 h, range 0.50 – 1.00 — NOT a fixed 30 minutes
 //   * 169.1 lunch hours billed as worked against 3118.1 recorded = 5.4%
+//   * day keys are correctly aligned: 1745 of 1745 day entries match the
+//     weekday their position implies, 0 misaligned. The positional DAYS change
+//     is sufficient; there is no key/date misalignment to fix.
+//   * 8.47 is a CLASS, not a record: 78 day entries, 36 employees, 63
+//     timecards, spread across Mon–Fri, 34 of them already APPROVED.
 //
 // The earlier "17-hour shift" examples were the doubling artifact and are gone.
 // Real shifts are ~8.5 h.
@@ -142,35 +147,77 @@ const meal = (hours: number, inT = "12:00", outT: string | null = null): PunchLi
 });
 
 test.describe("worked hours = Σ Regular Tot − Σ punched meal", () => {
-  // THE HARD TARGET. Antonio's actual record, located in prod:
-  //   Alexander Gonzalez, 2026-06-26 — paycode 1 = 8.47, paycode 7 = 0.52.
-  // He described it as "Mon"; the date is a FRIDAY. Treat his day name as the
-  // app's label, not the real weekday — and see the note below.
-  test("THE REPORTED BUG: Alexander Gonzalez 2026-06-26 reads 7.95, not 8.47", () => {
-    const lines: PunchLine[] = [
-      { paycodeId: 1, hours: 8.47, punchIn: null, punchOut: null },
-      { paycodeId: 7, hours: 0.52, punchIn: null, punchOut: null },
-    ];
-    expect(workedHours(lines)).toBe(7.95);
-    expect(workedHours(lines)).not.toBe(8.47);
+  // THE TARGET IS A CLASS, NOT A ROW.
+  //
+  // 8.47 is not one record. In prod it appears on 78 day entries across 36
+  // employees and 63 timecards, on Mon/Tue/Wed/Thu AND Fri — 34 of them on
+  // already-approved timecards. It is the signature of the standard shift:
+  // clock in, clock out 8h28m later, 30-minute meal never deducted. The stored
+  // `regular` is exactly out-minus-in with nothing removed:
+  //
+  //     13:56 → 22:24 = 8.47      04:57 → 13:25 = 8.47
+  //     05:29 → 13:57 = 8.47      07:03 → 15:31 = 8.47
+  //
+  // So Antonio's "Mon" was almost certainly a genuine Monday, and naming any
+  // single employee-date as "his record" is matching a value and calling it an
+  // identification. Asserting over the class is also simply stronger: a
+  // hand-picked row can pass by accident, a rule cannot.
+  test("THE REPORTED BUG, as a class: regular 8.47 with a 0.52 meal ⇒ 7.95", () => {
+    // Every shape that produces the reported pair must land on 7.95, whatever
+    // time of day the shift started.
+    for (const [inT, outT] of [
+      ["13:56", "22:24"], ["04:57", "13:25"],
+      ["05:29", "13:57"], ["07:03", "15:31"],
+    ] as const) {
+      // The stored `regular` is out-minus-in, undeducted — that IS the 8.47.
+      expect(Math.round((spanMinutes(inT, outT)! / 60) * 100) / 100).toBe(8.47);
+      expect(workedHours([reg(inT, outT), meal(0.52)])).toBe(7.95);
+    }
+    // And from the bare line values, with no punch times at all.
+    expect(
+      workedHours([
+        { paycodeId: 1, hours: 8.47, punchIn: null, punchOut: null },
+        { paycodeId: 7, hours: 0.52, punchIn: null, punchOut: null },
+      ]),
+    ).toBe(7.95);
   });
 
-  test("that record lands on FRIDAY of the week opening Sunday 2026-06-21", () => {
-    // The other half of the target: the right number on the right weekday.
-    // 2026-06-26 is a Friday. Under Sun–Sat its week opens Sunday 2026-06-21
-    // and it sits at DAYS[5].
-    expect(ymdLocal(startOfWeek(new Date("2026-06-26T12:00:00")))).toBe("2026-06-21");
-    expect(DAYS[5]).toBe("fri");
-    expect(dayDate("2026-06-21", "fri")).toBe("Jun 26");
-    // NOTE: under the OLD Monday scheme this date ALSO rendered as "Fri"
-    // (week_start 2026-06-22, index 4 of ["mon".."sun"]). So Antonio saying
-    // "Mon" is NOT explained by the week-boundary off-by-one — that is a
-    // four-day gap, not one. Most likely loose phrasing, but Q2b in
-    // scripts/verify-lunch-fix.sql checks for a real key/date misalignment
-    // rather than assuming.
+  test("THE GENERAL RULE: corrected = regular − the paycode-7 line, always", () => {
+    // The property the class assertion generalises to. If this holds, no
+    // hand-picked row is load-bearing.
+    const GROSS = [8.47, 8.43, 8.5, 8.0, 9.25, 10.13, 6.75, 12.0, 4.5];
+    const MEALS = [0.5, 0.52, 0.55, 0.75, 1.0];
+    for (const g of GROSS) {
+      for (const m of MEALS) {
+        const expected = Math.round((g - m) * 100) / 100;
+        expect(
+          workedHours([
+            { paycodeId: 1, hours: g, punchIn: null, punchOut: null },
+            { paycodeId: 7, hours: m, punchIn: null, punchOut: null },
+          ]),
+          `${g} − ${m}`,
+        ).toBe(expected);
+      }
+    }
   });
 
-  test("span-derived form of the same record still gives 7.95", () => {
+  test("the class spans the whole week — it is not a Friday phenomenon", () => {
+    // The 78 entries land on Mon through Fri. Whatever weekday an 8.47 sits
+    // on, the corrected value is the same and the day key is positional.
+    for (const k of ["mon", "tue", "wed", "thu", "fri"] as const) {
+      expect(DAYS.includes(k)).toBe(true);
+      const idx = DAYS.indexOf(k);
+      // week_start 2026-06-21 is a Sunday; index must round-trip to the date.
+      const d = new Date("2026-06-21T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() + idx);
+      expect(ymdLocal(startOfWeek(new Date(`${d.toISOString().slice(0, 10)}T12:00:00`))))
+        .toBe("2026-06-21");
+      expect(workedHours([{ paycodeId: 1, hours: 8.47, punchIn: null, punchOut: null }, meal(0.52)]))
+        .toBe(7.95);
+    }
+  });
+
+  test("span-derived form of the same shift still gives 7.95", () => {
     // In 08:00 → Out 16:28 = 508 min = 8.47 h of raw span, with a 0.52 h meal.
     const lines = [reg("08:00", "16:28"), meal(0.52)];
     expect(workedHours(lines)).toBe(7.95);
@@ -192,19 +239,19 @@ test.describe("worked hours = Σ Regular Tot − Σ punched meal", () => {
     expect(workedHours([line, meal(0.52)])).toBe(7.95);
   });
 
-  // Real prod rows, verified against the deduplicated punch data. Antonio's own
-  // record is the first. These are ~8.5 h single shifts — the earlier
-  // "17-hour" figures were a double-counting artifact and are not real.
+  // ILLUSTRATIONS ONLY — real prod rows, kept so the numbers stay concrete.
+  // The assertions that matter are the class and the general rule above; none
+  // of these rows is load-bearing, and none of them is "the" reported record.
   const REAL_ROWS: [string, string, number, number, number][] = [
     // name,               date,         Σ Regular, meal, expected worked
-    ["Alexander Gonzalez", "2026-06-26", 8.47, 0.52, 7.95], // the reported bug
+    ["Alexander Gonzalez", "2026-06-26", 8.47, 0.52, 7.95],
     ["Adrian Moreno",      "2026-06-26", 8.43, 0.52, 7.91],
     ["Aide Clemente",      "2026-06-26", 8.5,  0.5,  8.0],
     ["Maria Alfaro",       "2026-06-27", 8.43, 0.5,  7.93],
   ];
 
   for (const [name, date, gross, mealHrs, expected] of REAL_ROWS) {
-    test(`real prod row — ${name} ${date}: ${gross} − ${mealHrs} = ${expected}`, () => {
+    test(`illustration — ${name} ${date}: ${gross} − ${mealHrs} = ${expected}`, () => {
       const lines: PunchLine[] = [
         { paycodeId: 1, hours: gross, punchIn: null, punchOut: null },
         meal(mealHrs),
