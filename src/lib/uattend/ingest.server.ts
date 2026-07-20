@@ -1,7 +1,12 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
 import { DAYS, emptyDays, rollupTotals, type DayKey } from "@/lib/timecards";
-import { resolveWorkedMinutes } from "./worked-hours";
+import {
+  isMealPaycode,
+  isRegularPaycode,
+  resolveWorkedMinutes,
+  type PunchLine,
+} from "./worked-hours";
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getUattendAdapter } from "./adapter.server";
 import { getIntegration } from "@/lib/integrations/db";
@@ -52,9 +57,9 @@ export type UattendIngestSummary = {
   unreconciled: {
     name: string;
     day: DayKey;
-    basis: string;
-    regHours: number;
-    mealMinutes: number;
+    reasons: string[];
+    grossHours: number;
+    mealHours: number;
     in: string | null;
     out: string | null;
   }[];
@@ -137,32 +142,19 @@ export async function importUattendTimecards(opts: {
     }
   }
 
-  // Group punches per uAttend user per day.
-  //
-  // The MEAL/BREAK lines (paycodes 6 and 7) are collected, NOT discarded. They
-  // used to be dropped here and the unpaid meal "re-derived" as the residual
-  // `span - regular`, which silently produced ZERO whenever the vendor's
-  // Regular `Tot` was the gross In→Out span — billing the client for lunch.
-  // See resolveWorkedMinutes() for how the two shapes are told apart.
-  type DayAgg = {
-    regMin: number;      // Σ Regular (paycode 1) Tot, in minutes
-    mealMin: number;     // Σ meal/break (paycodes 6, 7) Tot, in minutes
-    regLines: number;    // how many Regular line items — >1 means a split shift
-    in: string | null;   // earliest punch-in of the day
-    out: string | null;  // latest punch-out of the day
-  };
-  type Agg = { name: string; byDay: Map<DayKey, DayAgg>; total: number };
-
-  const MEAL_PAYCODES = new Set([6, 7]);
-  const isRegular = (id: number | null) => id == null || id === 1;
+  // Bucket the day's RAW punch lines per uAttend user per day, keeping the
+  // meal/break lines (paycodes 6 and 7) rather than discarding them. They used
+  // to be dropped here and the unpaid meal "re-derived" as the residual
+  // `span - regular` — which production data proved is exactly 0 on every row,
+  // because the vendor's `Tot` IS the raw In→Out span. That is how lunch came
+  // to be billed. resolveWorkedMinutes() now just subtracts the real line.
+  type Agg = { name: string; byDay: Map<DayKey, PunchLine[]>; total: number };
 
   const byUid = new Map<string, Agg>();
   for (const p of punches) {
-    const paycode = p.paycodeId;
-    const regular = isRegular(paycode);
-    const meal = paycode != null && MEAL_PAYCODES.has(paycode);
-    // Vacation / sick / holiday / other still don't belong in Regular hours.
-    if (!regular && !meal) continue;
+    // Vacation / sick / holiday / other belong to neither worked time nor the
+    // meal deduction, so they are dropped here rather than inside the resolver.
+    if (!isRegularPaycode(p.paycodeId) && !isMealPaycode(p.paycodeId)) continue;
 
     const dk = dayKeyFor(weekStart, p.date);
     if (!dk) continue;
@@ -172,19 +164,14 @@ export async function importUattendTimecards(opts: {
       agg = { name, byDay: new Map(), total: 0 };
       byUid.set(p.uattendId, agg);
     }
-    const cur = agg.byDay.get(dk) ?? { regMin: 0, mealMin: 0, regLines: 0, in: null, out: null };
-
-    if (regular) {
-      cur.regMin += (p.hours || 0) * 60;
-      cur.regLines += 1;
-      // Earliest in / latest out by clock value — the punch report's row order
-      // is not guaranteed, so "last row wins" could take an earlier Out.
-      if (p.punchIn && (cur.in == null || p.punchIn < cur.in)) cur.in = p.punchIn;
-      if (p.punchOut && (cur.out == null || p.punchOut > cur.out)) cur.out = p.punchOut;
-    } else {
-      cur.mealMin += (p.hours || 0) * 60;
-    }
-    agg.byDay.set(dk, cur);
+    const lines = agg.byDay.get(dk) ?? [];
+    lines.push({
+      paycodeId: p.paycodeId,
+      hours: p.hours,
+      punchIn: p.punchIn,
+      punchOut: p.punchOut,
+    });
+    agg.byDay.set(dk, lines);
   }
 
   // Per-employee weekly total, in WORKED hours net of any punched meal. Set
@@ -231,28 +218,28 @@ export async function importUattendTimecards(opts: {
 
     const days = emptyDays();
     for (const [dk, v] of agg.byDay) {
-      // Worked time net of any PUNCHED meal — see resolveWorkedMinutes() for
-      // how a Regular `Tot` that already excludes the meal is told apart from
-      // one that still contains it. Never re-derives the meal as a residual.
+      // Σ Regular Tot − Σ punched meal. Never re-derives the meal as a
+      // residual, and never applies the 30-minute default: the real meal
+      // averages 1.03 h and varies per row.
       const r = resolveWorkedMinutes(v);
       const reg = Math.round((r.workedMin / 60) * 100) / 100;
       if (r.ambiguous) {
         summary.unreconciled.push({
           name: agg.name,
           day: dk,
-          basis: r.basis,
-          regHours: Math.round((v.regMin / 60) * 100) / 100,
-          mealMinutes: Math.round(v.mealMin),
-          in: v.in,
-          out: v.out,
+          reasons: r.reasons,
+          grossHours: Math.round((r.grossMin / 60) * 100) / 100,
+          mealHours: Math.round((r.mealMin / 60) * 100) / 100,
+          in: r.in,
+          out: r.out,
         });
       }
       days[dk] = {
         regular: reg,
         overtime: 0,
         holiday: 0,
-        in: v.in,
-        out: v.out,
+        in: r.in,
+        out: r.out,
         locked: false,
         ...(r.lunchMin != null ? { lunch_min: r.lunchMin } : {}),
       };

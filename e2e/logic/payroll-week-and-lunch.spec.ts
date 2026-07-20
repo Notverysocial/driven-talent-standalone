@@ -12,10 +12,10 @@ import {
   ymdLocal,
 } from "../../src/lib/timecards";
 import {
-  RECONCILE_TOLERANCE_MIN,
   resolveWorkedMinutes,
+  spanMinutes,
   workedHours,
-  type DayPunchAggregate,
+  type PunchLine,
 } from "../../src/lib/uattend/worked-hours";
 
 // Regression cover for the two payroll bugs Antonio reported 2026-07-20:
@@ -110,135 +110,190 @@ test.describe("pay week boundary (Sun–Sat)", () => {
 
 // ---------------------------------------------------------------------------
 // BUG 2 — the unpaid meal must not be billed
+//
+// Pinned to what live prod actually returns, measured 2026-07-20:
+//   * paycode 1: Tot == (OutTime − InTime) on 772 of 772 rows, max diff 0.00
+//   * paycode 7: same, on all 656 rows
+//   * meal lines present on 328 of 377 employee-days, averaging 1.031 h
+//   * days routinely carry MULTIPLE Regular lines with the meal nested inside
 // ---------------------------------------------------------------------------
 
-const day = (o: Partial<DayPunchAggregate>): DayPunchAggregate => ({
-  regMin: 0, mealMin: 0, regLines: 1, in: null, out: null, ...o,
+/** A Regular line whose Tot is its own raw span — the proven prod shape. */
+const reg = (inT: string, outT: string): PunchLine => ({
+  paycodeId: 1,
+  hours: spanMinutes(inT, outT)! / 60,
+  punchIn: inT,
+  punchOut: outT,
+});
+/** A paycode-7 meal line of `hours` duration. */
+const meal = (hours: number, inT = "12:00", outT: string | null = null): PunchLine => ({
+  paycodeId: 7,
+  hours,
+  punchIn: inT,
+  punchOut: outT,
 });
 
-test.describe("worked hours net of the punched meal", () => {
-  // Antonio's reported Monday: In 08:00, Out 16:28 (508 min span), one 31-min
-  // punched meal. The invoice must be built on 7.95 h, not 8.47 h.
-  const REPORTED_IN = "08:00";
-  const REPORTED_OUT = "16:28";
-
-  test("GROSS shape: Regular Tot still contains the meal → 7.95, not 8.47", () => {
-    // This is the shape that produced the bug: Tot == the raw In→Out span, so
-    // the old residual (span − reg) evaluated to 0 and the meal was billed.
-    const d = day({ regMin: 508, mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT });
-    const r = resolveWorkedMinutes(d);
-    expect(r.basis).toBe("gross");
-    expect(r.workedMin).toBe(477);
-    expect(workedHours(d)).toBe(7.95);
-    expect(workedHours(d)).not.toBe(8.47);
+test.describe("worked hours = Σ Regular Tot − Σ punched meal", () => {
+  test("THE REPORTED BUG: Antonio's Monday reads 7.95, not 8.47", () => {
+    // In 08:00 → Out 16:28 = 508 min = 8.47 h of raw span, one 31-min meal.
+    const lines = [reg("08:00", "16:28"), meal(31 / 60)];
+    expect(workedHours(lines)).toBe(7.95);
+    expect(workedHours(lines)).not.toBe(8.47);
+    const r = resolveWorkedMinutes(lines);
+    expect(r.grossMin).toBeCloseTo(508, 6); // Tot IS the raw span
+    expect(r.mealMin).toBeCloseTo(31, 6);
+    expect(r.ambiguous).toBe(false);
   });
 
-  test("NET shape: Regular Tot already excludes the meal → still 7.95", () => {
-    const d = day({ regMin: 477, mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT });
-    const r = resolveWorkedMinutes(d);
-    expect(r.basis).toBe("net");
-    expect(workedHours(d)).toBe(7.95);
+  test("the residual the old code used is ZERO on real data — the silent failure", () => {
+    // This is the arithmetic that shipped: span − regularTot. Production says
+    // Tot == span on 772/772 rows, so this is identically 0 and deducts nothing.
+    const line = reg("08:00", "16:28");
+    const residual = spanMinutes(line.punchIn, line.punchOut)! - line.hours * 60;
+    expect(residual).toBe(0);
+    // Which is why the meal has to be SUBTRACTED, not reconstructed.
+    expect(workedHours([line, meal(31 / 60)])).toBe(7.95);
   });
 
-  test("both shapes agree — the result cannot depend on the vendor's Tot convention", () => {
-    const gross = day({ regMin: 508, mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT });
-    const net = day({ regMin: 477, mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT });
-    expect(workedHours(gross)).toBe(workedHours(net));
+  // The four real prod rows from Mon 2026-06-22. These are MULTI-PUNCH days:
+  // treating >1 Regular line as a "split shift" and skipping the deduction
+  // would leave every one of them overstated.
+  const REAL_ROWS: [string, number, number, number][] = [
+    // name,            Σ Regular Tot, meal hours, expected worked
+    ["Aide Clemente",   17.0,  1.0,  16.0],
+    ["Alexis Garcia",   17.06, 1.06, 16.0],
+    ["Alondra Barajas", 16.86, 1.06, 15.8],
+    ["Audiel Montiel",  17.04, 1.0,  16.04],
+  ];
+
+  for (const [name, gross, mealHrs, expected] of REAL_ROWS) {
+    test(`real prod row — ${name}: ${gross} − ${mealHrs} = ${expected}`, () => {
+      // Split the gross across two Regular lines, as the real days are.
+      const half = gross / 2;
+      const lines: PunchLine[] = [
+        { paycodeId: 1, hours: half, punchIn: null, punchOut: null },
+        { paycodeId: 1, hours: gross - half, punchIn: null, punchOut: null },
+        meal(mealHrs),
+      ];
+      expect(workedHours(lines)).toBe(expected);
+      // And the same total as a single line — line count must not change money.
+      expect(
+        workedHours([{ paycodeId: 1, hours: gross, punchIn: null, punchOut: null }, meal(mealHrs)]),
+      ).toBe(expected);
+    });
+  }
+
+  test("MULTIPLE Regular lines still get the meal subtracted", () => {
+    // The regression guard for the mistake this module originally made:
+    // a >1-line day is NOT a split shift with the meal already in a gap.
+    const lines = [reg("06:00", "12:00"), reg("12:00", "17:00"), meal(1)];
+    expect(resolveWorkedMinutes(lines).grossMin).toBe(11 * 60);
+    expect(workedHours(lines)).toBe(10); // 11 − 1, not 11
   });
 
-  test("the stored lunch_min reproduces worked hours through the timecard grid", () => {
-    // The grid re-derives regular hours as (span − lunch_min). If lunch_min is
-    // written wrong, the UI silently disagrees with the ingest.
-    const d = day({ regMin: 508, mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT });
-    const r = resolveWorkedMinutes(d);
+  test("the meal is NOT 30 minutes — no default is ever applied", () => {
+    // Real meals average 1.031 h and vary per row, so a hardcoded default
+    // would be wrong in both directions.
+    expect(workedHours([reg("08:00", "17:00"), meal(1.031)])).toBe(7.97);
+    expect(workedHours([reg("08:00", "17:00"), meal(0.5)])).toBe(8.5);
+    expect(workedHours([reg("08:00", "17:00"), meal(1.06)])).toBe(7.94);
+  });
+
+  test("NO meal line: the full span is paid — no phantom 30-min haircut", () => {
+    // 49 of 377 employee-days have no paycode-7 line. They must not lose time.
+    const lines = [reg("08:00", "16:00")];
+    expect(workedHours(lines)).toBe(8);
+    expect(resolveWorkedMinutes(lines).mealMin).toBe(0);
+  });
+
+  test("BREAK lines (paycode 6) are deducted alongside lunch", () => {
+    const lines = [reg("08:00", "17:00"), meal(1), { paycodeId: 6, hours: 0.25, punchIn: "15:00", punchOut: "15:15" }];
+    expect(workedHours(lines)).toBe(7.75);
+  });
+
+  test("vacation / sick / holiday are neither worked nor deducted", () => {
+    const lines: PunchLine[] = [
+      reg("08:00", "16:00"),
+      { paycodeId: 2, hours: 8, punchIn: null, punchOut: null }, // vacation
+      { paycodeId: 3, hours: 8, punchIn: null, punchOut: null }, // sick
+      { paycodeId: 4, hours: 8, punchIn: null, punchOut: null }, // holiday
+    ];
+    expect(workedHours(lines)).toBe(8);
+  });
+
+  test("a missing paycode is treated as Regular, matching the normalizer", () => {
+    expect(workedHours([{ paycodeId: null, hours: 8, punchIn: "08:00", punchOut: "16:00" }])).toBe(8);
+  });
+
+  test("overnight shift: the span wraps midnight", () => {
+    expect(spanMinutes("22:00", "06:30")).toBe(510);
+    expect(workedHours([reg("22:00", "06:30"), meal(0.5)])).toBe(8);
+  });
+
+  test("earliest in / latest out, regardless of row order", () => {
+    // The punch report's ordering is not guaranteed; "last row wins" could
+    // otherwise record an earlier Out than the employee actually punched.
+    const r = resolveWorkedMinutes([reg("13:00", "17:00"), reg("06:00", "12:00")]);
+    expect(r.in).toBe("06:00");
+    expect(r.out).toBe("17:00");
+  });
+
+  test("the stored lunch_min reproduces worked hours through the grid", () => {
+    // The grid re-derives regular as (span − lunch_min). If lunch_min is wrong
+    // the UI silently disagrees with the ingest — and the UI is what Antonio reads.
+    const lines = [reg("08:00", "16:28"), meal(31 / 60)];
+    const r = resolveWorkedMinutes(lines);
     expect(r.lunchMin).toBe(31);
-    const derived = dayRegularHours({
-      regular: 0, overtime: 0, holiday: 0,
-      in: REPORTED_IN, out: REPORTED_OUT, locked: false,
-      lunch_min: r.lunchMin!,
-    });
-    expect(derived).toBe(7.95);
-  });
-
-  test("NO lunch punch: the full span is paid — no phantom 30-min deduction", () => {
-    // An employee who worked through must not lose half an hour to the default.
-    const d = day({ regMin: 480, mealMin: 0, in: "08:00", out: "16:00" });
-    const r = resolveWorkedMinutes(d);
-    expect(r.basis).toBe("no-meal");
-    expect(workedHours(d)).toBe(8);
-    expect(r.lunchMin).toBe(0);
-  });
-
-  test("TWO breaks in a day: both are deducted, not just the first", () => {
-    // 08:00 → 16:46 = 526 min, with a 31-min lunch and a 15-min break.
-    const d = day({ regMin: 526, mealMin: 46, in: "08:00", out: "16:46" });
-    const r = resolveWorkedMinutes(d);
-    expect(r.basis).toBe("gross");
-    expect(r.workedMin).toBe(480);
-    expect(workedHours(d)).toBe(8);
-  });
-
-  test("SPLIT shift: the unworked gap is not double-deducted", () => {
-    // Two Regular segments 08:00–12:00 and 13:00–17:00 = 480 worked min, but a
-    // 540-min outer span. Subtracting a meal on top would underpay.
-    const d = day({ regMin: 480, mealMin: 0, regLines: 2, in: "08:00", out: "17:00" });
-    const r = resolveWorkedMinutes(d);
-    expect(r.basis).toBe("split-shift");
-    expect(workedHours(d)).toBe(8);
-  });
-
-  test("overnight shift: the span wraps midnight correctly", () => {
-    // 22:00 → 06:30 = 510 min, 30-min meal ⇒ 8.00 h.
-    const d = day({ regMin: 510, mealMin: 30, in: "22:00", out: "06:30" });
-    expect(workedHours(d)).toBe(8);
-  });
-
-  test("no usable punches: fall back to the summed Regular total", () => {
-    const d = day({ regMin: 450, mealMin: 0, in: null, out: null });
-    const r = resolveWorkedMinutes(d);
-    expect(r.basis).toBe("no-span");
-    expect(workedHours(d)).toBe(7.5);
-    expect(r.lunchMin).toBeNull();
-  });
-
-  test("rounding drift within tolerance is still read as the NET shape", () => {
-    // Tot is 2dp hours, so a day can drift a minute or so from the punch span.
-    const d = day({
-      regMin: 477 + RECONCILE_TOLERANCE_MIN - 1,
-      mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT,
-    });
-    expect(resolveWorkedMinutes(d).basis).toBe("net");
-  });
-
-  test("a partly-excluded meal is flagged rather than silently guessed", () => {
-    // Only 10 of the 31 meal minutes are carved out of Tot. We take the safe
-    // number AND mark it, so a wrong rule surfaces as a list, not an invoice.
-    const d = day({ regMin: 498, mealMin: 31, in: REPORTED_IN, out: REPORTED_OUT });
-    const r = resolveWorkedMinutes(d);
-    expect(r.ambiguous).toBe(true);
-    expect(r.workedMin).toBe(477);
+    expect(
+      dayRegularHours({
+        regular: 0, overtime: 0, holiday: 0,
+        in: r.in, out: r.out, locked: false, lunch_min: r.lunchMin!,
+      }),
+    ).toBe(7.95);
   });
 
   test("worked minutes can never go negative", () => {
-    const d = day({ regMin: 20, mealMin: 60, in: "08:00", out: "08:20" });
-    expect(resolveWorkedMinutes(d).workedMin).toBe(0);
+    expect(resolveWorkedMinutes([reg("08:00", "08:20"), meal(1)]).workedMin).toBe(0);
   });
 
-  test("a full Sun–Sat week reconciles to the sum of its days", () => {
-    // Mon is the reported 7.95; the rest are clean 8h days with a 30-min meal.
-    const week: Record<string, DayPunchAggregate> = {
-      sun: day({ regMin: 0, mealMin: 0, in: null, out: null }),
-      mon: day({ regMin: 508, mealMin: 31, in: "08:00", out: "16:28" }),
-      tue: day({ regMin: 510, mealMin: 30, in: "08:00", out: "16:30" }),
-      wed: day({ regMin: 510, mealMin: 30, in: "08:00", out: "16:30" }),
-      thu: day({ regMin: 510, mealMin: 30, in: "08:00", out: "16:30" }),
-      fri: day({ regMin: 480, mealMin: 0, in: "08:00", out: "16:00" }),
-      sat: day({ regMin: 0, mealMin: 0, in: null, out: null }),
-    };
-    const total = Object.values(week).reduce((s, d) => s + workedHours(d), 0);
-    // 0 + 7.95 + 8 + 8 + 8 + 8 + 0
-    expect(Math.round(total * 100) / 100).toBe(39.95);
-    // The old behaviour billed the meals: 8.47 + 8.5×3 + 8 = 41.97.
-    expect(Math.round(total * 100) / 100).toBeLessThan(41.97);
+  test("CANARY: a Regular line whose Tot stops matching its span is flagged", () => {
+    // Production proved Tot == span on 772/772 rows. If uAttend ever switches
+    // to a NET Tot we would start double-subtracting the meal. That must
+    // surface as a flagged day, not as a silent swing the other way.
+    const netShaped: PunchLine = { paycodeId: 1, hours: 7.95, punchIn: "08:00", punchOut: "16:28" };
+    const r = resolveWorkedMinutes([netShaped, meal(31 / 60)]);
+    expect(r.ambiguous).toBe(true);
+    expect(r.reasons.join(" ")).toContain("its own span");
+  });
+
+  test("a meal larger than the regular total is flagged, not silently zeroed", () => {
+    const r = resolveWorkedMinutes([reg("08:00", "09:00"), meal(3)]);
+    expect(r.workedMin).toBe(0);
+    expect(r.ambiguous).toBe(true);
+  });
+
+  test("clean days are never flagged — the list stays worth reading", () => {
+    for (const lines of [
+      [reg("08:00", "16:28"), meal(31 / 60)],
+      [reg("08:00", "16:00")],
+      [reg("06:00", "12:00"), reg("12:00", "17:00"), meal(1)],
+      [reg("22:00", "06:30"), meal(0.5)],
+    ]) {
+      expect(resolveWorkedMinutes(lines).ambiguous, JSON.stringify(lines)).toBe(false);
+    }
+  });
+
+  test("SCALE: the 5.4% overstatement is removed", () => {
+    // Prod-wide: 338.1 meal hours counted as worked against 6236.2 recorded.
+    const RECORDED = 6236.2;
+    const MEAL = 338.1;
+    const corrected = RECORDED - MEAL;
+    expect(Math.round((MEAL / RECORDED) * 1000) / 10).toBe(5.4);
+    // One synthetic week reproduces the same direction and proportion.
+    const lines = [
+      { paycodeId: 1, hours: RECORDED, punchIn: null, punchOut: null },
+      { paycodeId: 7, hours: MEAL, punchIn: null, punchOut: null },
+    ];
+    expect(workedHours(lines)).toBeCloseTo(corrected, 1);
   });
 });

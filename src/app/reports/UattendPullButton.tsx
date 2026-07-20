@@ -58,7 +58,7 @@ export function UattendPullButton({ weekStart }: { weekStart: string }) {
             <span style={{ color: "var(--dt-warning)" }}>
               {" "}· lunch not reconciled ({summary.unreconciled.length}):{" "}
               {summary.unreconciled
-                .map((u) => `${u.name} ${u.day.toUpperCase()} (${u.in ?? "?"}–${u.out ?? "?"}, ${u.mealMinutes}m meal)`)
+                .map((u) => `${u.name} ${u.day.toUpperCase()} (${u.grossHours}h reg, ${u.mealHours}h meal — ${u.reasons.join("; ")})`)
                 .join(", ")}
             </span>
           )}
