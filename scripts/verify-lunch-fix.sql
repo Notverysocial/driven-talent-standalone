@@ -23,10 +23,19 @@
 --
 --   2. TWO ROWS PER LINE ITEM. punchLineToEvents() writes an "in" row AND an
 --      "out" row for every punch-report line, BOTH carrying the SAME
---      raw_payload. Summing raw_payload->>'Tot' across rows therefore DOUBLE
---      COUNTS. uattend_punch_id is "<uid>:<date>:<paycode>:in|out", so
---      stripping the trailing :in / :out yields the line identity. Q0b proves
---      the multiplicity before anything relies on it.
+--      raw_payload AND the same Tot. Summing raw_payload->>'Tot' across rows
+--      therefore DOUBLE COUNTS every absolute figure. This is not theoretical:
+--      the first measurement of this data did exactly that and reported 2x on
+--      every total. (The 5.4% ratio survived only because both sides doubled.)
+--
+--      The id separator is a HYPHEN in prod ("<n>-in" / "<n>-out"), though
+--      punch-events.ts writes a colon, so the regex below accepts BOTH. A
+--      colon-only pattern silently matches nothing and the dedupe becomes a
+--      no-op that reproduces the doubled numbers.
+--
+--      Because that dedupe is the single most load-bearing line here, Q0b
+--      checks it TWO independent ways — by id line-key and by punch_type —
+--      and they must agree. If they disagree, trust neither.
 -- ===========================================================================
 
 
@@ -44,12 +53,13 @@ FROM timeclock_punches;
 
 -- ---------------------------------------------------------------------------
 -- Q0b — ROWS PER LINE ITEM. Expect mostly 2 (an in row + an out row).
---       If this returns mostly 1, the dedupe below is a harmless no-op.
---       If it returns 3+, STOP — the line key is not what we think it is.
+--       If this returns mostly 1, the regex matched nothing — STOP, because
+--       every total below will then be DOUBLE. If it returns 3+, the line key
+--       is not what we think it is. Either way, do not trust the totals.
 -- ---------------------------------------------------------------------------
 SELECT rows_per_line, count(*) AS line_items
 FROM (
-  SELECT regexp_replace(uattend_punch_id, ':(in|out)$', '') AS line_key,
+  SELECT regexp_replace(uattend_punch_id, '[-:](in|out)$', '') AS line_key,
          count(*) AS rows_per_line
   FROM timeclock_punches
   WHERE uattend_punch_id IS NOT NULL
@@ -59,23 +69,49 @@ GROUP BY 1 ORDER BY 1;
 
 
 -- ---------------------------------------------------------------------------
+-- Q0b2 — THE SAME DEDUPE, DONE A SECOND INDEPENDENT WAY, as a cross-check.
+--        Method A strips the :in/-in suffix from uattend_punch_id.
+--        Method B keeps only the *_in side of each pair via punch_type.
+--        `a_lines` and `b_lines` MUST match. If they do not, the id format and
+--        the punch_type column disagree and neither dedupe can be trusted.
+--
+--        Method B is shown for agreement only — the script uses Method A,
+--        because a line that recorded an OUT but no IN exists as a lone "out"
+--        row and Method B would silently drop it. `b_orphan_out` counts those.
+-- ---------------------------------------------------------------------------
+SELECT
+  (SELECT count(DISTINCT regexp_replace(uattend_punch_id, '[-:](in|out)$', ''))
+     FROM timeclock_punches WHERE uattend_punch_id IS NOT NULL)            AS a_lines,
+  (SELECT count(*) FROM timeclock_punches
+     WHERE punch_type IN ('in', 'lunch_in', 'break_in'))                   AS b_lines,
+  (SELECT count(*) FROM timeclock_punches t
+     WHERE t.punch_type IN ('out', 'lunch_out', 'break_out')
+       AND NOT EXISTS (
+         SELECT 1 FROM timeclock_punches s
+         WHERE regexp_replace(s.uattend_punch_id, '[-:](in|out)$', '')
+             = regexp_replace(t.uattend_punch_id, '[-:](in|out)$', '')
+           AND s.punch_type IN ('in', 'lunch_in', 'break_in')))            AS b_orphan_out;
+
+
+-- ---------------------------------------------------------------------------
 -- Q0c — THE LOAD-BEARING INVARIANT: is "Tot" the raw In→Out span?
---       Expected (measured 2026-07-20): equal on 772/772 paycode-1 rows and
---       656/656 paycode-7 rows, max_diff 0.00.
+--       Expected: tot_equals_span == rows_with_both for BOTH paycodes, with
+--       max_diff 0.00. (Row COUNTS from the first measurement were doubled;
+--       the equality and max_diff of 0.00 were not affected by that error.)
 --
 --       This is the assumption the whole fix rests on. If max_diff is ever
 --       materially > 0, uAttend has changed convention and worked-hours.ts
 --       will flag those days via its canary — but check here first.
 -- ---------------------------------------------------------------------------
 WITH line AS (
-  SELECT DISTINCT ON (regexp_replace(uattend_punch_id, ':(in|out)$', ''))
+  SELECT DISTINCT ON (regexp_replace(uattend_punch_id, '[-:](in|out)$', ''))
     coalesce((raw_payload->>'PaycodeId')::int, (raw_payload->>'paycodeId')::int, 1) AS paycode,
     coalesce((raw_payload->>'Tot')::numeric, (raw_payload->>'hours')::numeric)      AS tot,
     coalesce(raw_payload->>'InTime',  raw_payload->>'punchIn')                      AS t_in,
     coalesce(raw_payload->>'OutTime', raw_payload->>'punchOut')                     AS t_out
   FROM timeclock_punches
   WHERE uattend_punch_id IS NOT NULL
-  ORDER BY regexp_replace(uattend_punch_id, ':(in|out)$', ''), id
+  ORDER BY regexp_replace(uattend_punch_id, '[-:](in|out)$', ''), id
 )
 SELECT
   paycode,
@@ -95,49 +131,11 @@ GROUP BY paycode ORDER BY paycode;
 
 
 -- ===========================================================================
--- THE NORMALIZER. Every query below builds on this: one row per punch-report
--- LINE ITEM, both payload shapes coalesced, in/out rows deduped.
+-- From here on, every query is a SELECT that opens with the SAME CTE preamble
+-- (punch_line -> worked_day). It is repeated verbatim rather than created as a
+-- temp view so that NOTHING in this file is DDL: it is SELECTs only, top to
+-- bottom, safe to run against production.
 -- ===========================================================================
-CREATE OR REPLACE TEMP VIEW punch_line AS
-SELECT DISTINCT ON (regexp_replace(p.uattend_punch_id, ':(in|out)$', ''))
-  regexp_replace(p.uattend_punch_id, ':(in|out)$', '')                              AS line_key,
-  p.employee_id,
-  coalesce(p.raw_payload->>'UserId', p.raw_payload->>'uattendId',
-           p.uattend_employee_id)                                                   AS uattend_id,
-  coalesce(p.raw_payload->>'PunchDate', p.raw_payload->>'date')::date               AS work_date,
-  coalesce((p.raw_payload->>'PaycodeId')::int, (p.raw_payload->>'paycodeId')::int, 1) AS paycode,
-  coalesce((p.raw_payload->>'Tot')::numeric, (p.raw_payload->>'hours')::numeric, 0)  AS tot_hours,
-  coalesce(p.raw_payload->>'InTime',  p.raw_payload->>'punchIn')                     AS t_in,
-  coalesce(p.raw_payload->>'OutTime', p.raw_payload->>'punchOut')                    AS t_out
-FROM timeclock_punches p
-WHERE p.uattend_punch_id IS NOT NULL
-ORDER BY regexp_replace(p.uattend_punch_id, ':(in|out)$', ''), p.id;
-
-
--- ===========================================================================
--- THE CORRECTED PER-DAY FIGURE. This single expression is the whole fix.
--- ===========================================================================
-CREATE OR REPLACE TEMP VIEW worked_day AS
-SELECT
-  uattend_id,
-  employee_id,
-  work_date,
-  -- Σ Regular Tot (a missing paycode counts as Regular, matching the normalizer)
-  round(sum(tot_hours) FILTER (WHERE paycode = 1), 2)                       AS gross_hours,
-  -- Σ punched meal + break
-  round(coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0), 2)     AS meal_hours,
-  -- worked = gross − meal, never negative
-  round(greatest(
-    0,
-    coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0)
-    - coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0)
-  ), 2)                                                                     AS worked_hours,
-  min(t_in)  FILTER (WHERE paycode = 1)                                     AS first_in,
-  max(t_out) FILTER (WHERE paycode = 1)                                     AS last_out,
-  count(*)   FILTER (WHERE paycode = 1)                                     AS regular_lines,
-  count(*)   FILTER (WHERE paycode IN (6,7))                                AS meal_lines
-FROM punch_line
-GROUP BY uattend_id, employee_id, work_date;
 
 
 -- ---------------------------------------------------------------------------
@@ -145,6 +143,43 @@ GROUP BY uattend_id, employee_id, work_date;
 --      `overstated_by` is what was being billed and should not have been.
 --      Adjust the dates to whichever week is being checked.
 -- ---------------------------------------------------------------------------
+WITH punch_line AS (
+  -- One row per punch-report LINE ITEM: both payload shapes coalesced, and the
+  -- in/out row pair collapsed. The regex accepts BOTH separators — prod uses
+  -- "<n>-in", punch-events.ts writes "<n>:in". A colon-only pattern matches
+  -- nothing, the dedupe becomes a no-op, and every total below DOUBLES.
+  SELECT DISTINCT ON (regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''))
+    p.employee_id,
+    coalesce(p.raw_payload->>'UserId', p.raw_payload->>'uattendId',
+             p.uattend_employee_id)                                                 AS uattend_id,
+    coalesce(p.raw_payload->>'PunchDate', p.raw_payload->>'date')::date             AS work_date,
+    coalesce((p.raw_payload->>'PaycodeId')::int, (p.raw_payload->>'paycodeId')::int, 1) AS paycode,
+    coalesce((p.raw_payload->>'Tot')::numeric, (p.raw_payload->>'hours')::numeric, 0)   AS tot_hours,
+    coalesce(p.raw_payload->>'InTime',  p.raw_payload->>'punchIn')                  AS t_in,
+    coalesce(p.raw_payload->>'OutTime', p.raw_payload->>'punchOut')                 AS t_out
+  FROM timeclock_punches p
+  WHERE p.uattend_punch_id IS NOT NULL
+  ORDER BY regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''), p.id
+),
+worked_day AS (
+  -- THE CORRECTED PER-DAY FIGURE. This expression is the whole fix:
+  --     worked = SUM(paycode 1 Tot) - SUM(paycode 6,7 Tot)
+  SELECT
+    uattend_id,
+    employee_id,
+    work_date,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0), 2)      AS gross_hours,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0), 2) AS meal_hours,
+    round(greatest(0,
+      coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0)
+      - coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0)), 2)  AS worked_hours,
+    min(t_in)  FILTER (WHERE paycode = 1)                                 AS first_in,
+    max(t_out) FILTER (WHERE paycode = 1)                                 AS last_out,
+    count(*)   FILTER (WHERE paycode = 1)                                 AS regular_lines,
+    count(*)   FILTER (WHERE paycode IN (6,7))                            AS meal_lines
+  FROM punch_line
+  GROUP BY uattend_id, employee_id, work_date
+)
 SELECT
   e.full_name,
   w.work_date,
@@ -162,31 +197,168 @@ ORDER BY e.full_name, w.work_date;
 
 
 -- ---------------------------------------------------------------------------
--- Q2 — THE FOUR NAMED ROWS, Mon 2026-06-22. Expected, from the measurement:
---        Aide Clemente    17.00 − 1.00 → 16.00
---        Alexis Garcia    17.06 − 1.06 → 16.00
---        Alondra Barajas  16.86 − 1.06 → 15.80
---        Audiel Montiel   17.04 − 1.00 → 16.04
---      If these four match, the SQL and worked-hours.ts agree on real rows.
+-- Q2 — THE HARD TARGET: Antonio's own record, plus corroborators. Expected:
+--
+--        Alexander Gonzalez  2026-06-26   8.47 − 0.52 → 7.95   <-- the report
+--        Adrian Moreno       2026-06-26   8.43 − 0.52 → 7.91
+--        Aide Clemente       2026-06-26   8.50 − 0.50 → 8.00
+--        Maria Alfaro        2026-06-27   8.43 − 0.50 → 7.93
+--
+--      If these match, the SQL and worked-hours.ts agree on real rows, and
+--      the e2e/logic suite is pinned to the same four.
+--
+--      Note 2026-06-26 is a FRIDAY. Antonio reported it as "Mon" — see Q2b.
 -- ---------------------------------------------------------------------------
-SELECT e.full_name, w.gross_hours, w.meal_hours, w.worked_hours
+WITH punch_line AS (
+  -- One row per punch-report LINE ITEM: both payload shapes coalesced, and the
+  -- in/out row pair collapsed. The regex accepts BOTH separators — prod uses
+  -- "<n>-in", punch-events.ts writes "<n>:in". A colon-only pattern matches
+  -- nothing, the dedupe becomes a no-op, and every total below DOUBLES.
+  SELECT DISTINCT ON (regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''))
+    p.employee_id,
+    coalesce(p.raw_payload->>'UserId', p.raw_payload->>'uattendId',
+             p.uattend_employee_id)                                                 AS uattend_id,
+    coalesce(p.raw_payload->>'PunchDate', p.raw_payload->>'date')::date             AS work_date,
+    coalesce((p.raw_payload->>'PaycodeId')::int, (p.raw_payload->>'paycodeId')::int, 1) AS paycode,
+    coalesce((p.raw_payload->>'Tot')::numeric, (p.raw_payload->>'hours')::numeric, 0)   AS tot_hours,
+    coalesce(p.raw_payload->>'InTime',  p.raw_payload->>'punchIn')                  AS t_in,
+    coalesce(p.raw_payload->>'OutTime', p.raw_payload->>'punchOut')                 AS t_out
+  FROM timeclock_punches p
+  WHERE p.uattend_punch_id IS NOT NULL
+  ORDER BY regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''), p.id
+),
+worked_day AS (
+  -- THE CORRECTED PER-DAY FIGURE. This expression is the whole fix:
+  --     worked = SUM(paycode 1 Tot) - SUM(paycode 6,7 Tot)
+  SELECT
+    uattend_id,
+    employee_id,
+    work_date,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0), 2)      AS gross_hours,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0), 2) AS meal_hours,
+    round(greatest(0,
+      coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0)
+      - coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0)), 2)  AS worked_hours,
+    min(t_in)  FILTER (WHERE paycode = 1)                                 AS first_in,
+    max(t_out) FILTER (WHERE paycode = 1)                                 AS last_out,
+    count(*)   FILTER (WHERE paycode = 1)                                 AS regular_lines,
+    count(*)   FILTER (WHERE paycode IN (6,7))                            AS meal_lines
+  FROM punch_line
+  GROUP BY uattend_id, employee_id, work_date
+)
+SELECT
+  e.full_name,
+  w.work_date,
+  to_char(w.work_date, 'Dy')  AS real_dow,
+  w.gross_hours               AS old_shown,
+  w.meal_hours,
+  w.worked_hours              AS corrected,
+  w.regular_lines, w.meal_lines
 FROM worked_day w
 JOIN employees e ON e.id = w.employee_id
-WHERE w.work_date = DATE '2026-06-22'
-  AND e.full_name IN ('Aide Clemente','Alexis Garcia','Alondra Barajas','Audiel Montiel')
+WHERE (e.full_name, w.work_date) IN (
+        ('Alexander Gonzalez', DATE '2026-06-26'),
+        ('Adrian Moreno',      DATE '2026-06-26'),
+        ('Aide Clemente',      DATE '2026-06-26'),
+        ('Maria Alfaro',       DATE '2026-06-27')
+      )
 ORDER BY e.full_name;
 
 
 -- ---------------------------------------------------------------------------
--- Q3 — PROD-WIDE SCALE. Expected ≈ 338.1 meal hours against ≈ 6236.2 recorded,
---      i.e. 5.4% overstatement. Confirms this script reproduces the same
---      totals the independent measurement found.
+-- Q2b — "Mon" vs Friday. THE ONE OPEN QUESTION, settled with data not theory.
+--
+--      Antonio reported the 8.47 as being on a Monday. The record is
+--      2026-06-26, a FRIDAY. That is a four-day gap, which the Sun-vs-Mon
+--      week-start bug does NOT explain (it is worth one day, and in fact this
+--      date rendered as "Fri" under the old scheme too).
+--
+--      So either he spoke loosely, or values are stored under the wrong day
+--      key — a third bug. This finds where 8.47 actually sits in the JSON.
+--
+--      EXPECTED: day_key = 'fri', and key_implies_date = 2026-06-26 matching
+--      the punch date. If day_key comes back 'mon', or key_implies_date does
+--      not match, STOP — there is a real key/date misalignment to fix and the
+--      positional DAYS change alone will not correct it.
 -- ---------------------------------------------------------------------------
+SELECT
+  e.full_name,
+  t.week_start,
+  to_char(t.week_start, 'Dy')                                   AS week_start_dow,
+  t.status,
+  d.key                                                         AS day_key,
+  (t.week_start + array_position(
+      ARRAY['sun','mon','tue','wed','thu','fri','sat'], d.key) - 1) AS key_implies_date,
+  round((d.value->>'regular')::numeric, 2)                      AS stored_regular,
+  d.value->>'in'   AS stored_in,
+  d.value->>'out'  AS stored_out
+FROM timecards t
+JOIN employees e ON e.id = t.employee_id
+CROSS JOIN LATERAL jsonb_each(t.days) AS d(key, value)
+WHERE e.full_name = 'Alexander Gonzalez'
+  AND (d.value->>'regular')::numeric BETWEEN 8.46 AND 8.48
+ORDER BY t.week_start, array_position(ARRAY['sun','mon','tue','wed','thu','fri','sat'], d.key);
+
+
+-- ---------------------------------------------------------------------------
+-- Q3 — PROD-WIDE SCALE. Expected, on DEDUPLICATED data:
+--        recorded_hours          ≈ 3118.1
+--        lunch_billed_as_worked  ≈  169.1
+--        pct_overstated          =    5.4
+--        employee_days           =  377,  with_lunch = 328
+--        avg_lunch ≈ 0.515, min 0.50, max 1.00  (NOT a fixed 30 minutes)
+--
+--      If recorded_hours comes back ≈ 6236 and lunch ≈ 338, the dedupe did not
+--      take — go back to Q0b. Those doubled figures are what an un-deduped
+--      first pass produces, and they look entirely plausible.
+-- ---------------------------------------------------------------------------
+WITH punch_line AS (
+  -- One row per punch-report LINE ITEM: both payload shapes coalesced, and the
+  -- in/out row pair collapsed. The regex accepts BOTH separators — prod uses
+  -- "<n>-in", punch-events.ts writes "<n>:in". A colon-only pattern matches
+  -- nothing, the dedupe becomes a no-op, and every total below DOUBLES.
+  SELECT DISTINCT ON (regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''))
+    p.employee_id,
+    coalesce(p.raw_payload->>'UserId', p.raw_payload->>'uattendId',
+             p.uattend_employee_id)                                                 AS uattend_id,
+    coalesce(p.raw_payload->>'PunchDate', p.raw_payload->>'date')::date             AS work_date,
+    coalesce((p.raw_payload->>'PaycodeId')::int, (p.raw_payload->>'paycodeId')::int, 1) AS paycode,
+    coalesce((p.raw_payload->>'Tot')::numeric, (p.raw_payload->>'hours')::numeric, 0)   AS tot_hours,
+    coalesce(p.raw_payload->>'InTime',  p.raw_payload->>'punchIn')                  AS t_in,
+    coalesce(p.raw_payload->>'OutTime', p.raw_payload->>'punchOut')                 AS t_out
+  FROM timeclock_punches p
+  WHERE p.uattend_punch_id IS NOT NULL
+  ORDER BY regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''), p.id
+),
+worked_day AS (
+  -- THE CORRECTED PER-DAY FIGURE. This expression is the whole fix:
+  --     worked = SUM(paycode 1 Tot) - SUM(paycode 6,7 Tot)
+  SELECT
+    uattend_id,
+    employee_id,
+    work_date,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0), 2)      AS gross_hours,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0), 2) AS meal_hours,
+    round(greatest(0,
+      coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0)
+      - coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0)), 2)  AS worked_hours,
+    min(t_in)  FILTER (WHERE paycode = 1)                                 AS first_in,
+    max(t_out) FILTER (WHERE paycode = 1)                                 AS last_out,
+    count(*)   FILTER (WHERE paycode = 1)                                 AS regular_lines,
+    count(*)   FILTER (WHERE paycode IN (6,7))                            AS meal_lines
+  FROM punch_line
+  GROUP BY uattend_id, employee_id, work_date
+)
 SELECT
   round(sum(gross_hours), 1)                              AS recorded_hours,
   round(sum(meal_hours), 1)                               AS lunch_billed_as_worked,
   round(sum(worked_hours), 1)                             AS corrected_hours,
-  round(100.0 * sum(meal_hours) / nullif(sum(gross_hours), 0), 1) AS pct_overstated
+  round(100.0 * sum(meal_hours) / nullif(sum(gross_hours), 0), 1) AS pct_overstated,
+  count(*)                                                AS employee_days,
+  count(*) FILTER (WHERE meal_lines > 0)                  AS with_lunch,
+  round(avg(meal_hours) FILTER (WHERE meal_lines > 0), 3) AS avg_lunch,
+  min(meal_hours) FILTER (WHERE meal_lines > 0)           AS min_lunch,
+  max(meal_hours) FILTER (WHERE meal_lines > 0)           AS max_lunch
 FROM worked_day;
 
 
@@ -204,7 +376,46 @@ FROM worked_day;
 --      days) this join is deliberately wrong — which is itself the signal
 --      that those rows still need re-pulling.
 -- ---------------------------------------------------------------------------
-WITH app_day AS (
+WITH punch_line AS (
+  -- One row per punch-report LINE ITEM: both payload shapes coalesced, and the
+  -- in/out row pair collapsed. The regex accepts BOTH separators — prod uses
+  -- "<n>-in", punch-events.ts writes "<n>:in". A colon-only pattern matches
+  -- nothing, the dedupe becomes a no-op, and every total below DOUBLES.
+  SELECT DISTINCT ON (regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''))
+    p.employee_id,
+    coalesce(p.raw_payload->>'UserId', p.raw_payload->>'uattendId',
+             p.uattend_employee_id)                                                 AS uattend_id,
+    coalesce(p.raw_payload->>'PunchDate', p.raw_payload->>'date')::date             AS work_date,
+    coalesce((p.raw_payload->>'PaycodeId')::int, (p.raw_payload->>'paycodeId')::int, 1) AS paycode,
+    coalesce((p.raw_payload->>'Tot')::numeric, (p.raw_payload->>'hours')::numeric, 0)   AS tot_hours,
+    coalesce(p.raw_payload->>'InTime',  p.raw_payload->>'punchIn')                  AS t_in,
+    coalesce(p.raw_payload->>'OutTime', p.raw_payload->>'punchOut')                 AS t_out
+  FROM timeclock_punches p
+  WHERE p.uattend_punch_id IS NOT NULL
+  ORDER BY regexp_replace(p.uattend_punch_id, '[-:](in|out)$', ''), p.id
+),
+worked_day AS (
+  -- THE CORRECTED PER-DAY FIGURE. This expression is the whole fix:
+  --     worked = SUM(paycode 1 Tot) - SUM(paycode 6,7 Tot)
+  SELECT
+    uattend_id,
+    employee_id,
+    work_date,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0), 2)      AS gross_hours,
+    round(coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0), 2) AS meal_hours,
+    round(greatest(0,
+      coalesce(sum(tot_hours) FILTER (WHERE paycode = 1), 0)
+      - coalesce(sum(tot_hours) FILTER (WHERE paycode IN (6,7)), 0)), 2)  AS worked_hours,
+    min(t_in)  FILTER (WHERE paycode = 1)                                 AS first_in,
+    max(t_out) FILTER (WHERE paycode = 1)                                 AS last_out,
+    count(*)   FILTER (WHERE paycode = 1)                                 AS regular_lines,
+    count(*)   FILTER (WHERE paycode IN (6,7))                            AS meal_lines
+  FROM punch_line
+  GROUP BY uattend_id, employee_id, work_date
+),
+app_day AS (
+  -- Expand each timecard's `days` JSON back into one row per calendar date,
+  -- using the POSITIONAL day array. Index = work_date − week_start.
   SELECT
     t.employee_id,
     t.week_start,

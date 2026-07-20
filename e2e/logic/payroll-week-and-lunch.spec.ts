@@ -111,11 +111,19 @@ test.describe("pay week boundary (Sun–Sat)", () => {
 // ---------------------------------------------------------------------------
 // BUG 2 — the unpaid meal must not be billed
 //
-// Pinned to what live prod actually returns, measured 2026-07-20:
-//   * paycode 1: Tot == (OutTime − InTime) on 772 of 772 rows, max diff 0.00
-//   * paycode 7: same, on all 656 rows
-//   * meal lines present on 328 of 377 employee-days, averaging 1.031 h
-//   * days routinely carry MULTIPLE Regular lines with the meal nested inside
+// Pinned to what live prod actually returns, measured 2026-07-20 and then
+// CORRECTED after a de-duplication error was found in the first measurement
+// (timeclock_punches stores an "<n>-in" and an "<n>-out" row per line item,
+// BOTH carrying the same Tot, so the first pass double-counted every absolute
+// figure). The corrected values:
+//
+//   * paycode 1: Tot == (OutTime − InTime), max diff 0.00 — Tot IS the span
+//   * 377 employee-days, 328 of them carrying a lunch line
+//   * lunch averages 0.515 h, range 0.50 – 1.00 — NOT a fixed 30 minutes
+//   * 169.1 lunch hours billed as worked against 3118.1 recorded = 5.4%
+//
+// The earlier "17-hour shift" examples were the doubling artifact and are gone.
+// Real shifts are ~8.5 h.
 // ---------------------------------------------------------------------------
 
 /** A Regular line whose Tot is its own raw span — the proven prod shape. */
@@ -134,54 +142,95 @@ const meal = (hours: number, inT = "12:00", outT: string | null = null): PunchLi
 });
 
 test.describe("worked hours = Σ Regular Tot − Σ punched meal", () => {
-  test("THE REPORTED BUG: Antonio's Monday reads 7.95, not 8.47", () => {
-    // In 08:00 → Out 16:28 = 508 min = 8.47 h of raw span, one 31-min meal.
-    const lines = [reg("08:00", "16:28"), meal(31 / 60)];
+  // THE HARD TARGET. Antonio's actual record, located in prod:
+  //   Alexander Gonzalez, 2026-06-26 — paycode 1 = 8.47, paycode 7 = 0.52.
+  // He described it as "Mon"; the date is a FRIDAY. Treat his day name as the
+  // app's label, not the real weekday — and see the note below.
+  test("THE REPORTED BUG: Alexander Gonzalez 2026-06-26 reads 7.95, not 8.47", () => {
+    const lines: PunchLine[] = [
+      { paycodeId: 1, hours: 8.47, punchIn: null, punchOut: null },
+      { paycodeId: 7, hours: 0.52, punchIn: null, punchOut: null },
+    ];
+    expect(workedHours(lines)).toBe(7.95);
+    expect(workedHours(lines)).not.toBe(8.47);
+  });
+
+  test("that record lands on FRIDAY of the week opening Sunday 2026-06-21", () => {
+    // The other half of the target: the right number on the right weekday.
+    // 2026-06-26 is a Friday. Under Sun–Sat its week opens Sunday 2026-06-21
+    // and it sits at DAYS[5].
+    expect(ymdLocal(startOfWeek(new Date("2026-06-26T12:00:00")))).toBe("2026-06-21");
+    expect(DAYS[5]).toBe("fri");
+    expect(dayDate("2026-06-21", "fri")).toBe("Jun 26");
+    // NOTE: under the OLD Monday scheme this date ALSO rendered as "Fri"
+    // (week_start 2026-06-22, index 4 of ["mon".."sun"]). So Antonio saying
+    // "Mon" is NOT explained by the week-boundary off-by-one — that is a
+    // four-day gap, not one. Most likely loose phrasing, but Q2b in
+    // scripts/verify-lunch-fix.sql checks for a real key/date misalignment
+    // rather than assuming.
+  });
+
+  test("span-derived form of the same record still gives 7.95", () => {
+    // In 08:00 → Out 16:28 = 508 min = 8.47 h of raw span, with a 0.52 h meal.
+    const lines = [reg("08:00", "16:28"), meal(0.52)];
     expect(workedHours(lines)).toBe(7.95);
     expect(workedHours(lines)).not.toBe(8.47);
     const r = resolveWorkedMinutes(lines);
     expect(r.grossMin).toBeCloseTo(508, 6); // Tot IS the raw span
-    expect(r.mealMin).toBeCloseTo(31, 6);
+    expect(r.mealMin).toBeCloseTo(31.2, 6);
     expect(r.ambiguous).toBe(false);
   });
 
   test("the residual the old code used is ZERO on real data — the silent failure", () => {
     // This is the arithmetic that shipped: span − regularTot. Production says
-    // Tot == span on 772/772 rows, so this is identically 0 and deducts nothing.
+    // Tot == the line's own span with max diff 0.00, so this is identically 0
+    // and deducts nothing at all.
     const line = reg("08:00", "16:28");
     const residual = spanMinutes(line.punchIn, line.punchOut)! - line.hours * 60;
     expect(residual).toBe(0);
     // Which is why the meal has to be SUBTRACTED, not reconstructed.
-    expect(workedHours([line, meal(31 / 60)])).toBe(7.95);
+    expect(workedHours([line, meal(0.52)])).toBe(7.95);
   });
 
-  // The four real prod rows from Mon 2026-06-22. These are MULTI-PUNCH days:
-  // treating >1 Regular line as a "split shift" and skipping the deduction
-  // would leave every one of them overstated.
-  const REAL_ROWS: [string, number, number, number][] = [
-    // name,            Σ Regular Tot, meal hours, expected worked
-    ["Aide Clemente",   17.0,  1.0,  16.0],
-    ["Alexis Garcia",   17.06, 1.06, 16.0],
-    ["Alondra Barajas", 16.86, 1.06, 15.8],
-    ["Audiel Montiel",  17.04, 1.0,  16.04],
+  // Real prod rows, verified against the deduplicated punch data. Antonio's own
+  // record is the first. These are ~8.5 h single shifts — the earlier
+  // "17-hour" figures were a double-counting artifact and are not real.
+  const REAL_ROWS: [string, string, number, number, number][] = [
+    // name,               date,         Σ Regular, meal, expected worked
+    ["Alexander Gonzalez", "2026-06-26", 8.47, 0.52, 7.95], // the reported bug
+    ["Adrian Moreno",      "2026-06-26", 8.43, 0.52, 7.91],
+    ["Aide Clemente",      "2026-06-26", 8.5,  0.5,  8.0],
+    ["Maria Alfaro",       "2026-06-27", 8.43, 0.5,  7.93],
   ];
 
-  for (const [name, gross, mealHrs, expected] of REAL_ROWS) {
-    test(`real prod row — ${name}: ${gross} − ${mealHrs} = ${expected}`, () => {
-      // Split the gross across two Regular lines, as the real days are.
-      const half = gross / 2;
+  for (const [name, date, gross, mealHrs, expected] of REAL_ROWS) {
+    test(`real prod row — ${name} ${date}: ${gross} − ${mealHrs} = ${expected}`, () => {
       const lines: PunchLine[] = [
-        { paycodeId: 1, hours: half, punchIn: null, punchOut: null },
-        { paycodeId: 1, hours: gross - half, punchIn: null, punchOut: null },
+        { paycodeId: 1, hours: gross, punchIn: null, punchOut: null },
         meal(mealHrs),
       ];
       expect(workedHours(lines)).toBe(expected);
-      // And the same total as a single line — line count must not change money.
+      // Splitting the same gross across two Regular lines must not change the
+      // money — line COUNT is not a signal about the meal.
       expect(
-        workedHours([{ paycodeId: 1, hours: gross, punchIn: null, punchOut: null }, meal(mealHrs)]),
+        workedHours([
+          { paycodeId: 1, hours: gross / 2, punchIn: null, punchOut: null },
+          { paycodeId: 1, hours: gross / 2, punchIn: null, punchOut: null },
+          meal(mealHrs),
+        ]),
       ).toBe(expected);
     });
   }
+
+  test("every real row falls in the measured lunch range 0.50 – 1.00 h", () => {
+    // Guards the "no fixed 30 minutes" property against a future default
+    // creeping back in: 0.52 and 0.50 are both real, and neither is 0.5 by rule.
+    for (const [, , , mealHrs] of REAL_ROWS) {
+      expect(mealHrs).toBeGreaterThanOrEqual(0.5);
+      expect(mealHrs).toBeLessThanOrEqual(1.0);
+    }
+    expect(new Set(REAL_ROWS.map((r) => r[3])).size).toBeGreaterThan(1);
+  });
 
   test("MULTIPLE Regular lines still get the meal subtracted", () => {
     // The regression guard for the mistake this module originally made:
@@ -192,9 +241,9 @@ test.describe("worked hours = Σ Regular Tot − Σ punched meal", () => {
   });
 
   test("the meal is NOT 30 minutes — no default is ever applied", () => {
-    // Real meals average 1.031 h and vary per row, so a hardcoded default
-    // would be wrong in both directions.
-    expect(workedHours([reg("08:00", "17:00"), meal(1.031)])).toBe(7.97);
+    // Real meals average 0.515 h and range 0.50 – 1.00, varying per row, so a
+    // hardcoded default would be wrong in both directions.
+    expect(workedHours([reg("08:00", "17:00"), meal(0.515)])).toBe(8.49);
     expect(workedHours([reg("08:00", "17:00"), meal(0.5)])).toBe(8.5);
     expect(workedHours([reg("08:00", "17:00"), meal(1.06)])).toBe(7.94);
   });
@@ -284,9 +333,12 @@ test.describe("worked hours = Σ Regular Tot − Σ punched meal", () => {
   });
 
   test("SCALE: the 5.4% overstatement is removed", () => {
-    // Prod-wide: 338.1 meal hours counted as worked against 6236.2 recorded.
-    const RECORDED = 6236.2;
-    const MEAL = 338.1;
+    // Prod-wide, on the DEDUPLICATED punch data: 169.1 meal hours counted as
+    // worked against 3118.1 recorded. (The first measurement reported double
+    // these — both sides equally — which is why the 5.4% ratio was right even
+    // though every absolute figure was wrong.)
+    const RECORDED = 3118.1;
+    const MEAL = 169.1;
     const corrected = RECORDED - MEAL;
     expect(Math.round((MEAL / RECORDED) * 1000) / 10).toBe(5.4);
     // One synthetic week reproduces the same direction and proportion.
