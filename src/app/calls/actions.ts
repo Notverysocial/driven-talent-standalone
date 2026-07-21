@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { logActivity } from "@/lib/activity-log.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { InboundCallStatus } from "@/lib/recruiting";
 import type { CandidateStatus } from "@/lib/supabase/types";
@@ -125,6 +126,17 @@ export async function convertCallToCandidate(callId: string) {
     .select("id")
     .single();
   if (candErr) throw new Error(candErr.message);
+
+  // Same origin event for the other route into the pipeline, so a converted
+  // caller's change log does not start blank either.
+  await logActivity({
+    subjectId: cand.id,
+    action: "created",
+    summary: `Created from an inbound call${call.caller_phone ? ` (${call.caller_phone})` : ""}`,
+    field: "source",
+    newValue: "Inbound Call",
+    meta: { inbound_call_id: callId },
+  });
 
   const { error: updErr } = await sb
     .from("inbound_calls")

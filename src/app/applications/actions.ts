@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { logActivity } from "@/lib/activity-log.server";
 import { getCurrentUser } from "@/lib/auth.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { ApplicationIntakeStatus } from "@/lib/recruiting";
@@ -185,6 +186,19 @@ export async function promoteIntakeToCandidate(
   if (candErr) {
     return { ok: false, error: `Couldn't create candidate: ${candErr.message}` };
   }
+
+  // The record's ORIGIN EVENT. Without this a promoted candidate opens with a
+  // completely empty change log, which reads as "nothing was recorded" rather
+  // than "this record began here". Logged against the new CANDIDATE id, which
+  // is the one subject the change log is actually rendered for.
+  await logActivity({
+    subjectId: cand.id,
+    action: "created",
+    summary: `Promoted from a website application${promoterEmail ? ` by ${promoterEmail}` : ""}`,
+    field: "source",
+    newValue: "promoted-from-intake",
+    meta: { intake_id: intakeId },
+  });
 
   // Mark intake promoted + link any conversation contact to the new candidate.
   const { error: updErr } = await sb
