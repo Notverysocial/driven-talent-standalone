@@ -7,10 +7,12 @@ import { Badge } from "@/components/Badge";
 import { WaitingAge } from "@/components/WaitingAge";
 import {
   CANDIDATE_STATUSES,
+  screeningStatusLabel,
   scoreColor,
   tierLabel,
   weightedScore,
 } from "@/lib/candidates";
+import { sendBar } from "@/lib/candidate-eligibility";
 import { getCandidate } from "@/lib/candidates.server";
 import { CriterionRow } from "./CriterionRow";
 import { StatusActions } from "./StatusActions";
@@ -85,6 +87,7 @@ export default async function CandidateDetailPage({
             <ScreeningStatusActions
               candidateId={cand.id}
               current={cand.screening_status}
+              sendBarLabel={sendBar(cand).barred ? sendBar(cand).label : null}
             />
             <DoNotReturnActions
               candidateId={cand.id}
@@ -199,6 +202,26 @@ export default async function CandidateDetailPage({
               {label}
             </strong>
             <span>{reason ?? "Flagged by a recruiter."}</span>
+            {/* APPROVED BUT BARRED, stated outright. The screening status is
+                deliberately kept rather than cleared when somebody is barred —
+                the assessment is still true and throwing it away would lose
+                real work. So the record has to say both things at once, or the
+                approved badge alone reads as "safe to send". */}
+            {sendBar(cand).barred && cand.screening_status && (
+              <span
+                style={{
+                  width: "100%",
+                  marginTop: 2,
+                  paddingTop: 8,
+                  borderTop: "1px solid rgba(178,58,58,0.25)",
+                  fontSize: 12.5,
+                }}
+              >
+                Screening status <strong>{screeningStatusLabel(cand.screening_status)}</strong>{" "}
+                is kept on this record, but they are held out of the ready-to-send
+                lists and cannot be placed on a position while this bar stands.
+              </span>
+            )}
           </div>
         );
       })()}

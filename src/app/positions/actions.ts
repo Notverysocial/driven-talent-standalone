@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  sendBar,
+  sendBarRefusal,
+  type SendBarInput,
+} from "@/lib/candidate-eligibility";
 import type { PositionStatus } from "@/lib/recruiting";
 
 function num(v: FormDataEntryValue | null): number | null {
@@ -91,6 +96,28 @@ export async function recordPlacement(
 
   if (!employeeId && !candidateId) {
     throw new Error("Pick an employee or candidate to record a placement.");
+  }
+
+  // THE HARD STOP. Unlike a screening label — which is an assessment and may
+  // legitimately be recorded on a barred person — this is the act of placing
+  // somebody with a client. There is no valid "I meant to place a barred
+  // candidate": if the bar no longer holds, it must be lifted on their record
+  // first, which is a deliberate, logged action.
+  //
+  // Enforced server-side and not only by filtering the dropdown, because the
+  // dropdown is a suggestion and this insert is the thing that reaches a client.
+  if (candidateId) {
+    const { data: cand } = await sb
+      .from("candidates")
+      .select("full_name, lifecycle_status, do_not_return_reason, do_not_send")
+      .eq("id", candidateId)
+      .maybeSingle();
+    const bar = sendBar(cand as SendBarInput | null);
+    if (bar.barred) {
+      throw new Error(
+        sendBarRefusal(bar, (cand as { full_name?: string } | null)?.full_name),
+      );
+    }
   }
 
   const { error: placeErr } = await sb.from("position_placements").insert({
