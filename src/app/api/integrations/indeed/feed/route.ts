@@ -17,7 +17,7 @@
 //   locality / state-ish    -> <state>
 //                              <country> = "US"
 //   (postal code not in positions table yet) -> <postalcode> omitted
-//   recruiter_email or manager_email -> <email>
+//   (no <email> — see the allowlist note below)
 //   job_category + special_skills + schedule_hours
 //                           -> <description> (HTML CDATA)
 //   min_pay_rate..max_pay_rate (+ pay_rate_unit) -> <salary>
@@ -26,6 +26,33 @@
 // Caching: Indeed re-crawls on schedule; we set Cache-Control to allow CDN
 // caching for 5 minutes so a sudden Indeed spider burst doesn't hammer the
 // DB.
+//
+// ---------------------------------------------------------------------------
+// EVERYTHING BELOW IS PUBLISHED TO THE OPEN INTERNET AND MIRRORED BY
+// AGGREGATORS. Treat this file as an external publishing boundary.
+//
+// It previously SELECTed and emitted three internal columns:
+//   * recruiting_notes  -> rendered into <description> as "About the role"
+//   * recruiter_email   -> <email>
+//   * manager_email     -> <email> fallback
+//
+// recruiting_notes is the recruiters' working scratchpad ("client contact is
+// Maria at ISC, do not publish") and the two email columns are the client's
+// named contacts. None of it is job-seeker information.
+//
+// It was only ever unreachable by accident: this route is not in proxy.ts
+// isPublicPath, so AUTH_ENABLED=true happens to 307 it to /login. That gate
+// was not added for this reason, and the feed cannot do its job until someone
+// removes it — at which point the leak is live with no code change. Verified
+// 2026-07-21: the deployed endpoint redirects to /login, so nothing has been
+// published. A loaded gun, not a fired one.
+//
+// SELECT IS NOW AN EXPLICIT ALLOWLIST (PUBLIC_COLUMNS), not a blocklist. A
+// blocklist means every column added to `positions` is public by default and
+// someone has to remember to exclude it; migration 0018 added 25 columns in
+// one go, which is exactly how that goes wrong. Adding a column now requires a
+// deliberate edit here.
+// ---------------------------------------------------------------------------
 
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -33,11 +60,43 @@ import { createServiceClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// The driven-talent-site marketing site doesn't currently expose a public
-// per-job URL; we link Indeed traffic to the contact page with the position
-// id as a query param so it still funnels to a real form.  When/if /job/[id]
-// ships on the marketing site, change this constant.
-const CONTACT_URL_BASE = "https://driven-talent-site.vercel.app/contact";
+// Apply links must live on the CLIENT'S domain. This pointed at the raw
+// driven-talent-site.vercel.app preview host, so every apply link Indeed
+// showed a candidate was on our preview deployment rather than the client's
+// site — bad for them and against our standing rule.
+//
+// The query shape matches the site's own Apply button exactly
+// (/contact?type=jobseeker&position=<id>&role=<title>), so Indeed traffic
+// lands the same way and the application record captures position id AND
+// title rather than id alone.
+const CONTACT_URL_BASE = "https://driven-talent.com/contact";
+
+// The ONLY columns this feed may read. Public by explicit decision.
+// Deliberately absent: recruiting_notes, recruiter_email, manager_email,
+// hiring_manager, extra_cc, internal_client_manager, backup_recruiter,
+// resume_folder, priority, deadline_to_fill, posted_* — internal, and several
+// contain personal or client-confidential data.
+const PUBLIC_COLUMNS = [
+  "id",
+  "role_title",
+  "company_name",
+  "department",
+  "job_category",
+  "city",
+  "locality",
+  "pay_rate",
+  "pay_rate_unit",
+  "min_pay_rate",
+  "max_pay_rate",
+  "schedule_hours",
+  "shift",
+  "special_skills",
+  "requirements",
+  "status",
+  "opened_at",
+  "created_at",
+  "updated_at",
+] as const;
 
 type PositionRow = {
   id: string;
@@ -55,9 +114,6 @@ type PositionRow = {
   shift: string | null;
   special_skills: string | null;
   requirements: string | null;
-  recruiting_notes: string | null;
-  recruiter_email: string | null;
-  manager_email: string | null;
   status: string | null;
   opened_at: string | null;
   created_at: string | null;
@@ -68,9 +124,7 @@ export async function GET(): Promise<Response> {
   const sb = createServiceClient();
   const { data, error } = await sb
     .from("positions")
-    .select(
-      "id, role_title, company_name, department, job_category, city, locality, pay_rate, pay_rate_unit, min_pay_rate, max_pay_rate, schedule_hours, shift, special_skills, requirements, recruiting_notes, recruiter_email, manager_email, status, opened_at, created_at, updated_at",
-    )
+    .select(PUBLIC_COLUMNS.join(", "))
     .eq("status", "open")
     .order("created_at", { ascending: false });
 
@@ -81,7 +135,11 @@ export async function GET(): Promise<Response> {
     });
   }
 
-  const positions = (data ?? []) as PositionRow[];
+  // Cast through unknown: PUBLIC_COLUMNS.join() is a runtime string, so
+  // supabase-js cannot infer the row shape from a literal the way it does for
+  // an inline select. The allowlist is the point — it must stay an array so it
+  // can be asserted in tests and read at a glance.
+  const positions = (data ?? []) as unknown as PositionRow[];
   const xml = buildFeedXml(positions);
 
   return new Response(xml, {
@@ -128,13 +186,15 @@ function renderJob(p: PositionRow): string {
   const title = p.role_title ?? "Open Position";
   const date = rfc2822(p.opened_at ?? p.created_at ?? new Date().toISOString());
   const refnum = p.id;
-  const url = `${CONTACT_URL_BASE}?position=${encodeURIComponent(p.id)}`;
+  const url =
+    `${CONTACT_URL_BASE}?type=jobseeker` +
+    `&position=${encodeURIComponent(p.id)}` +
+    `&role=${encodeURIComponent(p.role_title ?? "")}`;
   const company = p.company_name ?? "Driven Talent Client";
   const sourcename = "Driven Talent";
   const city = p.city ?? "";
   const state = parseStateFromLocality(p.locality);
   const country = "US";
-  const email = p.recruiter_email ?? p.manager_email ?? "";
   const description = buildDescription(p);
   const salary = buildSalary(p);
   const jobtype = mapJobType(p.schedule_hours, p.shift);
@@ -151,7 +211,6 @@ function renderJob(p: PositionRow): string {
   lines.push(`    <city>${cdata(city)}</city>`);
   lines.push(`    <state>${cdata(state)}</state>`);
   lines.push(`    <country>${escapeXml(country)}</country>`);
-  if (email) lines.push(`    <email>${cdata(email)}</email>`);
   lines.push(`    <description>${cdata(description)}</description>`);
   if (salary) lines.push(`    <salary>${cdata(salary)}</salary>`);
   if (jobtype) lines.push(`    <jobtype>${cdata(jobtype)}</jobtype>`);
@@ -190,11 +249,6 @@ function buildDescription(p: PositionRow): string {
     sections.push("<p><strong>Requirements:</strong></p>");
     sections.push(`<p>${escapeHtml(p.requirements)}</p>`);
   }
-  if (p.recruiting_notes) {
-    sections.push("<p><strong>About the role:</strong></p>");
-    sections.push(`<p>${escapeHtml(p.recruiting_notes)}</p>`);
-  }
-
   if (sections.length === 0) {
     sections.push(
       `<p>${escapeHtml(p.role_title ?? "Open position")} at ${escapeHtml(p.company_name ?? "Driven Talent")}. Apply through Indeed to get started.</p>`,
