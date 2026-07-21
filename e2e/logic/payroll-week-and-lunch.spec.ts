@@ -17,6 +17,9 @@ import {
   workedHours,
   type PunchLine,
 } from "../../src/lib/uattend/worked-hours";
+import { weekStartOf } from "../../src/lib/uattend/contract";
+import { scheduledPullWindows } from "../../src/lib/uattend/ingest-policy";
+import { computeFlags } from "../../src/lib/payroll";
 
 // Regression cover for the two payroll bugs Antonio reported 2026-07-20:
 //   1. "The pay period is still Mon - Sun it supposed to be Sun - Sat"
@@ -89,6 +92,51 @@ test.describe("pay week boundary (Sun–Sat)", () => {
       const s = currentWeekStart(new Date(`${iso}T00:30:00`));
       expect(new Date(`${s}T12:00:00`).getDay()).toBe(0); // 0 = Sunday
     }
+  });
+
+  // ---------------------------------------------------------------------
+  // EVERY PLACE THE PAY-WEEK BOUNDARY IS WRITTEN, pinned together.
+  //
+  // A pre-merge audit (2026-07-20) flagged that the boundary lives in more
+  // than one file and that a single missed site would shift the payroll CSV
+  // by a day while the UI still rendered correctly — a wrong CSV that looks
+  // right on screen. This asserts all of them agree, so the next person does
+  // not have to re-derive the list by hand.
+  // ---------------------------------------------------------------------
+  test("ALL boundary sites agree on Sunday", () => {
+    // Wed 2026-07-15 sits in the pay week opening Sunday 2026-07-12.
+    expect(ymdLocal(startOfWeek(new Date("2026-07-15T12:00:00")))).toBe("2026-07-12");
+    expect(weekStartOf("2026-07-15")).toBe("2026-07-12");
+    // The scheduled uAttend pull windows must open on Sundays too.
+    for (const w of scheduledPullWindows("2026-07-15")) {
+      expect(new Date(`${w}T00:00:00`).getDay(), w).toBe(0);
+    }
+  });
+
+  test("the CSV export and the UI index the SAME positional array", () => {
+    // The payroll CSV walks DAYS[i] against week_start + i. If a local copy
+    // of the array ever reappears Monday-first, every exported hour shifts a
+    // day while the screen stays correct.
+    expect([...DAYS]).toEqual(["sun", "mon", "tue", "wed", "thu", "fri", "sat"]);
+    for (let i = 0; i < 7; i++) {
+      const d = new Date("2026-07-12T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() + i);
+      const iso = d.toISOString().slice(0, 10);
+      // dayDate() is what the UI renders; DAYS[i] is what the CSV exports.
+      expect(dayDate("2026-07-12", DAYS[i])).toBe(
+        new Date(`${iso}T00:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      );
+    }
+  });
+
+  test("computeFlags reports the EARLIEST missed punch in pay-week order", () => {
+    // Reads days by key so hours are never misattributed, but it breaks on the
+    // first hit — a Monday-first loop named the wrong day. Sunday opens the week.
+    const days = emptyDays();
+    for (const k of DAYS) days[k] = { regular: 8, overtime: 0, holiday: 0, in: "08:00", out: "16:00", locked: false };
+    days.sun = { regular: 8, overtime: 0, holiday: 0, in: "08:00", out: null, locked: false };
+    days.wed = { regular: 8, overtime: 0, holiday: 0, in: "08:00", out: null, locked: false };
+    expect(computeFlags(days)).toMatchObject({ missed_punch: true, punch_day: "sun" });
   });
 
   test("auto-OT rolls the >40h excess off SATURDAY, the last day of the pay week", () => {
