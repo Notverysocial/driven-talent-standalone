@@ -3,12 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "./supabase/server";
 import { getCurrentUser } from "./auth.server";
+import { isCallOutcome, OUTCOME_BODY, outcomeLabel } from "./notes";
 import { parseMentions } from "./notes";
 import { logActivity } from "./activity-log.server";
 import type { NoteSubjectType, NoteMention } from "./supabase/types";
 
+// NOTE: this file is "use server" — it may ONLY export async functions.
+// Outcome constants live in ./notes (pure, client-safe). Exporting a plain
+// object from here builds successfully and then fails at REQUEST time.
+
 function linkPathFor(subjectType: NoteSubjectType, subjectId: string): string {
   switch (subjectType) {
+    case "applicant":  return `/applications/${subjectId}`;
     case "candidate":  return `/candidates/${subjectId}`;
     case "onboarding": return `/onboarding/${subjectId}`;
     case "employee":   return `/employees/${subjectId}`;
@@ -47,7 +53,20 @@ export async function addNote(
   subjectId: string,
   formData: FormData,
 ): Promise<void> {
-  const body = (formData.get("body") as string | null)?.trim();
+  // A phone screen carries a REQUIRED outcome; an ordinary note must carry
+  // none. Both shapes are also enforced by a CHECK constraint (0050) so a bad
+  // pair fails loudly at the database rather than being stored half-formed.
+  const rawOutcome = (formData.get("call_outcome") as string | null)?.trim() || null;
+  const isPhoneScreen = isCallOutcome(rawOutcome);
+  const callOutcome = isPhoneScreen ? rawOutcome : null;
+  const nextStep = (formData.get("next_step") as string | null)?.trim() || null;
+
+  const rawBody = (formData.get("body") as string | null)?.trim();
+  // A phone screen is worth recording even with no free-text written: WHO
+  // called, WHEN, and WHAT HAPPENED is already the substance. Requiring prose
+  // would push recruiters to skip logging the call at all, which is the
+  // behaviour this feature exists to stop.
+  const body = rawBody || (isPhoneScreen ? OUTCOME_BODY[callOutcome!] : "");
   if (!body) return;
 
   const followupRequired = formData.get("followup_required") === "on";
@@ -73,6 +92,9 @@ export async function addNote(
     followup_required: followupRequired,
     followup_assignee: followupRequired ? followupAssignee : null,
     followup_status: followupRequired ? "in_review" : null,
+    note_kind: isPhoneScreen ? "phone_screen" : "note",
+    call_outcome: callOutcome,
+    next_step: isPhoneScreen ? nextStep : null,
   });
   if (error) throw new Error(error.message);
 
@@ -127,13 +149,22 @@ export async function addNote(
   await logActivity({
     subjectType,
     subjectId,
-    action: followupRequired ? "note_added_followup" : "note_added",
-    summary: followupRequired
-      ? `Added a note with a follow-up${followupAssignee ? ` for ${followupAssignee}` : ""}`
-      : "Added a note",
+    action: isPhoneScreen
+      ? "phone_screen_logged"
+      : followupRequired
+        ? "note_added_followup"
+        : "note_added",
+    summary: isPhoneScreen
+      ? `Logged a phone screen — ${outcomeLabel(callOutcome!)}${nextStep ? ` · next: ${nextStep}` : ""}`
+      : followupRequired
+        ? `Added a note with a follow-up${followupAssignee ? ` for ${followupAssignee}` : ""}`
+        : "Added a note",
   });
 
   revalidatePath(link);
+  // An applicant note is also rendered on the candidate page once the applicant
+  // is promoted (read-through by lineage), so refresh that view too.
+  if (subjectType === "applicant") revalidatePath("/candidates", "layout");
 }
 
 // Flip a follow-up between In Review and Resolved.
