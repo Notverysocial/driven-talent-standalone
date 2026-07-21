@@ -40,6 +40,19 @@ type WindowResult = {
   timecardsUpserted?: number;
   skippedLocked?: { name: string; status: string; hours: number }[];
   unmatched?: number;
+  /**
+   * WHO was unmatched, not just how many. The ingest already computes
+   * {uattendId, name, hours} per person and this route used to throw it away,
+   * keeping only a count — so answering "which people are missing hours?"
+   * required a second pull. The uAttend NAME is the part that matters: it is
+   * only available from the /user endpoint, so it cannot be recovered from the
+   * database afterwards at any price.
+   *
+   * With the name in hand, each entry is immediately classifiable: no DT
+   * employee record (a data task for the client) versus has a record and still
+   * missed (a matching defect that is ours).
+   */
+  unmatchedDetail?: { uattendId: string; name: string; hours: number }[];
   unassigned?: number;
   /**
    * Days whose meal did not reconcile against the In→Out span. Reported as a
@@ -84,6 +97,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         timecardsUpserted: summary.timecardsUpserted,
         skippedLocked: summary.skippedLocked,
         unmatched: summary.unmatched.length,
+        unmatchedDetail: summary.unmatched,
         unassigned: summary.unassigned.length,
         unreconciled: summary.unreconciled.length,
       });

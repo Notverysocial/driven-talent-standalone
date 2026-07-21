@@ -36,6 +36,7 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import { describeError, isDnsFailure } from "../describe-error";
+import { resolveEmployeeMap } from "@/lib/uattend/employee-map";
 import { resolveUattendAdapter } from "@/lib/uattend/adapter";
 import {
   punchLineToEvents,
@@ -76,8 +77,13 @@ class UAttendClient implements IntegrationClient {
     }
 
     const config = (integration.config ?? {}) as Record<string, unknown>;
-    const employeeMapping =
-      (config.employee_mapping as Record<string, string> | undefined) ?? {};
+    // ONE resolver, shared with the weekly timecard pull. Reading
+    // `config.employee_mapping` directly is what made these two pipelines
+    // disagree about who an employee is: the admin UI writes that key, but the
+    // live mapping in production sits under `employee_map`, so this defaulted
+    // to {} and marked EVERY id unmapped — plus a last_error the integrations
+    // page shows as a fault that is not one.
+    const employeeMapping = resolveEmployeeMap(config).map;
     const apiBase =
       typeof config.api_base === "string" && config.api_base
         ? (config.api_base as string)
@@ -235,8 +241,8 @@ class UAttendClient implements IntegrationClient {
     if (!normalized) return { ok: false, error: "unrecognized_payload" };
 
     const config = (integration?.config ?? {}) as Record<string, unknown>;
-    const employeeMapping =
-      (config.employee_mapping as Record<string, string> | undefined) ?? {};
+    // Same shared resolver as above and as the timecard pull.
+    const employeeMapping = resolveEmployeeMap(config).map;
     const dtEmployeeId =
       normalized.uattend_employee_id &&
       employeeMapping[normalized.uattend_employee_id]
@@ -265,20 +271,38 @@ class UAttendClient implements IntegrationClient {
   async disconnect(
     _integration: IntegrationRow,
   ): Promise<{ ok: boolean; error?: string }> {
-    // No remote revoke for API-key mode.  Clear tokens and reset the
-    // cursor so a future reconnect starts fresh.  Preserve the
-    // employee mapping so re-connecting doesn't lose admin work.
+    // No remote revoke for API-key mode. clearIntegrationTokens() already does
+    // everything a disconnect needs — status -> disconnected, access_token,
+    // refresh_token, token_expires_at, account_email, next_sync_at and
+    // last_error all cleared — and it does NOT touch `config`.
+    //
+    // ------------------------------------------------------------------
+    // THIS USED TO DESTROY THE CONFIG. It followed clearIntegrationTokens
+    // with:
+    //
+    //     config: { employee_mapping: cfg.employee_mapping ?? {} }
+    //
+    // which REPLACES the whole object rather than patching it. Its comment
+    // said it preserved the employee mapping. In production `employee_mapping`
+    // does not exist — the live mapping lives under `employee_map` — so one
+    // click of Disconnect would have written `{employee_mapping:{}}` and
+    // destroyed all 69 live mappings, plus base_url, auth_header, timezone,
+    // account_ref_from_package and last_punch_cursor.
+    //
+    // The timecard pull would then have fallen back to fuzzy name matching for
+    // everyone, silently, and payroll hours would have started dropping for
+    // real. Irreversible, one click, and safe only because nobody had pressed
+    // the button. The function that claimed to preserve the mapping was the
+    // only thing that could delete it.
+    //
+    // Nothing here writes config now. The cursor is deliberately kept too: the
+    // old comment wanted it reset for a "fresh start", but re-pulling is
+    // idempotent (synthetic punch ids upsert) and clampLookback caps any stale
+    // cursor at 31 days — so keeping it is bounded, while dropping state is the
+    // exact failure being fixed.
+    // ------------------------------------------------------------------
     try {
       await clearIntegrationTokens("uattend");
-      const row = await getIntegration("uattend");
-      if (row) {
-        const cfg = (row.config ?? {}) as Record<string, unknown>;
-        await updateIntegrationStatus("uattend", {
-          config: {
-            employee_mapping: cfg.employee_mapping ?? {},
-          },
-        });
-      }
       return { ok: true };
     } catch (e) {
       return {
