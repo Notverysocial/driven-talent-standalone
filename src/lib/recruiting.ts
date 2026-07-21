@@ -71,7 +71,75 @@ export type Position = {
   recruiter: string | null;
   created_at: string;
   updated_at: string;
+
+  // ---------------------------------------------------------------------
+  // Migration 0018 columns. The table gained 25 columns to match the
+  // client's real requisition spreadsheet and NOTHING was updated to expose
+  // them — this type stopped at the original 0004 shape, so the admin form
+  // could not write them and the detail page could not read them.
+  //
+  // Split by AUDIENCE, because that distinction is now load-bearing: the
+  // public careers page on driven-talent.com renders from this table.
+  // ---------------------------------------------------------------------
+
+  /** PUBLIC — safe to render on the careers page. */
+  company_name: string | null;
+  job_category: string | null;
+  city: string | null;
+  locality: string | null;
+  min_pay_rate: number | null;
+  max_pay_rate: number | null;
+  schedule_hours: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  bilingual: boolean | null;
+  special_skills: string | null;
+  resume_required: boolean | null;
+  job_description_url: string | null;
+
+  /** INTERNAL — operational only. Never render publicly. */
+  priority: string | null;
+  deadline_to_fill: string | null;
+  posted_redes: boolean | null;
+  posted_indeed: boolean | null;
+  posted_linkedin: boolean | null;
+
+  // NOT surfaced in the admin form on purpose — contact/routing details that
+  // are client-confidential or personal: hiring_manager, manager_email,
+  // extra_cc, internal_client_manager, recruiter_email, backup_recruiter,
+  // resume_folder. They exist on the table; adding a form field for each is a
+  // separate decision, since every one is another place a leak could start.
+  hiring_manager: string | null;
+  manager_email: string | null;
+  extra_cc: string | null;
+  internal_client_manager: string | null;
+  recruiter_email: string | null;
+  backup_recruiter: string | null;
+  resume_folder: string | null;
 };
+
+/**
+ * Position fields the careers site is allowed to render. The public repo
+ * enforces its own allowlist; this is the same list stated on our side so the
+ * two can be compared, and so nobody adds a form field without deciding which
+ * side of the line it falls on.
+ */
+export const PUBLIC_POSITION_FIELDS = [
+  "role_title", "department", "shift", "headcount",
+  "pay_rate", "pay_rate_unit", "min_pay_rate", "max_pay_rate",
+  "company_name", "job_category", "city", "locality",
+  "schedule_hours", "start_date", "end_date",
+  "bilingual", "special_skills", "resume_required",
+  "requirements", "job_description_url",
+] as const;
+
+/** Never renderable publicly. Asserted in the test suite. */
+export const INTERNAL_POSITION_FIELDS = [
+  "recruiting_notes", "priority", "deadline_to_fill",
+  "hiring_manager", "manager_email", "extra_cc",
+  "internal_client_manager", "recruiter_email", "backup_recruiter",
+  "resume_folder", "posted_redes", "posted_indeed", "posted_linkedin",
+] as const;
 
 export const POSITION_STATUSES: {
   id: PositionStatus;

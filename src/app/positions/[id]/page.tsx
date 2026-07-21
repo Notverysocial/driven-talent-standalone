@@ -11,6 +11,7 @@ import { updatePosition } from "../actions";
 import { StatusBar } from "./StatusBar";
 import { PlacementForm } from "./PlacementForm";
 import { isBarredFromSending } from "@/lib/candidate-eligibility";
+import { requireUser } from "@/lib/auth.server";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -22,6 +23,12 @@ function fmtDate(d: string | null) {
 export default async function PositionPage(props: {
   params: Promise<{ id: string }>;
 }) {
+  // Server-side auth gate. The proxy redirects unauthenticated requests at
+  // the edge from a cookie; this is the authoritative check. requireUser
+  // rather than requireRole("admin") on purpose — recruiters, not just
+  // admins, manage requisitions, and gating at admin would lock the people
+  // this screen exists for out of it.
+  await requireUser();
   const { id } = await props.params;
   const position = await getPosition(id);
   if (!position) notFound();
@@ -107,7 +114,24 @@ export default async function PositionPage(props: {
               Quick Facts
             </div>
             <Fact k="Client" v={clientName} />
+            {/* 0018 fields at a glance — these are what a job seeker sees on
+                the public listing, so an empty one here means a thin posting. */}
+            <Fact
+              k="Location"
+              v={[position.city, position.locality].filter(Boolean).join(" · ") || "—"}
+            />
             <Fact k="Pay" v={fmtPayRate(position.pay_rate, position.pay_rate_unit)} />
+            {(position.min_pay_rate != null || position.max_pay_rate != null) && (
+              <Fact
+                k="Pay range"
+                v={
+                  position.min_pay_rate != null && position.max_pay_rate != null
+                    ? `$${position.min_pay_rate} – $${position.max_pay_rate}`
+                    : `$${position.min_pay_rate ?? position.max_pay_rate}`
+                }
+              />
+            )}
+            <Fact k="Schedule" v={position.schedule_hours ?? "—"} />
             <Fact k="Headcount" v={`${position.filled_count ?? 0} of ${position.headcount ?? 1}${remaining ? ` (${remaining} open)` : ""}`} />
             <Fact k="Opened" v={fmtDate(position.opened_at)} />
             <Fact k="Needed by" v={fmtDate(position.needed_by)} />

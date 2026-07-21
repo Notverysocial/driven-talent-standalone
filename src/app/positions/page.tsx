@@ -11,6 +11,7 @@ import {
   type PositionStatus,
 } from "@/lib/recruiting";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { requireUser } from "@/lib/auth.server";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -25,6 +26,12 @@ function daysOpen(opened: string): string {
 }
 
 export default async function PositionsPage() {
+  // Server-side auth gate. The proxy redirects unauthenticated requests at
+  // the edge from a cookie; this is the authoritative check. requireUser
+  // rather than requireRole("admin") on purpose — recruiters, not just
+  // admins, manage requisitions, and gating at admin would lock the people
+  // this screen exists for out of it.
+  await requireUser();
   const [positions, clients] = await Promise.all([
     listPositions(),
     (async () => {
