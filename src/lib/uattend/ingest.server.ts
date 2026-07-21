@@ -12,6 +12,7 @@ import { getUattendAdapter } from "./adapter.server";
 import { getIntegration } from "@/lib/integrations/db";
 import { weekStartOf, type UattendEmployee } from "./contract";
 import { mayOverwriteTimecard, type IngestTrigger } from "./ingest-policy";
+import { resolveEmployeeMap } from "./employee-map";
 
 // -------------------------------------------------------------------------
 // uAttend → canonical DB time cards.
@@ -22,7 +23,7 @@ import { mayOverwriteTimecard, type IngestTrigger } from "./ingest-policy";
 // so it silently skipped almost everything. This version:
 //   1. sources hours from the bulk punch report (Regular paycode only),
 //   2. resolves the DT employee by the durable uAttend-UserId→employee map
-//      saved on integrations.uattend.config.employee_map (from the verified
+//      saved on integrations.uattend.config.employee_mapping (from the verified
 //      pull), then falls back to a normalized name match ("Last First"),
 //   3. resolves the client + hourly rate from the employee's ACTIVE assignment,
 //   4. upserts the week's time cards, and
@@ -37,6 +38,13 @@ export type UattendIngestSummary = {
   timecardsUpserted: number;
   matchedByMap: number;
   matchedByName: number;
+  /**
+   * Mapping entries recovered from the legacy `employee_map` key — present
+   * there but not under `employee_mapping`. Normally 0. Non-zero means the
+   * config still holds a value nothing writes any more, which is worth seeing
+   * rather than silently absorbing.
+   */
+  mappedFromLegacyKey: number;
   unmatched: { uattendId: string; name: string; hours: number }[];
   unassigned: { name: string; hours: number }[];
   /**
@@ -109,15 +117,19 @@ export async function importUattendTimecards(opts: {
     adapter.getPunchReport({ startDate: weekStart, endDate: endYmd }),
   ]);
   const empByUid = new Map<string, UattendEmployee>(employees.map((e) => [e.uattendId, e]));
-
-  // Durable map from the verified pull: uAttend UserId → DT employee id.
+  // uAttend UserId → DT employee id, from the mapping a human set in
+  // /integrations. This read the WRONG KEY (`employee_map`) until 2026-07-21,
+  // and nothing has ever written that key — so mapping an employee never
+  // affected this pull, matchedByMap was permanently 0, and every row fell
+  // through to fuzzy name matching. resolveEmployeeMap reads the live key and
+  // merges any legacy value rather than stranding it.
   let savedMap: Record<string, string> = {};
+  let mapFromLegacy = 0;
   try {
     const row = await getIntegration("uattend");
-    const cfg = (row?.config ?? {}) as Record<string, unknown>;
-    if (cfg.employee_map && typeof cfg.employee_map === "object") {
-      savedMap = cfg.employee_map as Record<string, string>;
-    }
+    const resolved = resolveEmployeeMap(row?.config as Record<string, unknown> | null);
+    savedMap = resolved.map;
+    mapFromLegacy = resolved.fromLegacy;
   } catch {
     // no integration row — fall through to name matching only
   }
@@ -191,6 +203,7 @@ export async function importUattendTimecards(opts: {
     timecardsUpserted: 0,
     matchedByMap: 0,
     matchedByName: 0,
+    mappedFromLegacyKey: mapFromLegacy,
     unmatched: [],
     unassigned: [],
     skippedLocked: [],
