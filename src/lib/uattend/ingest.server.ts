@@ -1,10 +1,16 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import { DAYS, emptyDays, punchSpanMinutes, rollupTotals, type DayKey } from "@/lib/timecards";
+import { DAYS, emptyDays, rollupTotals, type DayKey } from "@/lib/timecards";
+import {
+  isMealPaycode,
+  isRegularPaycode,
+  resolveWorkedMinutes,
+  type PunchLine,
+} from "./worked-hours";
 import type { TimecardStatus } from "@/lib/supabase/types";
 import { getUattendAdapter } from "./adapter.server";
 import { getIntegration } from "@/lib/integrations/db";
-import { mondayOf, type UattendEmployee } from "./contract";
+import { weekStartOf, type UattendEmployee } from "./contract";
 import { mayOverwriteTimecard, type IngestTrigger } from "./ingest-policy";
 
 // -------------------------------------------------------------------------
@@ -41,6 +47,22 @@ export type UattendIngestSummary = {
    * which keep force semantics.
    */
   skippedLocked: { name: string; status: string; hours: number }[];
+  /**
+   * Days whose punch line items did not reconcile cleanly against the In→Out
+   * span — e.g. a meal only partly excluded from the Regular total, or segments
+   * summing past the outer span. The safe (lower) number is written, but these
+   * are reported so a wrong meal rule surfaces as a list instead of as a
+   * silently inflated invoice, which is how lunch came to be billed at all.
+   */
+  unreconciled: {
+    name: string;
+    day: DayKey;
+    reasons: string[];
+    grossHours: number;
+    mealHours: number;
+    in: string | null;
+    out: string | null;
+  }[];
 };
 
 // Normalize a display name for matching: lowercase, drop payroll-ish tokens
@@ -77,7 +99,7 @@ export async function importUattendTimecards(opts: {
   const adapter = await getUattendAdapter();
   const sb = await createClient();
 
-  const weekStart = mondayOf(opts.weekStart ?? new Date().toISOString().slice(0, 10));
+  const weekStart = weekStartOf(opts.weekStart ?? new Date().toISOString().slice(0, 10));
   const endYmd = new Date(new Date(`${weekStart}T00:00:00`).getTime() + 6 * 86_400_000)
     .toISOString()
     .slice(0, 10);
@@ -120,11 +142,20 @@ export async function importUattendTimecards(opts: {
     }
   }
 
-  // Group Regular punches per uAttend user per day.
-  type Agg = { name: string; byDay: Map<DayKey, { reg: number; in: string | null; out: string | null }>; total: number };
+  // Bucket the day's RAW punch lines per uAttend user per day, keeping the
+  // meal/break lines (paycodes 6 and 7) rather than discarding them. They used
+  // to be dropped here and the unpaid meal "re-derived" as the residual
+  // `span - regular` — which production data proved is exactly 0 on every row,
+  // because the vendor's `Tot` IS the raw In→Out span. That is how lunch came
+  // to be billed. resolveWorkedMinutes() now just subtracts the real line.
+  type Agg = { name: string; byDay: Map<DayKey, PunchLine[]>; total: number };
+
   const byUid = new Map<string, Agg>();
   for (const p of punches) {
-    if (p.paycodeId != null && p.paycodeId !== 1) continue; // Regular only (exclude lunch/break)
+    // Vacation / sick / holiday / other belong to neither worked time nor the
+    // meal deduction, so they are dropped here rather than inside the resolver.
+    if (!isRegularPaycode(p.paycodeId) && !isMealPaycode(p.paycodeId)) continue;
+
     const dk = dayKeyFor(weekStart, p.date);
     if (!dk) continue;
     const name = empByUid.get(p.uattendId)?.fullName ?? p.uattendId;
@@ -133,12 +164,23 @@ export async function importUattendTimecards(opts: {
       agg = { name, byDay: new Map(), total: 0 };
       byUid.set(p.uattendId, agg);
     }
-    const cur = agg.byDay.get(dk) ?? { reg: 0, in: null, out: null };
-    cur.reg += p.hours || 0;
-    cur.in = cur.in ?? p.punchIn;
-    if (p.punchOut) cur.out = p.punchOut;
-    agg.byDay.set(dk, cur);
-    agg.total += p.hours || 0;
+    const lines = agg.byDay.get(dk) ?? [];
+    lines.push({
+      paycodeId: p.paycodeId,
+      hours: p.hours,
+      punchIn: p.punchIn,
+      punchOut: p.punchOut,
+    });
+    agg.byDay.set(dk, lines);
+  }
+
+  // Per-employee weekly total, in WORKED hours net of any punched meal. Set
+  // here rather than in the upsert loop below, because the unmatched /
+  // unassigned branches report this figure and `continue` before reaching it.
+  for (const agg of byUid.values()) {
+    let worked = 0;
+    for (const v of agg.byDay.values()) worked += resolveWorkedMinutes(v).workedMin / 60;
+    agg.total = Math.round(worked * 100) / 100;
   }
 
   const summary: UattendIngestSummary = {
@@ -152,6 +194,7 @@ export async function importUattendTimecards(opts: {
     unmatched: [],
     unassigned: [],
     skippedLocked: [],
+    unreconciled: [],
   };
 
   for (const [uid, agg] of byUid) {
@@ -175,22 +218,30 @@ export async function importUattendTimecards(opts: {
 
     const days = emptyDays();
     for (const [dk, v] of agg.byDay) {
-      const reg = Math.round(v.reg * 100) / 100;
-      // The clock's Regular paycode is authoritative (already excludes lunch).
-      // When we also have In/Out, store the unpaid lunch as the leftover of the
-      // In→Out span minus worked hours, so the grid's auto-derivation reproduces
-      // exactly `reg` instead of naively subtracting the 30-min default.
-      const span = punchSpanMinutes(v.in, v.out);
-      const lunchMin =
-        span != null ? Math.max(0, Math.round(span - reg * 60)) : undefined;
+      // Σ Regular Tot − Σ punched meal. Never re-derives the meal as a
+      // residual, and never applies the 30-minute default: the real meal
+      // averages 1.03 h and varies per row.
+      const r = resolveWorkedMinutes(v);
+      const reg = Math.round((r.workedMin / 60) * 100) / 100;
+      if (r.ambiguous) {
+        summary.unreconciled.push({
+          name: agg.name,
+          day: dk,
+          reasons: r.reasons,
+          grossHours: Math.round((r.grossMin / 60) * 100) / 100,
+          mealHours: Math.round((r.mealMin / 60) * 100) / 100,
+          in: r.in,
+          out: r.out,
+        });
+      }
       days[dk] = {
         regular: reg,
         overtime: 0,
         holiday: 0,
-        in: v.in,
-        out: v.out,
+        in: r.in,
+        out: r.out,
         locked: false,
-        ...(lunchMin != null ? { lunch_min: lunchMin } : {}),
+        ...(r.lunchMin != null ? { lunch_min: r.lunchMin } : {}),
       };
     }
     const totals = rollupTotals(days);

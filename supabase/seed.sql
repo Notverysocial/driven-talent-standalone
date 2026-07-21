@@ -176,9 +176,9 @@ insert into candidates (full_name, email, phone, city, applied_for, source, appl
 delete from payroll_periods where start_date >= current_date - interval '21 day';
 
 insert into payroll_periods (start_date, end_date, status, notes) values
-  ((date_trunc('week', current_date) - interval '2 week')::date, (date_trunc('week', current_date) - interval '1 week' - interval '1 day')::date, 'approved', 'Closed and invoiced.'),
-  ((date_trunc('week', current_date) - interval '1 week')::date, (date_trunc('week', current_date) - interval '1 day')::date,                       'audited',  'Audit complete; awaiting client approvals.'),
-  ((date_trunc('week', current_date))::date,                      (date_trunc('week', current_date) + interval '6 day')::date,                      'open',     'Current pay period.');
+  (((current_date - extract(dow from current_date)::int) - interval '2 week')::date, ((current_date - extract(dow from current_date)::int) - interval '1 week' - interval '1 day')::date, 'approved', 'Closed and invoiced.'),
+  (((current_date - extract(dow from current_date)::int) - interval '1 week')::date, ((current_date - extract(dow from current_date)::int) - interval '1 day')::date,                       'audited',  'Audit complete; awaiting client approvals.'),
+  (((current_date - extract(dow from current_date)::int))::date,                      ((current_date - extract(dow from current_date)::int) + interval '6 day')::date,                      'open',     'Current pay period.');
 
 -- ---------- timecards ---------------------------------------------------
 
@@ -186,7 +186,7 @@ delete from timecards where employee_id in (select id from employees where legac
 
 insert into timecards (employee_id, client_id, week_start, days, reg_hours, ot_hours, holiday_hours, sick_hours, hourly_rate, status, submitted_at, approved_by, approved_at, payroll_period_id, flags)
 select
-  e.id, c.id, (date_trunc('week', current_date) - interval '1 week')::date,
+  e.id, c.id, ((current_date - extract(dow from current_date)::int) - interval '1 week')::date,
   '{
     "mon": {"regular": 8.0, "overtime": 0,   "holiday": 0, "in": "06:00", "out": "14:30", "locked": true},
     "tue": {"regular": 8.0, "overtime": 0.5, "holiday": 0, "in": "06:00", "out": "15:00", "locked": true},
@@ -204,7 +204,7 @@ where e.legacy_id = 'e-005' and c.slug = 'pacific-vines';
 
 insert into timecards (employee_id, client_id, week_start, days, reg_hours, ot_hours, holiday_hours, sick_hours, hourly_rate, status, submitted_at, payroll_period_id, flags)
 select
-  e.id, c.id, date_trunc('week', current_date)::date,
+  e.id, c.id, (current_date - extract(dow from current_date)::int)::date,
   '{
     "mon": {"regular": 8.0, "overtime": 0, "holiday": 0, "in": "06:00", "out": "14:30", "locked": true},
     "tue": {"regular": 8.0, "overtime": 0, "holiday": 0, "in": "06:00", "out": "14:30", "locked": true},

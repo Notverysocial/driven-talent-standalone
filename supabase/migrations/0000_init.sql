@@ -183,7 +183,13 @@ create table timecards (
   id uuid primary key default gen_random_uuid(),
   employee_id uuid not null references employees(id) on delete restrict,
   client_id uuid not null references clients(id) on delete restrict,
-  week_start date not null,               -- Monday of the week (date_trunc('week', ...))
+  -- SUNDAY of the pay week. DT's pay period runs Sun–Sat.
+  -- NOTE (2026-07-20): this comment previously read "Monday of the week
+  -- (date_trunc('week', ...))". No schema change was made — the column has
+  -- always been a plain date; only the rule the application writes into it was
+  -- wrong, and it is now Sunday everywhere (see src/lib/timecards.ts DAYS).
+  -- date_trunc('week', ...) is ISO and starts on MONDAY — do not use it here.
+  week_start date not null,
   -- jsonb keyed by mon..sun, each { regular, overtime, holiday, in, out, locked }
   days jsonb not null default '{}'::jsonb,
   reg_hours numeric(6,2) not null default 0,

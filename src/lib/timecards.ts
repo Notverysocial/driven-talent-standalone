@@ -2,17 +2,30 @@
 
 import type { TimecardDay, TimecardDays, TimecardStatus } from "./supabase/types";
 
-export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+// ---------------------------------------------------------------------------
+// THE PAY WEEK RUNS SUNDAY → SATURDAY.
+//
+// This array is POSITIONAL: index i is the offset in days from a timecard's
+// `week_start`. `dayDate()`, `dayKeyFor()` in the uAttend ingest, and the
+// per-day CSV exports all index into it. Reordering the labels without
+// reordering this array shifts every employee's hours by one day, which is why
+// the Sunday change had to be made here rather than at the display layer.
+//
+// Corrected 2026-07-20: was ["mon"…"sun"] with an ISO/Monday `startOfWeek`,
+// which put the window a day off from DT's actual Sun–Sat pay period and fed
+// wrong week boundaries into payroll periods and invoices.
+// ---------------------------------------------------------------------------
+export const DAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 export type DayKey = typeof DAYS[number];
 
 export const DAY_LABEL: Record<DayKey, string> = {
+  sun: "Sun",
   mon: "Mon",
   tue: "Tue",
   wed: "Wed",
   thu: "Thu",
   fri: "Fri",
   sat: "Sat",
-  sun: "Sun",
 };
 
 export const TIMECARD_STATUSES: { id: TimecardStatus; label: string; tone: "warm" | "amber" | "green" | "red" | "dark" }[] = [
@@ -140,7 +153,9 @@ export function autoOvertimeAdjustment(days: TimecardDays): TimecardDays {
   if (reg_hours <= 40) return days;
   let excess = reg_hours - 40;
   const next: TimecardDays = JSON.parse(JSON.stringify(days));
-  const order: DayKey[] = ["sun", "sat", "fri", "thu", "wed", "tue", "mon"];
+  // Latest day first, so the >40h excess rolls off the END of the pay week.
+  // Sun–Sat week ⇒ Saturday is the last day, Sunday the first.
+  const order: DayKey[] = ["sat", "fri", "thu", "wed", "tue", "mon", "sun"];
   for (const k of order) {
     if (excess <= 0) break;
     const d = next[k];
@@ -155,12 +170,13 @@ export function autoOvertimeAdjustment(days: TimecardDays): TimecardDays {
   return next;
 }
 
+// The SUNDAY that opens the pay week containing `date`. DT's pay period is
+// Sun–Sat, so this is deliberately NOT the ISO/Monday week: JS getDay() is
+// already 0 = Sunday, so the offset is the raw day number.
 export function startOfWeek(date: Date): Date {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
-  // ISO Monday = 1. JS Sunday = 0 → treat as 7.
-  const day = d.getDay() === 0 ? 7 : d.getDay();
-  d.setDate(d.getDate() - (day - 1));
+  d.setDate(d.getDate() - d.getDay()); // getDay(): 0 = Sunday
   return d;
 }
 
@@ -173,8 +189,16 @@ export function fmtWeekRange(weekStart: string): string {
   return `${fmt(d)} — ${fmt(end)}`;
 }
 
-export function isoWeekStart(d: Date = new Date()): string {
-  return startOfWeek(d).toISOString().slice(0, 10);
+// "YYYY-MM-DD" for a Date, read off its LOCAL calendar fields. `toISOString()`
+// would re-project local midnight into UTC and can land on the previous day.
+export function ymdLocal(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+// The Sunday opening the current pay week, as "YYYY-MM-DD".
+export function currentWeekStart(d: Date = new Date()): string {
+  return ymdLocal(startOfWeek(d));
 }
 
 export function dayDate(weekStart: string, key: DayKey): string {

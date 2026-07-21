@@ -102,10 +102,12 @@ test.describe("scheduledPullWindows — current + previous week", () => {
     expect(w[0] < w[1]).toBe(true);
   });
 
-  test("both entries are Mondays", () => {
+  // DT's pay week is Sun–Sat, so a pull window must open on a SUNDAY. This
+  // asserted Mondays until 2026-07-20 — the boundary bug Antonio reported.
+  test("both entries are Sundays", () => {
     for (const day of ["2026-07-13", "2026-07-15", "2026-07-19"]) {
       for (const ws of scheduledPullWindows(day)) {
-        expect(new Date(`${ws}T00:00:00`).getDay(), `${ws} from ${day}`).toBe(1);
+        expect(new Date(`${ws}T00:00:00`).getDay(), `${ws} from ${day}`).toBe(0);
       }
     }
   });
@@ -119,12 +121,14 @@ test.describe("scheduledPullWindows — current + previous week", () => {
     expect(days).toBe(7);
   });
 
-  test("a Monday run still reaches back a full week", () => {
-    // The riskiest day: on Monday the current week is nearly empty, so last
-    // week's late punches are the entire point of the second window.
+  test("a run early in the pay week still reaches back a full week", () => {
+    // The riskiest day: right after the week turns over the current week is
+    // nearly empty, so last week's late punches are the entire point of the
+    // second window. Sun–Sat ⇒ Monday Jul 13 sits in the week that opened
+    // Sunday Jul 12, and the previous window is Sunday Jul 5.
     const [prev, cur] = scheduledPullWindows("2026-07-13"); // Monday
-    expect(cur).toBe("2026-07-13");
-    expect(prev).toBe("2026-07-06");
+    expect(cur).toBe("2026-07-12");
+    expect(prev).toBe("2026-07-05");
   });
 
   test("does NOT reach back further — no silent backfill", () => {

@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   normalizeEmployee,
   normalizeTimecard,
-  mondayOf,
+  weekStartOf,
   unwrapList,
 } from "../../src/lib/uattend/contract";
 import { MockUattendAdapter } from "../../src/lib/uattend/adapter";
@@ -36,12 +36,26 @@ test.describe("uAttend contract normalizers", () => {
     expect(normalizeEmployee({ firstName: "NoId" })).toBeNull();
   });
 
-  test("mondayOf snaps any weekday to the ISO Monday", () => {
-    // 2026-06-24 is a Wednesday → Monday is 2026-06-22.
-    expect(mondayOf("2026-06-24")).toBe("2026-06-22");
-    expect(mondayOf("2026-06-22")).toBe("2026-06-22");
-    // Sunday 2026-06-28 → Monday 2026-06-22.
-    expect(mondayOf("2026-06-28")).toBe("2026-06-22");
+  // DT's pay week is Sun–Sat. This used to assert the ISO Monday, which is the
+  // bug Antonio reported on 2026-07-20 ("pay period is still Mon - Sun").
+  test("weekStartOf snaps any weekday back to the pay week's SUNDAY", () => {
+    // 2026-06-24 is a Wednesday → the week opened Sunday 2026-06-21.
+    expect(weekStartOf("2026-06-24")).toBe("2026-06-21");
+    // A Monday is NOT a week start any more.
+    expect(weekStartOf("2026-06-22")).toBe("2026-06-21");
+    // A Sunday is its own week start — not pulled back into the prior week.
+    expect(weekStartOf("2026-06-21")).toBe("2026-06-21");
+    // Saturday closes the week, so it still maps to the same Sunday.
+    expect(weekStartOf("2026-06-27")).toBe("2026-06-21");
+    // The NEXT Sunday opens a new week.
+    expect(weekStartOf("2026-06-28")).toBe("2026-06-28");
+  });
+
+  test("weekStartOf holds across a month and a year boundary", () => {
+    // Wed 2026-07-01 → Sunday 2026-06-28, i.e. back into the previous month.
+    expect(weekStartOf("2026-07-01")).toBe("2026-06-28");
+    // Fri 2027-01-01 → Sunday 2026-12-27, back into the previous year.
+    expect(weekStartOf("2027-01-01")).toBe("2026-12-27");
   });
 
   test("unwrapList handles bare arrays and common envelopes", () => {
@@ -61,7 +75,7 @@ test.describe("uAttend contract normalizers", () => {
       ],
     });
     expect(tc).not.toBeNull();
-    expect(tc!.weekStart).toBe("2026-06-22");
+    expect(tc!.weekStart).toBe("2026-06-21");
     expect(tc!.regularHours).toBe(16);
     expect(tc!.overtimeHours).toBe(2);
   });
@@ -93,8 +107,8 @@ test.describe("MockUattendAdapter", () => {
     expect(maria).toBeTruthy();
     expect(maria!.regularHours).toBe(40);
     expect(maria!.overtimeHours).toBe(8);
-    // All timecards snap to the same Monday.
-    expect(cards.every((c) => c.weekStart === "2026-06-22")).toBe(true);
+    // All timecards snap to the same SUNDAY (Sun–Sat pay week).
+    expect(cards.every((c) => c.weekStart === "2026-06-21")).toBe(true);
   });
 
   test("getPunchReport returns one punch row per worked day", async () => {

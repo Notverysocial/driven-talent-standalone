@@ -4,7 +4,7 @@
 // rule that should live only inside a server function nothing can test.
 
 import type { TimecardStatus } from "@/lib/supabase/types";
-import { mondayOf } from "./contract";
+import { weekStartOf } from "./contract";
 
 /**
  * Who triggered an ingest.
@@ -49,8 +49,8 @@ export function mayOverwriteTimecard(input: {
  * overlap rather than the reverse.
  */
 export function scheduledPullWindows(todayIso: string): string[] {
-  const current = mondayOf(todayIso);
-  const previous = mondayOf(
+  const current = weekStartOf(todayIso);
+  const previous = weekStartOf(
     new Date(new Date(`${current}T00:00:00`).getTime() - 7 * 86_400_000)
       .toISOString()
       .slice(0, 10),

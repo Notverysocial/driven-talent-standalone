@@ -1,5 +1,6 @@
 // Client-safe payroll helpers — pure functions, no Supabase imports.
 
+import { DAYS } from "./timecards";
 import type { PayrollPeriodStatus, TimecardDays, TimecardFlags } from "./supabase/types";
 
 export const PAYROLL_PERIOD_STATUSES: {
@@ -26,7 +27,13 @@ export const FLAG_LABELS: Record<keyof TimecardFlags, string> = {
 // row. Operators can override via notes.
 export function computeFlags(days: TimecardDays): TimecardFlags {
   const flags: TimecardFlags = {};
-  for (const k of ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const) {
+  // Iterate in PAY-WEEK order (Sun–Sat) using the shared array, not a local
+  // Monday-first literal. This reads days[k] by key so it can never misattribute
+  // hours, but it `break`s on the first missed punch — so a Monday-first order
+  // reported the wrong day as `punch_day` when a Sunday and a later weekday were
+  // both missing. Found during the pre-merge boundary audit, 2026-07-20: it was
+  // the last hardcoded day array left in src.
+  for (const k of DAYS) {
     const d = days[k];
     if (!d) continue;
     const hasHours = (Number(d.regular) || 0) + (Number(d.overtime) || 0) + (Number(d.holiday) || 0) > 0;
