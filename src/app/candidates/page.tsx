@@ -11,6 +11,7 @@ import {
   tierLabel,
 } from "@/lib/candidates";
 import { listCandidates } from "@/lib/candidates.server";
+import { partitionBySendBar, sendBar } from "@/lib/candidate-eligibility";
 import { listClientsForPicker } from "@/lib/legal-tasks.server";
 import { textMatches, idMatches } from "@/lib/filters";
 import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
@@ -55,13 +56,19 @@ function eqi(a: string | null | undefined, b: string | null | undefined): boolea
 export default async function CandidatesListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; pos?: string; client?: string; tab?: string; status?: string }>;
+  searchParams: Promise<{
+    q?: string; pos?: string; client?: string; tab?: string; status?: string;
+    /** "1" reveals candidates barred from being sent, on the ready-to-send
+     *  tabs where they are hidden by default. Opt-in and always announced. */
+    barred?: string;
+  }>;
 }) {
   const sp = await searchParams;
   const nameQuery = (sp.q ?? "").trim();
   const posQuery = (sp.pos ?? "").trim();
   const clientQuery = (sp.client ?? "").trim();
   const statusQuery = (sp.status ?? "").trim();
+  const showBarred = sp.barred === "1";
 
   // My Candidates is the default on login for a real recruiter; managers /
   // the auth-off synthetic owner default to All (they see everyone).
@@ -74,6 +81,16 @@ export default async function CandidatesListPage({
   // Move column instead of the recruitment-stage menu (ported from Talent Pool).
   const isLifecycleTab = tab === "available_for_rehire" || tab === "do_not_return";
 
+  // THE READY-TO-SEND TABS. Estefany described these as the candidates
+  // "ready to send out at any time" — the shortlist a recruiter pulls from
+  // when a client needs somebody now. A Do Not Return / Do Not Send person
+  // must not be sitting in it, because the failure mode is a recruiter under
+  // time pressure sending a barred person to a client.
+  //
+  // The DNR lifecycle TAB is excluded from this treatment for the obvious
+  // reason: looking at the DNR list is how you see barred people on purpose.
+  const isReadyToSendTab = tab === "screening_approved" || tab === "on_hold";
+
   // Simplify the ATS (card 02e36588) — build a candidates URL that preserves the
   // current search/tab/status context. Pass null to drop a key; defaults (tab
   // "all", empty values) are omitted so links stay clean.
@@ -84,6 +101,7 @@ export default async function CandidatesListPage({
       client: clientQuery,
       tab: tab === "all" ? "" : tab,
       status: statusQuery,
+      barred: showBarred ? "1" : "",
     };
     const merged = { ...base, ...overrides };
     const params = new URLSearchParams();
@@ -118,13 +136,22 @@ export default async function CandidatesListPage({
   // Candidates in the current tab + text/client context (before the stage
   // filter). Drives the stage-tile counts so those counts don't change when a
   // tile is selected.
-  const candidates = allCandidates.filter(
+  const matched = allCandidates.filter(
     (c) =>
       textMatches(c.full_name, nameQuery) &&
       textMatches(c.applied_for, posQuery) &&
       idMatches(c.client_id, clientQuery) &&
       matchesTab(c),
   );
+
+  // On the ready-to-send tabs, hold back anyone barred from being sent. The
+  // count is kept and REPORTED — a list that quietly drops people is its own
+  // kind of wrong, and hiding the number would just move the surprise later.
+  const { sendable, barred: barredRows } = isReadyToSendTab
+    ? partitionBySendBar(matched)
+    : { sendable: matched, barred: [] as typeof matched };
+  const barredHeld = barredRows.length;
+  const candidates = isReadyToSendTab && !showBarred ? sendable : matched;
   // The rows actually shown in the (now single) table — narrowed by the clicked
   // stage tile, if any.
   const visible = statusQuery
@@ -340,6 +367,58 @@ export default async function CandidatesListPage({
         </div>
       )}
 
+      {/* Ready-to-send safety notice. Says exactly how many people are being
+          held back and why, with a deliberate way to see them — so the list is
+          trustworthy to pull from AND nothing disappears without a trace. */}
+      {isReadyToSendTab && barredHeld > 0 && (
+        <div
+          className="dt-card"
+          style={{
+            padding: "12px 18px",
+            marginBottom: 14,
+            fontSize: 12.5,
+            lineHeight: 1.6,
+            color: "var(--dt-warm-700, #5a4a3a)",
+            borderLeft: "3px solid var(--dt-danger)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            <strong>
+              {barredHeld} {barredHeld === 1 ? "candidate is" : "candidates are"} hidden
+            </strong>{" "}
+            {barredHeld === 1 ? "because they are" : "because they are"} marked Do Not
+            Return or Do Not Send. This list is what you send to a client, so barred
+            people are kept out of it by default. Their screening status is unchanged.
+          </span>
+          <Link
+            href={hrefWith({ barred: showBarred ? null : "1" })}
+            className="dt-btn tiny"
+            style={{ marginLeft: "auto" }}
+          >
+            {showBarred ? "Hide barred" : `Show ${barredHeld} barred`}
+          </Link>
+        </div>
+      )}
+      {isReadyToSendTab && showBarred && barredHeld > 0 && (
+        <div
+          className="dt-card"
+          style={{
+            padding: "10px 18px",
+            marginBottom: 14,
+            fontSize: 12.5,
+            color: "var(--dt-danger)",
+            background: "rgba(176,58,46,0.06)",
+          }}
+        >
+          ⛔ Showing barred candidates. These must not be sent to a client while the
+          bar stands.
+        </div>
+      )}
+
       {visible.length > 0 && (
           <div className="dt-card" style={{ marginBottom: 18 }}>
             <div className="dt-card-head">
@@ -407,16 +486,25 @@ export default async function CandidatesListPage({
                                 {c.city ?? "—"}
                                 {c.experience_years ? ` · ${c.experience_years} yrs` : ""}
                               </div>
-                              {c.lifecycle_status === "do_not_return" &&
-                                c.do_not_return_reason && (
+                              {/* The bar, always shown when it applies. This
+                                  previously required a DNR reason to render, so
+                                  a barred candidate with no reason written — and
+                                  every do_not_send candidate — showed no cue at
+                                  all. */}
+                              {(() => {
+                                const bar = sendBar(c);
+                                if (!bar.barred) return null;
+                                return (
                                   <div
                                     className="meta"
-                                    style={{ color: "var(--dt-danger)", marginTop: 2 }}
-                                    title={c.do_not_return_reason}
+                                    style={{ color: "var(--dt-danger)", marginTop: 2, fontWeight: 500 }}
+                                    title={bar.reason ?? bar.label}
                                   >
-                                    ⛔ {c.do_not_return_reason}
+                                    ⛔ {bar.label}
+                                    {bar.reason ? ` · ${bar.reason}` : ""}
                                   </div>
-                                )}
+                                );
+                              })()}
                             </div>
                           </Link>
                         </td>

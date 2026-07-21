@@ -10,6 +10,7 @@ import { PositionForm } from "../PositionForm";
 import { updatePosition } from "../actions";
 import { StatusBar } from "./StatusBar";
 import { PlacementForm } from "./PlacementForm";
+import { isBarredFromSending } from "@/lib/candidate-eligibility";
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -33,9 +34,23 @@ export default async function PositionPage(props: {
       .select("id, placed_at, notes, employee_id, candidate_id, employees(full_name), candidates(full_name)")
       .eq("position_id", id)
       .order("placed_at", { ascending: false }),
-    sb.from("candidates").select("id, full_name").order("full_name"),
+    // Recording a placement is the act of putting somebody in front of a
+    // client, so the picker must not offer anyone barred. Selecting the bar
+    // columns here rather than filtering in SQL keeps ONE definition of
+    // "barred" (candidate-eligibility.ts) instead of a second one in a query.
+    sb
+      .from("candidates")
+      .select("id, full_name, lifecycle_status, do_not_return_reason, do_not_send")
+      .order("full_name"),
     sb.from("employees").select("id, full_name").eq("status", "active").order("full_name"),
   ]);
+
+  // Barred candidates are removed from the picker entirely — a placement is
+  // the act of putting somebody in front of a client, so this is not a case
+  // where showing-with-a-warning is good enough. recordPlacement() enforces the
+  // same rule server-side; this just stops the wrong name being offered.
+  const sendableCandidates = (candidates ?? []).filter((c) => !isBarredFromSending(c));
+  const barredFromPicker = (candidates ?? []).length - sendableCandidates.length;
 
   const statusMeta = POSITION_STATUSES.find((s) => s.id === position.status);
   const clientName = position.client_id
@@ -129,9 +144,18 @@ export default async function PositionPage(props: {
             </div>
             <PlacementForm
               positionId={position.id}
-              candidates={candidates ?? []}
+              candidates={sendableCandidates}
               employees={employees ?? []}
             />
+            {barredFromPicker > 0 && (
+              <div
+                className="tiny muted"
+                style={{ marginTop: 8, color: "var(--dt-warm-500)" }}
+              >
+                {barredFromPicker} candidate{barredFromPicker === 1 ? "" : "s"} not
+                listed — marked Do Not Return or Do Not Send.
+              </div>
+            )}
           </div>
         </div>
       </div>
