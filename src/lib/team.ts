@@ -129,6 +129,46 @@ export const ELIGIBILITY_TONE: Record<SeparationEligibility, BadgeTone> = {
   do_not_return: "red",
 };
 
+// What eligibility to SHOW for a separated employee.
+//
+// ---------------------------------------------------------------------------
+// WHY THIS EXISTS
+//
+// /team/terminated derived the badge from the separation row alone:
+//
+//     const eligibility = separation?.eligibility ?? "eligible";
+//
+// markDoNotReturn() (roster/actions.ts) writes the standalone `do_not_return`
+// table and flips employees.status = 'do_not_return', but never wrote an
+// `employee_separations` row. listSeparatedEmployees() selects on
+// status in ('terminated','do_not_return'), so the employee DID appear on the
+// page — with no separation row, so the `?? "eligible"` fallback fired and the
+// most dangerous state in the system rendered as the safest-looking one: a
+// green "Eligible for rehire" badge, counted in the "eligible to return" tile.
+//
+// THE RULE: the employee's own status is authoritative for the BAR. A
+// separation row can refine the picture (reason, client, note) but must never
+// downgrade a do_not_return employee, and its ABSENCE must never read as "fine".
+//
+// Note the asymmetry — only `do_not_return` overrides. A plain `terminated`
+// employee with no separation row still resolves to "eligible", because a
+// missing form is not evidence of a bar and inventing one would hide genuinely
+// rehireable people.
+//
+// This is the employee-side twin of sendBar() in candidate-eligibility.ts,
+// which fixed the same class of error on the candidate side. That module is
+// deliberately not reused here: it answers "may we send this candidate to a
+// client", keyed on candidates.lifecycle_status, which is a different record
+// and a different question.
+// ---------------------------------------------------------------------------
+export function resolveSeparationEligibility(input: {
+  employeeStatus: string | null | undefined;
+  separation: { eligibility: SeparationEligibility } | null | undefined;
+}): SeparationEligibility {
+  if (input.employeeStatus === "do_not_return") return "do_not_return";
+  return input.separation?.eligibility ?? "eligible";
+}
+
 export const SEPARATION_REASONS: SeparationReason[] = [
   "voluntary",
   "job_abandonment",
