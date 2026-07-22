@@ -46,6 +46,7 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import { describeError } from "../describe-error";
+import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
 import {
   decideInterviewWriteback,
@@ -346,37 +347,40 @@ class CalendlyClient implements IntegrationClient {
     const raw = await request.text();
 
     const integration = await getIntegration(PROVIDER);
-    const secret = integration?.webhook_secret ?? null;
 
-    if (secret) {
-      const sigHeader =
-        request.headers.get("calendly-webhook-signature") ??
-        request.headers.get("Calendly-Webhook-Signature") ??
-        "";
-      if (!sigHeader) {
-        return { ok: false, error: "missing_signature" };
-      }
-      const parts: Record<string, string> = {};
-      for (const p of sigHeader.split(",")) {
-        const eq = p.indexOf("=");
-        if (eq === -1) continue;
-        const k = p.slice(0, eq).trim();
-        const v = p.slice(eq + 1).trim();
-        if (k) parts[k] = v;
-      }
-      const t = parts["t"];
-      const v1 = parts["v1"];
-      if (!t || !v1) {
-        return { ok: false, error: "malformed_signature" };
-      }
-      const expected = createHmac("sha256", secret)
-        .update(`${t}.${raw}`)
-        .digest("hex");
-      const a = Buffer.from(expected, "hex");
-      const b = Buffer.from(v1, "hex");
-      if (a.length !== b.length || !timingSafeEqual(a, b)) {
-        return { ok: false, error: "invalid_signature" };
-      }
+    // Fail closed. This path is allowlisted in the proxy, so an unset secret
+    // would make it an open write endpoint — see webhook-auth.ts.
+    const gate = requireWebhookSecret(integration?.webhook_secret);
+    if (!gate.ok) return { ok: false, error: gate.error };
+    const secret = gate.secret;
+
+    const sigHeader =
+      request.headers.get("calendly-webhook-signature") ??
+      request.headers.get("Calendly-Webhook-Signature") ??
+      "";
+    if (!sigHeader) {
+      return { ok: false, error: "missing_signature" };
+    }
+    const parts: Record<string, string> = {};
+    for (const p of sigHeader.split(",")) {
+      const eq = p.indexOf("=");
+      if (eq === -1) continue;
+      const k = p.slice(0, eq).trim();
+      const v = p.slice(eq + 1).trim();
+      if (k) parts[k] = v;
+    }
+    const t = parts["t"];
+    const v1 = parts["v1"];
+    if (!t || !v1) {
+      return { ok: false, error: "malformed_signature" };
+    }
+    const expected = createHmac("sha256", secret)
+      .update(`${t}.${raw}`)
+      .digest("hex");
+    const a = Buffer.from(expected, "hex");
+    const b = Buffer.from(v1, "hex");
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return { ok: false, error: "invalid_signature" };
     }
 
     let payload: Record<string, unknown>;

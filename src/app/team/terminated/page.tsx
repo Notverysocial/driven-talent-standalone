@@ -16,6 +16,7 @@ import {
   SEPARATION_ELIGIBILITIES,
   SEPARATION_REASONS,
   fmtDate,
+  resolveSeparationEligibility,
   type SeparationEligibility,
   type SeparationReason,
 } from "@/lib/team";
@@ -30,11 +31,19 @@ export default async function TerminatedPage() {
     listClientsForPicker(),
   ]);
 
-  const dnr = rows.filter((r) => r.separation?.eligibility === "do_not_return");
-  const conditional = rows.filter((r) => r.separation?.eligibility === "conditional");
-  const eligible = rows.filter(
-    (r) => !r.separation || r.separation.eligibility === "eligible",
-  );
+  // Resolve ONCE, here, and count off the resolved value — the tiles and the
+  // row badge below must never be able to disagree. Reading the separation row
+  // directly is what let a Do Not Return employee land in the `eligible` bucket
+  // (see resolveSeparationEligibility for the full account).
+  const eligibilityOf = (r: (typeof rows)[number]) =>
+    resolveSeparationEligibility({
+      employeeStatus: r.employee.status,
+      separation: r.separation,
+    });
+
+  const dnr = rows.filter((r) => eligibilityOf(r) === "do_not_return");
+  const conditional = rows.filter((r) => eligibilityOf(r) === "conditional");
+  const eligible = rows.filter((r) => eligibilityOf(r) === "eligible");
 
   const tb = (await getServerDictionary()).topbar.terminated;
 
@@ -138,7 +147,11 @@ export default async function TerminatedPage() {
               </div>
             )}
             {rows.map(({ employee, separation, clientName }) => {
-              const eligibility: SeparationEligibility = separation?.eligibility ?? "eligible";
+              const eligibility: SeparationEligibility =
+                resolveSeparationEligibility({
+                  employeeStatus: employee.status,
+                  separation,
+                });
               const isDnr = eligibility === "do_not_return";
               return (
                 <div

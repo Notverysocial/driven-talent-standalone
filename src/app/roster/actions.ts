@@ -241,6 +241,52 @@ export async function markDoNotReturn(employeeId: string, formData: FormData) {
     .eq("id", employeeId);
   if (stErr) throw new Error(stErr.message);
 
+  // Record it in the SEPARATIONS ledger too.
+  //
+  // This action used to write only the standalone `do_not_return` table and
+  // the status flip, which left /team/terminated — the page whose whole job is
+  // showing who must not come back — with no separation row to read. It fell
+  // back to `?? "eligible"` and rendered the person GREEN. The display now
+  // treats employees.status as authoritative (resolveSeparationEligibility),
+  // so that is fixed at the read; this fixes it at the WRITE, so the two
+  // records agree and anything else reading the ledger gets the truth.
+  //
+  // Idempotent, matching the do_not_return sync above: update the existing
+  // separation if the employee was already separated — preserving its original
+  // date and reason, which are real history — otherwise insert a fresh one.
+  // Errors are thrown, not swallowed: a ledger that silently fails to record a
+  // DNR is the same failure this whole change exists to remove.
+  const dnrNote = reason || `Marked Do Not Return${lastCompany ? ` (${lastCompany})` : ""}`;
+  const { data: existingSep, error: sepFindErr } = await supabase
+    .from("employee_separations")
+    .select("id")
+    .eq("employee_id", employeeId)
+    .order("separation_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (sepFindErr) throw new Error(sepFindErr.message);
+
+  if (existingSep) {
+    const { error } = await supabase
+      .from("employee_separations")
+      .update({ eligibility: "do_not_return", do_not_return_note: dnrNote })
+      .eq("id", existingSep.id);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase.from("employee_separations").insert({
+      employee_id: employeeId,
+      separation_date: dateLogged,
+      // The DNR form's `reason` is free text and does not map onto the
+      // separation_reason enum, so it is carried in the note rather than
+      // guessed at. 'other' is the honest enum value for "flagged directly".
+      reason: "other",
+      eligibility: "do_not_return",
+      do_not_return_note: dnrNote,
+      processed_by: reportedBy,
+    });
+    if (error) throw new Error(error.message);
+  }
+
   await supabase
     .from("employee_assignments")
     .update({ active: false })

@@ -43,6 +43,7 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import { describeError } from "../describe-error";
+import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
 
 const PROVIDER = "ringcentral" as const;
@@ -333,20 +334,28 @@ class RingCentralClient implements IntegrationClient {
     const raw = await request.text();
 
     const integration = await getIntegration(PROVIDER);
-    const secret = integration?.webhook_secret ?? null;
-    if (secret) {
-      const provided =
-        request.headers.get("verification-token") ??
-        request.headers.get("Verification-Token") ??
-        "";
-      if (!provided) {
-        return { ok: false, error: "missing_verification_token" };
-      }
-      const a = Buffer.from(provided);
-      const b = Buffer.from(secret);
-      if (a.length !== b.length || !timingSafeEqual(a, b)) {
-        return { ok: false, error: "invalid_verification_token" };
-      }
+
+    // Fail closed. This path is allowlisted in the proxy, so an unset secret
+    // would make it an open write endpoint — see webhook-auth.ts. Deliberately
+    // placed AFTER the validation handshake above: RingCentral pings the URL to
+    // create the subscription, and that ping is what mints the verification
+    // token we store as webhook_secret. Gating it would make the subscription
+    // unregisterable and the secret unobtainable.
+    const gate = requireWebhookSecret(integration?.webhook_secret);
+    if (!gate.ok) return { ok: false, error: gate.error };
+    const secret = gate.secret;
+
+    const provided =
+      request.headers.get("verification-token") ??
+      request.headers.get("Verification-Token") ??
+      "";
+    if (!provided) {
+      return { ok: false, error: "missing_verification_token" };
+    }
+    const a = Buffer.from(provided);
+    const b = Buffer.from(secret);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      return { ok: false, error: "invalid_verification_token" };
     }
 
     let payload: Record<string, unknown>;

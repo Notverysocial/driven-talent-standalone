@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createMiddlewareClient } from "@/lib/supabase/middleware";
 import { isCronPath } from "@/lib/cron-paths";
+import { isWebhookPath } from "@/lib/webhook-paths";
 
 // Wave 3.1 — Next 16 calls this file `proxy.ts` (it was `middleware.ts`
 // in Next 15). The function/config shape is unchanged.
@@ -47,6 +48,23 @@ function isPublicPath(pathname: string): boolean {
   // CRON_SECRET itself via checkCronAuth, which fails closed when the secret
   // is unset (src/lib/cron-auth.ts).
   if (isCronPath(pathname)) return true;
+  // Every inbound provider webhook. Same failure mode as the cron block above,
+  // one step further in: a provider callback carries no session, so gating it
+  // here 307s it to /login and the handler never runs. Calendly bookings were
+  // being delivered and bounced at the door — invisible, because a webhook that
+  // never arrives looks exactly like a provider that never sent one.
+  //
+  // Same caveat as the cron block: public here means "not session-gated", not
+  // "unprotected". Each provider's handleWebhook verifies its own signature
+  // against integrations.webhook_secret and now REFUSES when that secret is
+  // unset (src/lib/integrations/webhook-auth.ts) — because allowlisting these
+  // paths removes the accidental protection the 307 was providing, and
+  // "public + unset secret" is an open write endpoint.
+  //
+  // The list lives in webhook-paths.ts and is diffed against the providers that
+  // actually implement handleWebhook by
+  // e2e/logic/webhook-registration.spec.ts, so this cannot silently drift.
+  if (isWebhookPath(pathname)) return true;
   // Public bug/feedback intake — the form at /report and its write endpoint.
   // Both must be open: the whole point is that someone who is not signed in
   // (or cannot sign in, because the thing they are reporting IS the login)
