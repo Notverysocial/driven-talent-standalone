@@ -36,6 +36,7 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import { describeError, isDnsFailure } from "../describe-error";
+import { requireWebhookSecret } from "../webhook-auth";
 import { resolveEmployeeMap } from "@/lib/uattend/employee-map";
 import { resolveUattendAdapter } from "@/lib/uattend/adapter";
 import {
@@ -208,24 +209,29 @@ class UAttendClient implements IntegrationClient {
   ): Promise<{ ok: boolean; error?: string }> {
     const raw = await request.text();
     const integration = await getIntegration("uattend");
-    const secret = integration?.webhook_secret ?? null;
-    if (secret) {
-      const sigHeader =
-        request.headers.get("x-uattend-signature") ??
-        request.headers.get("x-uattend-hmac") ??
-        "";
-      if (!sigHeader) return { ok: false, error: "missing_signature" };
-      const expected = createHmac("sha256", secret).update(raw).digest("hex");
-      const a = Buffer.from(expected, "hex");
-      const candidates = [
-        Buffer.from(sigHeader.replace(/^sha256=/, ""), "hex"),
-        Buffer.from(sigHeader.replace(/^sha256=/, ""), "base64"),
-      ];
-      const ok = candidates.some(
-        (c) => c.length === a.length && timingSafeEqual(c, a),
-      );
-      if (!ok) return { ok: false, error: "invalid_signature" };
-    }
+
+    // Fail closed. This path is allowlisted in the proxy, so an unset secret
+    // would make it an open write endpoint — see webhook-auth.ts. This handler
+    // writes punch events, which become billable hours.
+    const gate = requireWebhookSecret(integration?.webhook_secret);
+    if (!gate.ok) return { ok: false, error: gate.error };
+    const secret = gate.secret;
+
+    const sigHeader =
+      request.headers.get("x-uattend-signature") ??
+      request.headers.get("x-uattend-hmac") ??
+      "";
+    if (!sigHeader) return { ok: false, error: "missing_signature" };
+    const expected = createHmac("sha256", secret).update(raw).digest("hex");
+    const a = Buffer.from(expected, "hex");
+    const candidates = [
+      Buffer.from(sigHeader.replace(/^sha256=/, ""), "hex"),
+      Buffer.from(sigHeader.replace(/^sha256=/, ""), "base64"),
+    ];
+    const ok = candidates.some(
+      (c) => c.length === a.length && timingSafeEqual(c, a),
+    );
+    if (!ok) return { ok: false, error: "invalid_signature" };
 
     let payload: Record<string, unknown>;
     try {

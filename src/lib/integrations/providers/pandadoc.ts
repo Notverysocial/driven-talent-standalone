@@ -35,6 +35,7 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import { describeError } from "../describe-error";
+import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
 
 const PROVIDER = "pandadoc" as const;
@@ -314,26 +315,31 @@ class PandaDocClient implements IntegrationClient {
     const raw = await request.text();
 
     const integration = await getIntegration(PROVIDER);
-    const secret = integration?.webhook_secret ?? null;
-    if (secret) {
-      const sigHeader =
-        request.headers.get("x-signature") ??
-        request.headers.get("x-pandadoc-signature") ??
-        "";
-      if (!sigHeader) {
-        return { ok: false, error: "missing_signature" };
-      }
-      const expected = createHmac("sha256", secret).update(raw).digest("hex");
-      const a = Buffer.from(expected, "hex");
-      const candidates = [
-        Buffer.from(sigHeader.replace(/^sha256=/, ""), "hex"),
-        Buffer.from(sigHeader.replace(/^sha256=/, ""), "base64"),
-      ];
-      const valid = candidates.some(
-        (c) => c.length === a.length && timingSafeEqual(c, a),
-      );
-      if (!valid) return { ok: false, error: "invalid_signature" };
+
+    // Fail closed. This path is allowlisted in the proxy, so an unset secret
+    // would make it an open write endpoint — see webhook-auth.ts. This handler
+    // moves e-signature documents to signed.
+    const gate = requireWebhookSecret(integration?.webhook_secret);
+    if (!gate.ok) return { ok: false, error: gate.error };
+    const secret = gate.secret;
+
+    const sigHeader =
+      request.headers.get("x-signature") ??
+      request.headers.get("x-pandadoc-signature") ??
+      "";
+    if (!sigHeader) {
+      return { ok: false, error: "missing_signature" };
     }
+    const expected = createHmac("sha256", secret).update(raw).digest("hex");
+    const a = Buffer.from(expected, "hex");
+    const candidates = [
+      Buffer.from(sigHeader.replace(/^sha256=/, ""), "hex"),
+      Buffer.from(sigHeader.replace(/^sha256=/, ""), "base64"),
+    ];
+    const valid = candidates.some(
+      (c) => c.length === a.length && timingSafeEqual(c, a),
+    );
+    if (!valid) return { ok: false, error: "invalid_signature" };
 
     let payload: unknown;
     try {

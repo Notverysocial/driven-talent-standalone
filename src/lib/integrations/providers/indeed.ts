@@ -28,6 +28,7 @@ import {
   clearIntegrationTokens,
 } from "../db";
 import { describeError } from "../describe-error";
+import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
 
 const FEED_URL =
@@ -152,30 +153,35 @@ class IndeedClient implements IntegrationClient {
     const raw = await request.text();
 
     // Signature verification.  Indeed sends an HMAC-SHA1 hex digest in
-    // X-Indeed-Signature using the shared secret as the key.  If we have no
-    // secret stored, skip verification (dev / pre-go-live) but log it.
+    // X-Indeed-Signature using the shared secret as the key.
+    //
+    // This used to read "If we have no secret stored, skip verification (dev /
+    // pre-go-live)" — and did exactly that. With the path now allowlisted in
+    // the proxy, skipping verification means anyone can POST an applicant into
+    // the ATS. Fail closed instead; see webhook-auth.ts.
     const integration = await getIntegration("indeed");
-    const secret = integration?.webhook_secret ?? null;
-    if (secret) {
-      const sigHeader =
-        request.headers.get("x-indeed-signature") ??
-        request.headers.get("x-indeed-apply-signature") ??
-        "";
-      if (!sigHeader) {
-        return { ok: false, error: "missing_signature" };
-      }
-      const expected = createHmac("sha1", secret).update(raw).digest("hex");
-      const a = Buffer.from(expected, "hex");
-      // Indeed's header may be hex or base64 depending on version; try both.
-      const candidates = [
-        Buffer.from(sigHeader.replace(/^sha1=/, ""), "hex"),
-        Buffer.from(sigHeader.replace(/^sha1=/, ""), "base64"),
-      ];
-      const ok = candidates.some(
-        (c) => c.length === a.length && timingSafeEqual(c, a),
-      );
-      if (!ok) return { ok: false, error: "invalid_signature" };
+    const gate = requireWebhookSecret(integration?.webhook_secret);
+    if (!gate.ok) return { ok: false, error: gate.error };
+    const secret = gate.secret;
+
+    const sigHeader =
+      request.headers.get("x-indeed-signature") ??
+      request.headers.get("x-indeed-apply-signature") ??
+      "";
+    if (!sigHeader) {
+      return { ok: false, error: "missing_signature" };
     }
+    const expected = createHmac("sha1", secret).update(raw).digest("hex");
+    const a = Buffer.from(expected, "hex");
+    // Indeed's header may be hex or base64 depending on version; try both.
+    const candidates = [
+      Buffer.from(sigHeader.replace(/^sha1=/, ""), "hex"),
+      Buffer.from(sigHeader.replace(/^sha1=/, ""), "base64"),
+    ];
+    const ok = candidates.some(
+      (c) => c.length === a.length && timingSafeEqual(c, a),
+    );
+    if (!ok) return { ok: false, error: "invalid_signature" };
 
     let payload: Record<string, unknown>;
     try {
