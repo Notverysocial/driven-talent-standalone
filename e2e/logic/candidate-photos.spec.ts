@@ -71,6 +71,90 @@ test.describe("resolveCandidatePhotos — never takes the page down", () => {
     ).toEqual([]);
   });
 
+  // -------------------------------------------------------------------------
+  // THE REPORTED SYMPTOM: storage answers 200, with no error, and `data` is
+  // not an array.
+  //
+  // Reproduced on main 2026-07-23 with a stub returning `{"message": "..."}`:
+  //
+  //     HTTP 500
+  //     TypeError: data.filter is not a function
+  //       at listCandidatePhotos (src/lib/candidate-photos.server.ts:35:6)
+  //       at async CandidateDetailPage (src/app/candidates/[id]/page.tsx:48:95)
+  //
+  // `if (error || !data)` only rejects null/undefined. Every other non-array —
+  // an error envelope, an HTML page parsed as JSON, a wrapper object from a
+  // proxy — is truthy, reaches `.filter`, and takes the candidate record down.
+  //
+  // A try/catch alone is NOT a sufficient answer here. It converts most of
+  // these into an empty gallery by accident, via a TypeError whose message
+  // ("data.filter is not a function") describes our own crash rather than the
+  // upstream problem — and it does nothing at all for an array-LIKE object,
+  // which has .filter and .map, throws nothing, and hands a non-array straight
+  // to the page. Hence an explicit Array.isArray check.
+  // -------------------------------------------------------------------------
+  const NON_ARRAYS: [string, unknown][] = [
+    ["a bare object", {}],
+    ["an error envelope", { message: "unexpected envelope" }],
+    ["a wrapper object", { data: [{ name: "a.jpg", id: "1" }] }],
+    ["a string", "a string"],
+    ["a number", 123],
+    ["a boolean", true],
+  ];
+
+  for (const [label, data] of NON_ARRAYS) {
+    test(`THE TICKET: ${label} with no error degrades to no photos`, async () => {
+      const out = await resolveCandidatePhotos({
+        candidateId: "c1",
+        primaryUrl: null,
+        list: async () => ({ data: data as never, error: null }),
+        publicUrlFor: urlFor,
+      });
+      expect(Array.isArray(out), "the page needs a real array back").toBe(true);
+      expect(out).toEqual([]);
+    });
+  }
+
+  test("THE HOLE A try/catch MISSES: an array-LIKE object", async () => {
+    // Has .filter and .map, so nothing throws and a catch never fires — but
+    // what comes back is not an array, and the page maps over it.
+    const arrayLike = {
+      filter: () => ({ map: () => "NOT AN ARRAY" }),
+    };
+    const out = await resolveCandidatePhotos({
+      candidateId: "c1",
+      primaryUrl: null,
+      list: async () => ({ data: arrayLike as never, error: null }),
+      publicUrlFor: urlFor,
+    });
+    expect(Array.isArray(out)).toBe(true);
+    expect(out).toEqual([]);
+  });
+
+  test("the non-array case is REPORTED, not silently swallowed", async () => {
+    // Degrading quietly is how this class of bug survives. Name it.
+    const seen: string[] = [];
+    await resolveCandidatePhotos({
+      candidateId: "c1",
+      primaryUrl: null,
+      list: async () => ({ data: {} as never, error: null }),
+      publicUrlFor: urlFor,
+      onError: (m) => seen.push(m),
+    });
+    expect(seen.length).toBe(1);
+    expect(seen[0].toLowerCase()).toContain("array");
+  });
+
+  test("a real array is still not mistaken for a bad shape", async () => {
+    const out = await resolveCandidatePhotos({
+      candidateId: "c1",
+      primaryUrl: null,
+      list: async () => ({ data: [obj("a.jpg")], error: null }),
+      publicUrlFor: urlFor,
+    });
+    expect(out).toHaveLength(1);
+  });
+
   test("a null data set with no error also degrades", async () => {
     expect(
       await resolveCandidatePhotos({

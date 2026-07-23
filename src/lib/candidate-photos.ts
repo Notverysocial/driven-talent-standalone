@@ -81,6 +81,30 @@ export async function resolveCandidatePhotos(
       return [];
     }
 
+    // THE REPORTED SYMPTOM. Storage answers 200, no error, and `data` is not an
+    // array — an error envelope, an HTML page parsed as JSON, a wrapper object
+    // from something in the middle. `if (error || !data)` above rejects only
+    // null/undefined; every other non-array is truthy, reaches `.filter`, and
+    // took the whole candidate record down:
+    //
+    //     TypeError: data.filter is not a function
+    //       at listCandidatePhotos (candidate-photos.server.ts:35:6)
+    //       at async CandidateDetailPage (page.tsx:48:95)   -> HTTP 500
+    //
+    // The try/catch below is NOT the answer to this, for two reasons. It turns
+    // most of these into an empty gallery only by accident, reporting our own
+    // crash message instead of the upstream problem — and it does nothing at
+    // all for an array-LIKE object, which has .filter and .map, throws nothing,
+    // and would hand a non-array back to a page that maps over it.
+    if (!Array.isArray(data)) {
+      deps.onError?.(
+        `expected an array of storage objects, got ${
+          data === null ? "null" : typeof data
+        } — treating as no photos`,
+      );
+      return [];
+    }
+
     return data
       // storage.list returns a folder placeholder row with a null id; rendering
       // it would produce a broken image tile.
