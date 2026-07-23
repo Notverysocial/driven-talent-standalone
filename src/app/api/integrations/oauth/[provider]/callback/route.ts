@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getClient } from "@/lib/integrations/registry";
 import { isIntegrationProvider } from "@/lib/integrations/types";
+import { appBaseUrl } from "@/lib/app-url";
 
 // GET /api/integrations/oauth/<provider>/callback?code=...&state=...
 //
@@ -15,7 +16,11 @@ export async function GET(
 ): Promise<NextResponse> {
   const { provider } = await context.params;
   const url = new URL(request.url);
-  const origin = process.env.NEXT_PUBLIC_APP_URL ?? url.origin;
+  // Same resolver the providers build their redirect_uri from — if these two
+  // ever disagree, the provider bounces the user to an origin the OAuth app
+  // does not know about. This is the request-scoped call site, so the request
+  // origin is available as the last-resort fallback.
+  const origin = appBaseUrl(url.origin);
 
   if (!isIntegrationProvider(provider)) {
     return NextResponse.redirect(`${origin}/integrations?error=unknown_provider`);

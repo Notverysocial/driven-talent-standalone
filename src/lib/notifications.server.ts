@@ -3,6 +3,7 @@ import { createClient } from "./supabase/server";
 import { getCurrentUser } from "./auth.server";
 import { sendEmail } from "./email/resend.server";
 import type { AppNotification } from "./supabase/types";
+import { appBaseUrl } from "@/lib/app-url";
 
 // In-app notifications (migration 0034). Backs the team-tagging (@mention)
 // feature — an @mention inside an onboarding task writes a notification row
@@ -72,13 +73,6 @@ export async function listMyNotifications(): Promise<{
 // fail-safe sendEmail). Call this on notification CREATION only — never batch
 // over existing rows.
 
-function appBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    "https://driven-talent-standalone.vercel.app"
-  ).replace(/\/+$/, "");
-}
 
 function escapeHtml(s: string): string {
   return s

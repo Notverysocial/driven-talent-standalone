@@ -37,6 +37,12 @@ import {
 import { describeError } from "../describe-error";
 import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
+import { appBaseUrl, oauthCallbackUrl, webhookUrl } from "@/lib/app-url";
+
+// Built from the one base-URL source (src/lib/app-url.ts) rather than typed
+// out here. A domain switch used to mean editing eight literals across five
+// provider files, and forgetting one broke that integration silently.
+const APP_BASE_URL = appBaseUrl();
 
 const PROVIDER = "pandadoc" as const;
 
@@ -44,10 +50,8 @@ const AUTHORIZE_URL = "https://app.pandadoc.com/oauth2/authorize";
 const TOKEN_URL = "https://api.pandadoc.com/oauth2/access_token";
 const API_BASE = "https://api.pandadoc.com";
 
-const REDIRECT_URI =
-  "https://driven-talent-standalone.vercel.app/api/integrations/oauth/pandadoc/callback";
-const WEBHOOK_URL =
-  "https://driven-talent-standalone.vercel.app/api/integrations/webhook/pandadoc";
+const REDIRECT_URI = oauthCallbackUrl(APP_BASE_URL, "pandadoc");
+const WEBHOOK_URL = webhookUrl(APP_BASE_URL, "pandadoc");
 
 // PandaDoc requires `read+write` scope to create + send docs and to receive
 // webhooks for status changes.

@@ -45,6 +45,12 @@ import {
 import { describeError } from "../describe-error";
 import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
+import { appBaseUrl, oauthCallbackUrl, webhookUrl } from "@/lib/app-url";
+
+// Built from the one base-URL source (src/lib/app-url.ts) rather than typed
+// out here. A domain switch used to mean editing eight literals across five
+// provider files, and forgetting one broke that integration silently.
+const APP_BASE_URL = appBaseUrl();
 
 const PROVIDER = "ringcentral" as const;
 
@@ -54,10 +60,8 @@ function apiBase(): string {
     : "https://platform.ringcentral.com";
 }
 
-const REDIRECT_URI =
-  "https://driven-talent-standalone.vercel.app/api/integrations/oauth/ringcentral/callback";
-const WEBHOOK_URL =
-  "https://driven-talent-standalone.vercel.app/api/integrations/webhook/ringcentral";
+const REDIRECT_URI = oauthCallbackUrl(APP_BASE_URL, "ringcentral");
+const WEBHOOK_URL = webhookUrl(APP_BASE_URL, "ringcentral");
 
 // We subscribe to telephony session events for the connected extension.
 // telephony/sessions gives us the inbound-call lifecycle (Setup ->
