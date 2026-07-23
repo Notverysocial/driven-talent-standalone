@@ -1,8 +1,12 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/auth.server";
+import { requireUser } from "@/lib/auth.server";
 import { sendMentionEmail } from "@/lib/notifications.server";
 import { isOnboardingComplete } from "@/lib/onboarding";
 import type {
@@ -19,6 +23,7 @@ export async function setEmployeeLanguagePref(
   employeeId: string,
   next: LanguagePref,
 ) {
+  await requireUser();
   if (!LANGUAGE_PREFS.includes(next)) throw new Error(`Invalid language: ${next}`);
   const supabase = await createClient();
   const { error } = await supabase
@@ -45,6 +50,7 @@ export async function setPeopleaseFormStatus(
   employeeId: string,
   status: PeopleaseFormStatus,
 ) {
+  await requireUser();
   if (!PEOPLEASE_FORM_STATUS_VALUES.includes(status)) {
     throw new Error(`Invalid form status: ${status}`);
   }
@@ -67,6 +73,7 @@ export async function setItemStatus(
   employeeId: string,
   status: OnboardingStatus,
 ) {
+  await requireUser();
   if (!STATUS_VALUES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const supabase = await createClient();
   const { error } = await supabase
@@ -101,7 +108,7 @@ export async function mentionTeammateOnItem(
   const [tmRes, itemRes, me] = await Promise.all([
     supabase.from("team_members").select("full_name, email").eq("id", teamMemberId).maybeSingle(),
     supabase.from("onboarding_checklist_items").select("label").eq("id", itemId).maybeSingle(),
-    getCurrentUser(),
+    requireUser(),
   ]);
   const teammate = tmRes.data as { full_name: string; email: string | null } | null;
   const teammateName = teammate?.full_name;
@@ -144,6 +151,7 @@ export async function setItemNotes(
   employeeId: string,
   notes: string,
 ) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("onboarding_checklist_items")
@@ -154,6 +162,7 @@ export async function setItemNotes(
 }
 
 export async function toggleDocument(docId: string, employeeId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { data: row, error: getErr } = await supabase
     .from("onboarding_documents")
@@ -174,6 +183,7 @@ export async function toggleDocument(docId: string, employeeId: string) {
 }
 
 export async function addChecklistItem(employeeId: string, formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const key = (formData.get("key") as string)?.trim() || `custom-${Date.now()}`;
   const label = (formData.get("label") as string)?.trim();
@@ -195,6 +205,7 @@ export async function addChecklistItem(employeeId: string, formData: FormData) {
 }
 
 export async function addDocument(employeeId: string, formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const name = (formData.get("name") as string)?.trim();
   if (!name) return;
@@ -208,6 +219,7 @@ export async function addDocument(employeeId: string, formData: FormData) {
 }
 
 export async function saveWelcomeLetter(employeeId: string, body: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("welcome_letter_drafts")
@@ -217,6 +229,7 @@ export async function saveWelcomeLetter(employeeId: string, body: string) {
 }
 
 export async function markWelcomeLetterSent(employeeId: string) {
+  await requireUser();
   const supabase = await createClient();
   const now = new Date().toISOString();
   const { error: letterErr } = await supabase
@@ -247,6 +260,7 @@ export async function setEmployeeOnboardingStatus(
   employeeId: string,
   target: "active" | "onboarding",
 ) {
+  await requireUser();
   if (target !== "active" && target !== "onboarding") {
     throw new Error(`Invalid status: ${target}`);
   }
@@ -264,6 +278,7 @@ export async function setEmployeeOnboardingStatus(
 }
 
 export async function maybePromoteToActive(employeeId: string) {
+  await requireUser();
   const supabase = await createClient();
   const [emp, items] = await Promise.all([
     supabase.from("employees").select("status").eq("id", employeeId).single(),

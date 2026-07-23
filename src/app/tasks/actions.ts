@@ -1,14 +1,20 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { defaultReminderTimes } from "@/lib/legal-tasks";
 import type { TaskPriority, TaskStatus } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "blocked", "done", "cancelled"];
 const PRIORITIES: TaskPriority[] = ["low", "normal", "high", "urgent"];
 
 export async function createTask(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const title = (formData.get("title") as string)?.trim();
@@ -80,6 +86,7 @@ export async function createTask(formData: FormData) {
 }
 
 export async function updateTask(id: string, formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const title = (formData.get("title") as string)?.trim();
@@ -149,6 +156,7 @@ export async function updateTask(id: string, formData: FormData) {
 }
 
 export async function setTaskStatus(id: string, status: TaskStatus) {
+  await requireUser();
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const supabase = await createClient();
   const patch: { status: TaskStatus; completed_at?: string | null } = { status };
@@ -160,6 +168,7 @@ export async function setTaskStatus(id: string, status: TaskStatus) {
 }
 
 export async function deleteTask(id: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -167,6 +176,7 @@ export async function deleteTask(id: string) {
 }
 
 export async function acknowledgeReminder(reminderId: string) {
+  await requireUser();
   const supabase = await createClient();
   const nowIso = new Date().toISOString();
   const { error } = await supabase
@@ -178,6 +188,7 @@ export async function acknowledgeReminder(reminderId: string) {
 }
 
 export async function addReminder(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const taskId = (formData.get("task_id") as string)?.trim();
   const fireAt = (formData.get("fire_at") as string)?.trim();

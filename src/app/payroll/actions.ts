@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -13,8 +17,10 @@ import type {
   TimecardDays,
   TimecardFlags,
 } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 export async function createPayrollPeriod(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const start = formData.get("start_date") as string;
   const end = formData.get("end_date") as string;
@@ -34,6 +40,7 @@ export async function setPeriodStatus(
   status: PayrollPeriodStatus,
   approvedBy?: string,
 ) {
+  await requireUser();
   const supabase = await createClient();
   const update: Record<string, unknown> = { status };
   if (status === "approved") {
@@ -49,6 +56,7 @@ export async function setPeriodStatus(
 // Audit recomputes flags across all timecards in the period and links them
 // via payroll_period_id. Idempotent — operators can re-run.
 export async function auditPeriod(periodId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { data: period, error: pErr } = await supabase
     .from("payroll_periods")
@@ -87,6 +95,7 @@ export async function setTimecardFlag(
   periodId: string,
   patch: TimecardFlags,
 ) {
+  await requireUser();
   const supabase = await createClient();
   const { data: row, error: getErr } = await supabase
     .from("timecards")
@@ -117,6 +126,7 @@ export async function generateInvoicesForPeriod(
   periodId: string,
   ranBy?: string,
 ) {
+  await requireUser();
   const result = await commitInvoicesForPeriod(periodId, ranBy);
   revalidatePath(`/payroll/${periodId}`);
   revalidatePath("/payroll");
@@ -133,6 +143,7 @@ export async function regenerateInvoicesForPeriod(
   periodId: string,
   ranBy?: string,
 ) {
+  await requireUser();
   const result = await regenerateDraftInvoicesForPeriod(periodId, ranBy);
   revalidatePath(`/payroll/${periodId}`);
   revalidatePath("/payroll");
@@ -145,6 +156,7 @@ export async function regenerateInvoicesForPeriod(
 // align with each client's billing calendar (SOP shows ~4 days after
 // period-end, but it varies).
 export async function setPeriodInvoiceDate(periodId: string, invoiceDate: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("payroll_periods")
@@ -155,6 +167,7 @@ export async function setPeriodInvoiceDate(periodId: string, invoiceDate: string
 }
 
 export async function adjustSickBalance(employeeId: string, deltaHours: number) {
+  await requireUser();
   const supabase = await createClient();
   const { data: emp, error: getErr } = await supabase
     .from("employees")

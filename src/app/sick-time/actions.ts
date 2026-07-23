@@ -1,15 +1,21 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { SickEntryType } from "@/lib/supabase/types";
 import { CA_SICK_ACCRUAL_CAP_HOURS } from "@/lib/hr";
+import { requireUser } from "@/lib/auth.server";
 
 const VALID: SickEntryType[] = ["accrual", "usage", "adjustment", "payout"];
 
 // Log a sick-time entry and update the employee's running balance.
 // Capped at CA_SICK_ACCRUAL_CAP_HOURS on accrual; floored at 0 on usage.
 export async function logSickEntry(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const employeeId = (formData.get("employee_id") as string)?.trim();
@@ -77,6 +83,7 @@ function signedDelta(type: SickEntryType, hours: number): number {
 // the original entry's effect, then apply the edited one (with the same accrual
 // cap / zero floor as logging).
 export async function updateSickEntry(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const id = (formData.get("id") as string)?.trim();
@@ -143,6 +150,7 @@ export async function updateSickEntry(formData: FormData) {
 }
 
 export async function deleteSickEntry(entryId: string, employeeId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { data: entry, error: getErr } = await supabase
     .from("sick_time_entries")

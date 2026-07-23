@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser } from "@/lib/auth.server";
+import { requireUser } from "@/lib/auth.server";
 import { createClient } from "@/lib/supabase/server";
 
 // /account server actions — let a signed-in user edit their own
@@ -24,7 +24,7 @@ export async function updateProfile(
   _prev: ProfileState,
   formData: FormData,
 ): Promise<ProfileState> {
-  const me = await getCurrentUser();
+  const me = await requireUser();
   if (!me) return { error: "Not signed in." };
 
   const raw = String(formData.get("full_name") ?? "");
@@ -50,7 +50,7 @@ export async function changePassword(
   _prev: PasswordState,
   formData: FormData,
 ): Promise<PasswordState> {
-  const me = await getCurrentUser();
+  const me = await requireUser();
   if (!me) return { error: "Not signed in." };
   if (!me.email) {
     return {

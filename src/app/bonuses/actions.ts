@@ -1,8 +1,13 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { BonusKind, BonusStatus } from "@/lib/bonuses";
+import { requireUser } from "@/lib/auth.server";
 
 const KINDS: BonusKind[] = ["recruiter", "referral"];
 const STATUSES: BonusStatus[] = ["pending", "approved", "paid", "void"];
@@ -57,6 +62,7 @@ export async function createBonus(
   _prev: BonusFormState | undefined,
   formData: FormData,
 ): Promise<BonusFormState> {
+  await requireUser();
   const values = captureValues(formData);
   const errors: BonusFormErrors = {};
 
@@ -123,6 +129,7 @@ export async function createBonus(
 }
 
 export async function setBonusStatus(id: string, status: BonusStatus, approvedBy?: string | null) {
+  await requireUser();
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const sb = await createClient();
 
@@ -146,6 +153,7 @@ export async function setBonusStatus(id: string, status: BonusStatus, approvedBy
 }
 
 export async function markBonusPaid(id: string, formData: FormData) {
+  await requireUser();
   const sb = await createClient();
   const paidAt = (formData.get("paid_at") as string | null)?.trim() || new Date().toISOString().slice(0, 10);
   const payoutMethod = ((formData.get("payout_method") as string | null) ?? "").trim() || null;

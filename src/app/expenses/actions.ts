@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -13,6 +17,7 @@ import type {
   ReimbursementCategory,
   ReimbursementStatus,
 } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 // Returns the set of valid (active or not) category slugs so we can give a
 // friendly error instead of a raw FK violation.
@@ -36,6 +41,7 @@ const REIMBURSEMENT_STATUSES: ReimbursementStatus[] = [
 // ---------- Reimbursements ----------------------------------------------
 
 export async function createReimbursement(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const employeeId = (formData.get("employee_id") as string)?.trim();
@@ -82,6 +88,7 @@ export async function setReimbursementStatus(
   status: ReimbursementStatus,
   meta?: { approved_by?: string; paid_reference?: string; payment_method?: ExpensePaymentMethod; rejected_reason?: string },
 ) {
+  await requireUser();
   if (!REIMBURSEMENT_STATUSES.includes(status)) {
     throw new Error(`Invalid status: ${status}`);
   }
@@ -116,6 +123,7 @@ export async function setReimbursementStatus(
 // ---------- Expenses ----------------------------------------------------
 
 export async function createExpense(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const category = ((formData.get("category") as string) || "other").trim();
@@ -166,6 +174,7 @@ export async function createExpense(formData: FormData) {
 }
 
 export async function updateExpense(id: string, formData: FormData) {
+  await requireUser();
   if (!id) throw new Error("id is required");
   const supabase = await createClient();
 
@@ -208,6 +217,7 @@ export async function updateExpense(id: string, formData: FormData) {
 }
 
 export async function deleteExpense(id: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase.from("expenses").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -217,6 +227,7 @@ export async function deleteExpense(id: string) {
 // ---------- Expense category management (CR #9) -------------------------
 
 export async function createExpenseCategory(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const label = ((formData.get("label") as string) || "").trim();
   if (!label) throw new Error("Category name is required");
@@ -246,6 +257,7 @@ export async function createExpenseCategory(formData: FormData) {
 }
 
 export async function updateExpenseCategory(id: string, formData: FormData) {
+  await requireUser();
   if (!id) throw new Error("id is required");
   const supabase = await createClient();
   const label = ((formData.get("label") as string) || "").trim();
@@ -263,6 +275,7 @@ export async function updateExpenseCategory(id: string, formData: FormData) {
 }
 
 export async function setExpenseCategoryActive(id: string, isActive: boolean) {
+  await requireUser();
   if (!id) throw new Error("id is required");
   const supabase = await createClient();
   const { error } = await supabase

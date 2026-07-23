@@ -1,8 +1,13 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { ContactRole, ContactType } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 const TYPES: ContactType[] = ["employer", "job_seeker", "other"];
 const ROLES: ContactRole[] = [
@@ -26,6 +31,7 @@ function str(formData: FormData, name: string): string | null {
 }
 
 export async function createContact(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const fullName = str(formData, "full_name");
@@ -77,6 +83,7 @@ export async function createContact(formData: FormData) {
 }
 
 export async function updateContact(id: string, formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const fullName = str(formData, "full_name");
@@ -131,6 +138,7 @@ export async function updateContact(id: string, formData: FormData) {
 }
 
 export async function toggleContactFavorite(id: string, favorite: boolean) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("contacts")
@@ -141,6 +149,7 @@ export async function toggleContactFavorite(id: string, favorite: boolean) {
 }
 
 export async function markContacted(id: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("contacts")
@@ -151,6 +160,7 @@ export async function markContacted(id: string) {
 }
 
 export async function deleteContact(id: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase.from("contacts").delete().eq("id", id);
   if (error) throw new Error(error.message);

@@ -1,5 +1,12 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+//
+// This area is admin-only. See e2e/logic/server-action-gates.spec.ts for why
+// this file is classified admin rather than left at the authenticated floor.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { assertRole } from "@/lib/auth.server";
@@ -64,6 +71,7 @@ export async function removeRecruiter(id: string) {
  * table — the recruiter owns the row via the free-text `recruiter` column.
  */
 export async function createRecruiterCandidate(formData: FormData) {
+  await assertRole("admin");
   const sb = await createClient();
 
   const fullName = str(formData, "full_name");
@@ -98,6 +106,7 @@ export async function createRecruiterCandidate(formData: FormData) {
  * Edit a recruiter candidate's observations + contact / consideration info.
  */
 export async function updateRecruiterCandidate(id: string, formData: FormData) {
+  await assertRole("admin");
   const sb = await createClient();
 
   const fullName = str(formData, "full_name");
@@ -129,6 +138,7 @@ export async function updateRecruiterCandidate(id: string, formData: FormData) {
 
 /** Quick "did they respond?" toggle from the card. */
 export async function toggleResponded(id: string, responded: boolean) {
+  await assertRole("admin");
   const sb = await createClient();
   const { error } = await sb
     .from("candidates")
@@ -143,6 +153,7 @@ export async function toggleResponded(id: string, responded: boolean) {
  * candidate_photos bucket (created in 0031) and stores the public URL.
  */
 export async function uploadCandidatePhoto(id: string, formData: FormData) {
+  await assertRole("admin");
   const file = formData.get("photo") as File | null;
   if (!file || file.size === 0) return;
 

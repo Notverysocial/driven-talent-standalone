@@ -1,5 +1,12 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+//
+// This area is admin-only. See e2e/logic/server-action-gates.spec.ts for why
+// this file is classified admin rather than left at the authenticated floor.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -7,6 +14,7 @@ import { assertRole } from "@/lib/auth.server";
 import type { EmployeeStatus } from "@/lib/supabase/types";
 
 export async function createEmployee(formData: FormData) {
+  await assertRole("admin");
   const supabase = await createClient();
 
   const status = (formData.get("status") as string) || "onboarding";
@@ -56,6 +64,7 @@ export async function createEmployee(formData: FormData) {
 }
 
 export async function addAssignment(employeeId: string, formData: FormData) {
+  await assertRole("admin");
   const supabase = await createClient();
   const { error } = await supabase.from("employee_assignments").insert({
     employee_id: employeeId,
@@ -75,6 +84,7 @@ export async function addAssignment(employeeId: string, formData: FormData) {
 }
 
 export async function endAssignment(assignmentId: string, employeeId: string) {
+  await assertRole("admin");
   const supabase = await createClient();
   const { error } = await supabase
     .from("employee_assignments")
@@ -92,6 +102,7 @@ export async function endAssignment(assignmentId: string, employeeId: string) {
 // and position live on employee_assignments, not on the employee row, so the
 // edit form surfaces the chosen assignment and updates it in the same submit.
 export async function updateEmployee(employeeId: string, formData: FormData) {
+  await assertRole("admin");
   const supabase = await createClient();
 
   const fullName = (formData.get("full_name") as string)?.trim();
@@ -147,6 +158,7 @@ export async function updateEmployee(employeeId: string, formData: FormData) {
 const TOGGLEABLE_STATUSES: EmployeeStatus[] = ["active", "inactive", "onboarding"];
 
 export async function setEmployeeStatus(employeeId: string, status: EmployeeStatus) {
+  await assertRole("admin");
   if (!TOGGLEABLE_STATUSES.includes(status)) {
     throw new Error(`Status ${status} cannot be set from the roster`);
   }

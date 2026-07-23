@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -7,8 +11,10 @@ import { logActivity } from "@/lib/activity-log.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { InboundCallStatus } from "@/lib/recruiting";
 import type { CandidateStatus } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 export async function logInboundCall(formData: FormData) {
+  await requireUser();
   const sb = await createClient();
   const calledAtRaw = (formData.get("called_at") as string)?.trim();
 
@@ -28,6 +34,7 @@ export async function logInboundCall(formData: FormData) {
 }
 
 export async function updateCall(callId: string, formData: FormData) {
+  await requireUser();
   const sb = await createClient();
   const callerName = (formData.get("caller_name") as string)?.trim();
   if (!callerName) throw new Error("Caller name is required");
@@ -71,6 +78,7 @@ export async function updateCall(callId: string, formData: FormData) {
 }
 
 export async function deleteCall(callId: string) {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb.from("inbound_calls").delete().eq("id", callId);
   if (error) throw new Error(error.message);
@@ -78,6 +86,7 @@ export async function deleteCall(callId: string) {
 }
 
 export async function setCallStatus(callId: string, status: InboundCallStatus) {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb
     .from("inbound_calls")
@@ -88,6 +97,7 @@ export async function setCallStatus(callId: string, status: InboundCallStatus) {
 }
 
 export async function updateCallNotes(callId: string, notes: string) {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb
     .from("inbound_calls")
@@ -98,6 +108,7 @@ export async function updateCallNotes(callId: string, notes: string) {
 }
 
 export async function convertCallToCandidate(callId: string) {
+  await requireUser();
   const sb = await createClient();
 
   const { data: call, error: getErr } = await sb

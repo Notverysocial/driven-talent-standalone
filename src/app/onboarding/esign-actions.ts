@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 // TODO [GATED — PandaDoc integration, scheduled session]
 // Full PandaDoc signature-request + dashboard onboarding-link integration is
 // deferred to a scheduled session with live PandaDoc account access. The
@@ -13,6 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getActiveProvider, getProvider } from "@/lib/esign/provider";
 import { maybePromoteToActive } from "./actions";
 import type { EsignProvider as ProviderKey } from "@/lib/team";
+import { requireUser } from "@/lib/auth.server";
 
 // Map document_kind -> onboarding checklist key to flip Done when signed.
 const CHECKLIST_KEY_BY_KIND: Record<string, string | undefined> = {
@@ -24,6 +29,7 @@ export async function sendEsignatureRequest(
   employeeId: string,
   formData: FormData,
 ) {
+  await requireUser();
   const sb = await createClient();
 
   const documentKind = ((formData.get("document_kind") as string) || "").trim();
@@ -71,6 +77,7 @@ export async function markEsignatureSigned(
   requestId: string,
   employeeId: string,
 ) {
+  await requireUser();
   const sb = await createClient();
 
   const { data: row, error: getErr } = await sb
@@ -113,6 +120,7 @@ export async function cancelEsignatureRequest(
   requestId: string,
   employeeId: string,
 ) {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb
     .from("esignature_requests")
@@ -134,6 +142,7 @@ export async function getActiveEsignProviderInfo(): Promise<{
   label: string;
   status: "configured" | "missing_credentials" | "stub";
 }> {
+  await requireUser();
   const active = getActiveProvider();
   return { key: active.key, label: active.label, status: active.status() };
 }
@@ -143,6 +152,7 @@ export async function getProviderInfoByKey(key: ProviderKey): Promise<{
   label: string;
   status: "configured" | "missing_credentials" | "stub";
 }> {
+  await requireUser();
   const p = getProvider(key);
   return { key: p.key, label: p.label, status: p.status() };
 }

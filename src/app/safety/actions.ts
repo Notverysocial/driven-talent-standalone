@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -9,6 +13,7 @@ import type {
   WarningCategory,
   WarningLevel,
 } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 const INCIDENT_TYPES: IncidentType[] = [
   "injury",
@@ -53,6 +58,7 @@ const COMPLIANCE_FLAGS = [
 // ---------- Safety Incidents -------------------------------------------
 
 export async function createSafetyIncident(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const employeeId = (formData.get("employee_id") as string)?.trim();
@@ -111,6 +117,7 @@ export async function setIncidentStatus(
   employeeId: string,
   status: IncidentStatus,
 ) {
+  await requireUser();
   if (!INCIDENT_STATUSES.includes(status)) {
     throw new Error(`Invalid status: ${status}`);
   }
@@ -129,6 +136,7 @@ export async function markComplianceFlag(
   employeeId: string,
   field: (typeof COMPLIANCE_FLAGS)[number],
 ) {
+  await requireUser();
   if (!COMPLIANCE_FLAGS.includes(field)) {
     throw new Error(`Invalid compliance field: ${field}`);
   }
@@ -145,6 +153,7 @@ export async function markComplianceFlag(
 // ---------- Disciplinary Warnings ---------------------------------------
 
 export async function createWarning(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const employeeId = (formData.get("employee_id") as string)?.trim();
@@ -181,6 +190,7 @@ export async function createWarning(formData: FormData) {
 }
 
 export async function acknowledgeWarning(id: string, employeeId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("disciplinary_warnings")

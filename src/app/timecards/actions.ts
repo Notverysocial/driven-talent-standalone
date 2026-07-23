@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -12,8 +16,10 @@ import {
   type DayKey,
 } from "@/lib/timecards";
 import type { TimecardDay, TimecardDays } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 export async function createOrOpenTimecard(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   // The assignment <select> submits "employeeId|clientId|hourlyRate" as a
@@ -90,6 +96,7 @@ export async function updateDay(
   day: DayKey,
   patch: Partial<TimecardDay>,
 ) {
+  await requireUser();
   const supabase = await createClient();
   const { data: row, error: getErr } = await supabase
     .from("timecards")
@@ -125,6 +132,7 @@ export async function updateDay(
 }
 
 export async function submitTimecard(timecardId: string) {
+  await requireUser();
   const supabase = await createClient();
   // Auto-OT: anything over 40 reg hours rolls into OT before submission.
   const { data: row, error: getErr } = await supabase
@@ -157,6 +165,7 @@ export async function submitTimecard(timecardId: string) {
 }
 
 export async function approveTimecard(timecardId: string, approvedBy: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("timecards")
@@ -173,6 +182,7 @@ export async function approveTimecard(timecardId: string, approvedBy: string) {
 }
 
 export async function rejectTimecard(timecardId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("timecards")
@@ -184,6 +194,7 @@ export async function rejectTimecard(timecardId: string) {
 }
 
 export async function returnToDraft(timecardId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("timecards")

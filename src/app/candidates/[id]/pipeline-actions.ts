@@ -1,9 +1,14 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/activity-log.server";
 import { PIPELINE_STAGES, type PipelineStageKey } from "@/lib/pipeline";
+import { requireUser } from "@/lib/auth.server";
 
 // Y/N select ("" | "yes" | "no") -> nullable boolean, preserving the
 // "not yet answered" (null) state the Excel tracker couldn't express.
@@ -34,6 +39,7 @@ export async function savePipelineStage(
   stage: PipelineStageKey,
   formData: FormData,
 ): Promise<void> {
+  await requireUser();
   const supabase = await createClient();
 
   let patch: Record<string, unknown> = {};

@@ -1,11 +1,16 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { countInvoices } from "@/lib/invoices.server";
 import { getCompanySettings } from "@/lib/company.server";
 import { nextInvoiceNumber } from "@/lib/invoices";
+import { requireUser } from "@/lib/auth.server";
 
 type LineSeed = {
   department: string | null;
@@ -46,6 +51,7 @@ async function recomputeTotals(invoiceId: string) {
 }
 
 export async function generateInvoiceFromTimecards(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const clientId    = formData.get("client_id") as string;
   const periodStart = formData.get("period_start") as string;
@@ -169,6 +175,7 @@ export async function generateInvoiceFromTimecards(formData: FormData) {
 }
 
 export async function addLineItem(invoiceId: string, formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
   const hours = Number(formData.get("hours")) || 0;
   const ot = Number(formData.get("ot_hours")) || 0;
@@ -188,6 +195,7 @@ export async function addLineItem(invoiceId: string, formData: FormData) {
 }
 
 export async function removeLineItem(invoiceId: string, lineItemId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("invoice_line_items")
@@ -201,6 +209,7 @@ export async function removeLineItem(invoiceId: string, lineItemId: string) {
 // Edit core invoice fields (CR #8 — make invoice records editable). After
 // changing fee_pct / tax we recompute fee + total from the current subtotal.
 export async function updateInvoice(invoiceId: string, formData: FormData) {
+  await requireUser();
   if (!invoiceId) throw new Error("invoiceId is required");
   const supabase = await createClient();
 
@@ -243,6 +252,7 @@ export async function updateInvoice(invoiceId: string, formData: FormData) {
 }
 
 export async function sendInvoice(invoiceId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("invoices")
@@ -255,6 +265,7 @@ export async function sendInvoice(invoiceId: string) {
 }
 
 export async function markPaid(invoiceId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("invoices")
@@ -267,6 +278,7 @@ export async function markPaid(invoiceId: string) {
 }
 
 export async function markVoid(invoiceId: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("invoices")

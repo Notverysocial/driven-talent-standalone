@@ -1,8 +1,13 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { CalendarEventKind } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 const VALID_KINDS: CalendarEventKind[] = [
   "birthday",
@@ -72,6 +77,7 @@ function normalize(input: EventInput) {
 }
 
 export async function createEvent(input: EventInput) {
+  await requireUser();
   const supabase = await createClient();
   const row = normalize(input);
   const { error } = await supabase.from("calendar_events").insert(row);
@@ -80,6 +86,7 @@ export async function createEvent(input: EventInput) {
 }
 
 export async function updateEvent(id: string, input: EventInput) {
+  await requireUser();
   if (!id) throw new Error("id is required");
   const supabase = await createClient();
   const row = normalize(input);
@@ -93,6 +100,7 @@ export async function updateEvent(id: string, input: EventInput) {
 
 // Drag-to-move: only changes the date. Time/duration preserved.
 export async function moveEvent(id: string, newDate: string) {
+  await requireUser();
   if (!id) throw new Error("id is required");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
     throw new Error("newDate must be YYYY-MM-DD");
@@ -107,6 +115,7 @@ export async function moveEvent(id: string, newDate: string) {
 }
 
 export async function deleteEvent(id: string) {
+  await requireUser();
   if (!id) throw new Error("id is required");
   const supabase = await createClient();
   const { error } = await supabase
