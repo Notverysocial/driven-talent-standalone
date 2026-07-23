@@ -10,6 +10,10 @@ import {
 } from "@/lib/recruiting.server";
 import { INTAKE_STATUSES } from "@/lib/recruiting";
 import { IntakeResumeLink } from "../IntakeResumeLink";
+import {
+  RESUME_OUTCOME_LABEL,
+  readStoredResumeOutcome,
+} from "@/lib/intake-resume";
 import { CandidateNotes } from "@/components/CandidateNotes";
 import { listNotes } from "@/lib/candidate-notes.server";
 
@@ -36,6 +40,11 @@ export default async function ApplicationDetailPage(props: {
     notFound();
   }
   if (!detail) notFound();
+
+  // What actually happened to the resume on submission. Null for rows written
+  // before this was recorded — rendered as the old "Attached"/"—" in that case
+  // rather than being guessed at.
+  const resumeOutcome = readStoredResumeOutcome(detail.intake_payload);
 
   // Notes for the APPLICANT stage. Same log, same component, same server-side
   // author stamping as candidates — see migration 0050 for why this reuses
@@ -109,9 +118,18 @@ export default async function ApplicationDetailPage(props: {
                   : "—"
               }
             />
+            {/* A resume the applicant attached but that never reached storage
+                used to render here as "—", i.e. exactly like an applicant who
+                sent nothing. The recorded outcome, when present, says which. */}
             <DetailRow
               label="Resume"
-              value={detail.resume_url ? "Attached" : "—"}
+              value={
+                resumeOutcome
+                  ? RESUME_OUTCOME_LABEL[resumeOutcome.status]
+                  : detail.resume_url
+                    ? "Attached"
+                    : "—"
+              }
               valueNode={
                 detail.resume_url ? (
                   <IntakeResumeLink
@@ -120,6 +138,16 @@ export default async function ApplicationDetailPage(props: {
                     className="dt-btn dt-btn-ghost tiny"
                     style={{ fontSize: 11.5, padding: "4px 10px" }}
                   />
+                ) : resumeOutcome?.needsAttention ? (
+                  <span
+                    style={{
+                      color: "var(--dt-danger)",
+                      fontSize: 11.5,
+                      fontWeight: 500,
+                    }}
+                  >
+                    ⚠ {resumeOutcome.error}
+                  </span>
                 ) : undefined
               }
             />

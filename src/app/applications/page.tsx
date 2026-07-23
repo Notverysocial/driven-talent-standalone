@@ -190,9 +190,16 @@ export default async function ApplicationsPage({
         scriptWord={tb.scriptWord}
         title={tb.title}
         actions={
-          <Link href="/candidates" className="dt-btn">
-            Candidates →
-          </Link>
+          <>
+            {/* The applications that never made it into this list. Without a
+                link here the recovery desk exists but nobody finds it. */}
+            <Link href="/applications/attempts" className="dt-btn">
+              Failed submissions
+            </Link>
+            <Link href="/candidates" className="dt-btn">
+              Candidates →
+            </Link>
+          </>
         }
       />
 
