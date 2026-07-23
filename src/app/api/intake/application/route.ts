@@ -22,6 +22,11 @@
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
+import {
+  RESUME_OUTCOME_LABEL,
+  resolveResumeOutcome,
+  withinSizeCap,
+} from "@/lib/intake-resume";
 
 const ALLOWED_ORIGIN =
   process.env.DT_INTAKE_ALLOWED_ORIGIN ?? "https://driven-talent.com";
@@ -170,8 +175,16 @@ export async function POST(request: Request) {
   // private `resumes` bucket and keep its storage key), else fall back to any
   // URL string the form posted. Storage key (no scheme) vs external URL is
   // disambiguated downstream in promoteIntakeToCandidate.
-  let resumeRef: string | null = resume_url;
-  if (resumeFile && resumeFile.size <= 10 * 1024 * 1024) {
+  //
+  // The OUTCOME is now a value rather than an implicit null. This used to be
+  //     if (!upErr) resumeRef = key;
+  // with no else, so a failed upload — and any file over the size cap, which
+  // never attempted one — left resumeRef null, returned 201, and rendered in
+  // the ATS as "No resume": identical to an applicant who never attached one.
+  // See src/lib/intake-resume.ts.
+  let uploadedKey: string | null = null;
+  let uploadError: string | null = null;
+  if (resumeFile && withinSizeCap(resumeFile)) {
     const ext = resumeFile.name.split(".").pop()?.toLowerCase() ?? "pdf";
     const key = `intakes/${randomUUID()}.${ext}`;
     const { error: upErr } = await sb.storage
@@ -180,7 +193,25 @@ export async function POST(request: Request) {
         contentType: resumeFile.type || "application/octet-stream",
         upsert: false,
       });
-    if (!upErr) resumeRef = key;
+    if (upErr) uploadError = upErr.message;
+    else uploadedKey = key;
+  }
+
+  const resume = resolveResumeOutcome({
+    file: resumeFile ? { name: resumeFile.name, size: resumeFile.size } : null,
+    uploadedKey,
+    uploadError,
+    linkUrl: resume_url,
+  });
+  const resumeRef = resume.ref;
+
+  if (resume.needsAttention) {
+    // Loud in the logs, so this is greppable in Vercel runtime output rather
+    // than being reconstructed from a recruiter's confusion weeks later.
+    console.error(
+      `[intake] RESUME NOT STORED (${resume.status}) for ${full_name}` +
+        ` <${email ?? phone ?? "no contact"}>: ${resume.error}`,
+    );
   }
 
   // 1) Insert the intake row with the full raw payload preserved.
@@ -198,7 +229,12 @@ export async function POST(request: Request) {
       source: pickString(payload, ["source", "form_id", "page"]) ?? "driven-talent.com",
       user_agent: request.headers.get("user-agent"),
       ip_hash: hashIp(ip),
-      intake_payload: payload,
+      // The resume outcome rides in the existing jsonb rather than in new
+      // columns ON PURPOSE: migrations are not applied automatically in this
+      // project, so a schema-dependent fix would deploy AHEAD of its schema and
+      // 500 every inbound application. The key is namespaced so the raw-body
+      // re-mapping this column exists for can ignore it.
+      intake_payload: { ...payload, __dt_resume: resume },
     })
     .select("id")
     .single();
@@ -217,8 +253,23 @@ export async function POST(request: Request) {
   //    dormant; dropping them is a separate Antonio-only stop-point.
   const conversationId: string | null = null;
 
+  // The application landed — that is what `ok` means, and it stays true even
+  // when the resume did not, because 500ing here would make the public site's
+  // forwardToIntake() fire recoverIntakeDirect() and write the applicant a
+  // SECOND time. The resume block is how the caller learns the difference.
   return NextResponse.json(
-    { ok: true, intake_id: intake.id, conversation_id: conversationId },
+    {
+      ok: true,
+      intake_id: intake.id,
+      conversation_id: conversationId,
+      resume: {
+        status: resume.status,
+        label: RESUME_OUTCOME_LABEL[resume.status],
+        stored: resume.status === "stored",
+        needs_attention: resume.needsAttention,
+        error: resume.error,
+      },
+    },
     { status: 201, headers: corsHeaders() },
   );
 }
