@@ -1,9 +1,14 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { LOA_PROTECTED_BY_DEFAULT } from "@/lib/hr";
 import type { LoaStatus, LoaType } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 const TYPES: LoaType[] = [
   "medical",
@@ -26,6 +31,7 @@ const STATUSES: LoaStatus[] = [
 ];
 
 export async function createLoaRequest(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const employeeId = (formData.get("employee_id") as string)?.trim();
@@ -70,6 +76,7 @@ export async function setLoaStatus(
   status: LoaStatus,
   approvedBy?: string,
 ) {
+  await requireUser();
   if (!STATUSES.includes(status)) throw new Error(`Invalid status: ${status}`);
   const supabase = await createClient();
 
@@ -99,6 +106,7 @@ export async function setLoaStatus(
 }
 
 export async function updateLoaNotes(id: string, notes: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("leave_of_absence_requests")

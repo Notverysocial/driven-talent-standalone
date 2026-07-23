@@ -1,5 +1,12 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+//
+// This area is admin-only. See e2e/logic/server-action-gates.spec.ts for why
+// this file is classified admin rather than left at the authenticated floor.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -13,6 +20,7 @@ import {
   type WorkflowTriggerType,
   templateById,
 } from "@/lib/workflows";
+import { assertRole } from "@/lib/auth.server";
 
 // Form serialises actions as a JSON string under "definition_json". That
 // keeps the form server-action signature simple — the builder UI assembles
@@ -30,6 +38,7 @@ function parseDefinitionFromForm(fd: FormData): WorkflowDefinition {
 }
 
 export async function createWorkflow(formData: FormData): Promise<void> {
+  await assertRole("admin");
   const sb = await createClient();
 
   const name = ((formData.get("name") as string) ?? "").trim();
@@ -68,6 +77,7 @@ export async function createWorkflow(formData: FormData): Promise<void> {
 }
 
 export async function installTemplate(templateId: string): Promise<void> {
+  await assertRole("admin");
   const tpl = templateById(templateId);
   if (!tpl) throw new Error("Unknown template.");
 
@@ -91,6 +101,7 @@ export async function installTemplate(templateId: string): Promise<void> {
 }
 
 export async function updateWorkflow(workflowId: string, formData: FormData): Promise<void> {
+  await assertRole("admin");
   const sb = await createClient();
 
   const name = ((formData.get("name") as string) ?? "").trim();
@@ -125,6 +136,7 @@ export async function updateWorkflow(workflowId: string, formData: FormData): Pr
 }
 
 export async function toggleWorkflowEnabled(workflowId: string, nextEnabled: boolean): Promise<void> {
+  await assertRole("admin");
   const sb = await createClient();
   const { error } = await sb
     .from("workflows")
@@ -136,6 +148,7 @@ export async function toggleWorkflowEnabled(workflowId: string, nextEnabled: boo
 }
 
 export async function deleteWorkflow(workflowId: string): Promise<void> {
+  await assertRole("admin");
   const sb = await createClient();
   const { error } = await sb.from("workflows").delete().eq("id", workflowId);
   if (error) throw new Error(error.message);
@@ -146,6 +159,7 @@ export async function deleteWorkflow(workflowId: string): Promise<void> {
 // Triggers a test run with a synthetic payload so the user can verify
 // the recipe end-to-end without waiting for a real event.
 export async function testRunWorkflow(workflowId: string): Promise<void> {
+  await assertRole("admin");
   const sb = await createClient();
   const { data: wf } = await sb
     .from("workflows")
@@ -171,11 +185,13 @@ export async function testRunWorkflow(workflowId: string): Promise<void> {
 // fast-forward delayed actions during demos / testing without waiting
 // for the cron tick.
 export async function tickScheduledJobs(): Promise<void> {
+  await assertRole("admin");
   await processScheduledJobs({ limit: 100, now: new Date() });
   revalidatePath("/workflows");
 }
 
 export async function completeTask(taskId: string): Promise<void> {
+  await assertRole("admin");
   const sb = await createClient();
   const { error } = await sb
     .from("workflow_tasks")

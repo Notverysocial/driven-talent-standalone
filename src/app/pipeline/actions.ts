@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -8,6 +12,7 @@ import type {
   SalesLeadSource,
   SalesLeadStage,
 } from "@/lib/supabase/types";
+import { requireUser } from "@/lib/auth.server";
 
 function s(v: FormDataEntryValue | null): string | null {
   if (typeof v !== "string") return null;
@@ -39,6 +44,7 @@ async function logActivity(
 }
 
 export async function createSalesLead(formData: FormData) {
+  await requireUser();
   const sb = await createClient();
 
   const company_name = (s(formData.get("company_name")) ?? "").trim();
@@ -85,6 +91,7 @@ export async function setLeadStage(
   next: SalesLeadStage,
   actor?: string | null,
 ) {
+  await requireUser();
   const sb = await createClient();
   const { data: prev, error: getErr } = await sb
     .from("sales_leads")
@@ -117,6 +124,7 @@ export async function setLeadOwner(
   owner: string | null,
   actor?: string | null,
 ) {
+  await requireUser();
   const sb = await createClient();
   const cleaned = owner?.trim() || null;
 
@@ -149,6 +157,7 @@ export async function setLeadOwner(
 }
 
 export async function updateLeadDetails(leadId: string, formData: FormData) {
+  await requireUser();
   const sb = await createClient();
   const patch: Record<string, unknown> = {
     company_name:        s(formData.get("company_name")),
@@ -179,6 +188,7 @@ export async function updateLeadDetails(leadId: string, formData: FormData) {
 }
 
 export async function addLeadActivity(leadId: string, formData: FormData) {
+  await requireUser();
   const activity_type =
     (s(formData.get("activity_type")) as SalesLeadActivityType | null) ?? "note";
   const summary = (s(formData.get("summary")) ?? "").trim();

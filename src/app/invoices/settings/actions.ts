@@ -1,11 +1,20 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+//
+// This area is admin-only. See e2e/logic/server-action-gates.spec.ts for why
+// this file is classified admin rather than left at the authenticated floor.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { assertRole } from "@/lib/auth.server";
 
 // Update the singleton company_settings row (CR #8). Upsert on the fixed
 // id=true key so it works whether or not the seed row is present.
 export async function updateCompanySettings(formData: FormData) {
+  await assertRole("admin");
   const supabase = await createClient();
 
   const str = (k: string) => ((formData.get(k) as string) || "").trim();

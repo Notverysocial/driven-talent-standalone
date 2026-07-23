@@ -1,5 +1,9 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { findRehireMatches, type RehireMatch } from "@/lib/talent-pool.server";
@@ -7,6 +11,7 @@ import type {
   JobPostingPlatform,
   JobPostingStatus,
 } from "@/lib/job-postings";
+import { requireUser } from "@/lib/auth.server";
 
 // Surfaces already-vetted rehires before a recruiter posts externally.
 // Called from the MatchingPoolBanner client island on the Job Postings page.
@@ -14,6 +19,7 @@ export async function findRehireMatchesAction(input: {
   role?: string;
   location?: string;
 }): Promise<RehireMatch[]> {
+  await requireUser();
   return findRehireMatches({ role: input.role, location: input.location });
 }
 
@@ -25,6 +31,7 @@ function num(v: FormDataEntryValue | null): number | null {
 }
 
 export async function createJobPosting(formData: FormData) {
+  await requireUser();
   const sb = await createClient();
 
   const { error } = await sb.from("job_postings").insert({
@@ -48,6 +55,7 @@ export async function setJobPostingStatus(
   postingId: string,
   status: JobPostingStatus,
 ) {
+  await requireUser();
   const sb = await createClient();
   const patch: Record<string, unknown> = { status };
   if (status === "closed") patch.closed_at = new Date().toISOString().slice(0, 10);
@@ -62,6 +70,7 @@ export async function setApplicationCount(
   postingId: string,
   count: number,
 ) {
+  await requireUser();
   const sb = await createClient();
   const safe = Math.max(0, Math.floor(count));
   const { error } = await sb
@@ -73,6 +82,7 @@ export async function setApplicationCount(
 }
 
 export async function deleteJobPosting(postingId: string) {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb.from("job_postings").delete().eq("id", postingId);
   if (error) throw new Error(error.message);

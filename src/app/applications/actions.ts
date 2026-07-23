@@ -1,9 +1,13 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { logActivity } from "@/lib/activity-log.server";
-import { getCurrentUser } from "@/lib/auth.server";
+import { requireUser } from "@/lib/auth.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { ApplicationIntakeStatus } from "@/lib/recruiting";
 import type { CandidateStatus } from "@/lib/supabase/types";
@@ -22,6 +26,7 @@ export type PromoteResult =
 export async function getIntakeResumeHref(
   resumeRef: string | null | undefined,
 ): Promise<string | null> {
+  await requireUser();
   const ref = resumeRef?.trim();
   if (!ref) return null;
   if (/^https?:\/\//i.test(ref)) return ref; // external URL — already openable
@@ -37,6 +42,7 @@ export async function setIntakeStatus(
   intakeId: string,
   status: ApplicationIntakeStatus,
 ) {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb
     .from("application_intakes")
@@ -56,6 +62,7 @@ export async function setIntakeStatus(
  * candidate (CR #3 — "make applicant/candidate info editable").
  */
 export async function updateIntake(intakeId: string, formData: FormData) {
+  await requireUser();
   const sb = await createClient();
 
   const fullName = (formData.get("full_name") as string)?.trim() || null;
@@ -95,6 +102,7 @@ export async function updateIntake(intakeId: string, formData: FormData) {
 export async function promoteIntakeToCandidate(
   intakeId: string,
 ): Promise<PromoteResult> {
+  await requireUser();
   const sb = await createClient();
 
   // Auth — capture the promoter for audit, but don't block if the user
@@ -264,7 +272,7 @@ function buildCandidateNotes(opts: {
 // signed-in identity (the synthetic owner "Driven Talent" when AUTH_ENABLED off).
 export async function claimIntake(intakeId: string): Promise<void> {
   const sb = await createClient();
-  const me = await getCurrentUser();
+  const me = await requireUser();
   const who = me?.profile.full_name ?? "Unknown";
   const { error } = await sb
     .from("application_intakes")
@@ -278,6 +286,7 @@ export async function reassignIntake(
   intakeId: string,
   formData: FormData,
 ): Promise<void> {
+  await requireUser();
   const assignee = (formData.get("assignee") as string | null)?.trim();
   const sb = await createClient();
   const { error } = await sb

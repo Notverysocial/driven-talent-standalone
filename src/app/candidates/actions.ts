@@ -1,9 +1,13 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/auth.server";
+import { requireUser } from "@/lib/auth.server";
 import {
   CANDIDATE_STATUSES,
   DEFAULT_CRITERIA,
@@ -33,7 +37,7 @@ function screeningLabel(v: CandidateScreeningStatus | null): string {
 // signed-in identity (the synthetic owner "Driven Talent" when AUTH_ENABLED off).
 export async function claimCandidate(candidateId: string): Promise<void> {
   const sb = await createClient();
-  const me = await getCurrentUser();
+  const me = await requireUser();
   const who = me?.profile.full_name ?? "Unknown";
   const { error } = await sb
     .from("candidates")
@@ -59,6 +63,7 @@ export async function setCandidateLanguagePref(
   candidateId: string,
   next: LanguagePref,
 ) {
+  await requireUser();
   if (!LANGUAGE_PREFS.includes(next)) throw new Error(`Invalid language: ${next}`);
   const supabase = await createClient();
   const { error } = await supabase
@@ -81,6 +86,7 @@ export async function setCandidateLanguagePref(
 // (ported from the former Talent Pool page). Clears the DNR reason on the way
 // out of do_not_return.
 export async function reactivateCandidate(candidateId: string): Promise<void> {
+  await requireUser();
   const sb = await createClient();
   const { error } = await sb
     .from("candidates")
@@ -108,6 +114,7 @@ export async function markCandidateDoNotReturn(
   candidateId: string,
   reason: string,
 ): Promise<void> {
+  await requireUser();
   const sb = await createClient();
   const trimmed = reason.trim();
   const { error } = await sb
@@ -133,6 +140,7 @@ export async function markCandidateDoNotReturn(
 }
 
 export async function createCandidate(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   const certs = (formData.get("certifications") as string | null)
@@ -177,6 +185,7 @@ export async function updateCriterion(
   key: string,
   patch: { value?: number; note?: string },
 ) {
+  await requireUser();
   const supabase = await createClient();
   const { data: row, error: getErr } = await supabase
     .from("candidates")
@@ -209,6 +218,7 @@ export async function updateCriterion(
 }
 
 export async function updateNotes(candidateId: string, notes: string) {
+  await requireUser();
   const supabase = await createClient();
   const { error } = await supabase
     .from("candidates")
@@ -224,6 +234,7 @@ export async function updateNotes(candidateId: string, notes: string) {
 }
 
 export async function setStatus(candidateId: string, status: CandidateStatus) {
+  await requireUser();
   const supabase = await createClient();
   // Read the prior stage so the change log can show "from → to".
   const { data: prev } = await supabase
@@ -258,6 +269,7 @@ export async function setScreeningStatus(
   candidateId: string,
   next: CandidateScreeningStatus | null,
 ) {
+  await requireUser();
   if (next !== null && next !== "approved" && next !== "on_hold") {
     throw new Error(`Invalid screening status: ${next}`);
   }
@@ -286,6 +298,7 @@ export async function setScreeningStatus(
 }
 
 export async function uploadResume(candidateId: string, formData: FormData) {
+  await requireUser();
   const file = formData.get("resume") as File | null;
   if (!file || file.size === 0) return;
 
@@ -313,6 +326,7 @@ export async function uploadResume(candidateId: string, formData: FormData) {
 }
 
 export async function getResumeSignedUrl(path: string): Promise<string | null> {
+  await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase.storage
     .from("resumes")
@@ -322,6 +336,7 @@ export async function getResumeSignedUrl(path: string): Promise<string | null> {
 }
 
 export async function advanceToPlacement(candidateId: string) {
+  await requireUser();
   // Hire flow: candidate → employee + seed the 13-step onboarding template.
   // Operator fills in assignment + onboarding-in-charge on the roster/onboarding pages.
   const supabase = await createClient();
@@ -385,6 +400,7 @@ export async function sendOnboardingDoc(
   | { ok: true; document_id: string }
   | { ok: false; error: string }
 > {
+  await requireUser();
   const supabase = await createClient();
   const { data: cand, error } = await supabase
     .from("candidates")
@@ -449,6 +465,7 @@ export async function updateCandidateProfile(
   candidateId: string,
   formData: FormData,
 ) {
+  await requireUser();
   const supabase = await createClient();
 
   const skills = (formData.get("skills") as string | null)
@@ -560,7 +577,7 @@ export async function markOfferDocSentManually(
   candidateId: string,
 ): Promise<void> {
   const supabase = await createClient();
-  const me = await getCurrentUser();
+  const me = await requireUser();
   const who = me?.profile.full_name ?? "Unknown";
   const { error } = await supabase
     .from("candidates")
@@ -584,6 +601,7 @@ export async function uploadSignedOfferDoc(
   candidateId: string,
   formData: FormData,
 ): Promise<void> {
+  await requireUser();
   const file = formData.get("signed_doc") as File | null;
   if (!file || file.size === 0) return;
 
@@ -613,6 +631,7 @@ export async function uploadSignedOfferDoc(
 
 // Short-lived signed URL for a counter-signed offer doc (private bucket).
 export async function getSignedOfferDocUrl(path: string): Promise<string | null> {
+  await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase.storage
     .from("onboarding_docs")

@@ -1,9 +1,14 @@
 "use server";
 
+// AUTH: every export below is a directly-invocable endpoint, not a private
+// function — Next compiles each one into its own addressable POST. The gate
+// belongs on the ACTION, not only on the page that happens to render it.
+
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { AttendanceStatus } from "@/lib/supabase/types";
 import { EXCEPTION_STATUSES } from "@/lib/staffing";
+import { requireUser } from "@/lib/auth.server";
 
 // Only exception statuses can be logged through the attendance view; `present`
 // is the assumed default and is never written from here.
@@ -24,6 +29,7 @@ function revalidateAll(employeeId?: string) {
 // unique key means re-logging the same day updates the existing entry rather
 // than duplicating it.
 export async function addAttendanceException(formData: FormData) {
+  await requireUser();
   const supabase = await createClient();
 
   // The picker submits a combined "employeeId::clientId" value so a logged
@@ -54,6 +60,7 @@ export async function updateAttendanceException(
   id: string,
   fields: { status?: string; date?: string; notes?: string | null },
 ) {
+  await requireUser();
   const supabase = await createClient();
 
   const patch: Record<string, unknown> = {};
@@ -81,6 +88,7 @@ export async function updateAttendanceException(
 
 // Delete an incorrect exception entry.
 export async function deleteAttendanceException(id: string) {
+  await requireUser();
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("attendance_entries")

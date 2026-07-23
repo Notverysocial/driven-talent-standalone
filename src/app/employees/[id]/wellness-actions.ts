@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getCurrentUser } from "@/lib/auth.server";
+import { requireUser } from "@/lib/auth.server";
 import type { WellnessEntryType } from "@/lib/supabase/types";
 
 const ENTRY_TYPES: WellnessEntryType[] = [
@@ -29,7 +29,7 @@ export async function addWellnessNote(employeeId: string, formData: FormData) {
     ? (rawType as WellnessEntryType)
     : "note";
 
-  const me = await getCurrentUser();
+  const me = await requireUser();
   const explicitAuthor = ((formData.get("author_name") as string) || "").trim();
   const authorName =
     explicitAuthor || me?.profile.full_name || me?.email || "Unknown";

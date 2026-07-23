@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { assertRole, getCurrentUser } from "@/lib/auth.server";
+import { assertRole, requireUser } from "@/lib/auth.server";
 import {
   deleteAccessUser,
   inviteAccessUser,
@@ -67,7 +67,7 @@ export async function changeUserRole(formData: FormData): Promise<void> {
 
   // Guardrail: a user cannot demote themselves out of owner. Prevents
   // the only-owner-locks-themselves-out failure mode.
-  const me = await getCurrentUser();
+  const me = await requireUser();
   if (me && me.id === userId && me.profile.role === "owner" && role !== "owner") {
     throw new Error("You cannot demote yourself out of owner.");
   }
@@ -110,7 +110,7 @@ export async function removeUser(formData: FormData): Promise<void> {
   if (!userId) throw new Error("Missing user id");
 
   // Cannot remove yourself.
-  const me = await getCurrentUser();
+  const me = await requireUser();
   if (me && me.id === userId) {
     throw new Error("You cannot remove your own account from /access.");
   }
