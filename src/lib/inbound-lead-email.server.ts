@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "./supabase/server";
 import { sendEmail, resendConfigured } from "./email/resend.server";
 import type { SalesLead } from "./supabase/types";
+import { appBaseUrl } from "@/lib/app-url";
 
 // New-employer-lead email notification (revenue side).
 //
@@ -37,13 +38,6 @@ function lookbackDays(): number {
   return Number.isFinite(n) && n > 0 ? n : 3;
 }
 
-function appBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    "https://driven-talent-standalone.vercel.app"
-  ).replace(/\/+$/, "");
-}
 
 function escapeHtml(s: string): string {
   return s

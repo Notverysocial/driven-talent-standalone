@@ -71,7 +71,15 @@ interface IntegrationClient {
    Add provider client_id / client_secret to env (`<UPPER>_CLIENT_ID`,
    `<UPPER>_CLIENT_SECRET`) and the redirect URI in the provider
    dashboard pointing at
-   `https://driven-talent-standalone.vercel.app/api/integrations/oauth/<provider>/callback`.
+   `<APP_BASE_URL>/api/integrations/oauth/<provider>/callback`.
+
+   `<APP_BASE_URL>` is whatever `src/lib/app-url.ts` resolves — set
+   `NEXT_PUBLIC_SITE_URL` in the deployment env and it is that; with nothing
+   set it falls back to `LEGACY_PRODUCTION_ORIGIN`, the origin every provider
+   used to hardcode. Do not paste a literal here: the value registered with the
+   provider has to match what the app actually sends, and that is now derived
+   in one place rather than typed out per provider. Same for the webhook URL,
+   `<APP_BASE_URL>/api/integrations/webhook/<provider>`.
 
 ## OAuth callback flow
 

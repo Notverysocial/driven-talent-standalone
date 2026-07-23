@@ -30,11 +30,15 @@ import {
 import { describeError } from "../describe-error";
 import { requireWebhookSecret } from "../webhook-auth";
 import type { IntegrationClient, IntegrationRow } from "../types";
+import { appBaseUrl, webhookUrl } from "@/lib/app-url";
 
-const FEED_URL =
-  "https://driven-talent-standalone.vercel.app/api/integrations/indeed/feed";
-const WEBHOOK_URL =
-  "https://driven-talent-standalone.vercel.app/api/integrations/webhook/indeed";
+// Built from the one base-URL source (src/lib/app-url.ts) rather than typed
+// out here. A domain switch used to mean editing eight literals across five
+// provider files, and forgetting one broke that integration silently.
+const APP_BASE_URL = appBaseUrl();
+
+const FEED_URL = `${APP_BASE_URL}/api/integrations/indeed/feed`;
+const WEBHOOK_URL = webhookUrl(APP_BASE_URL, "indeed");
 
 class IndeedClient implements IntegrationClient {
   // Indeed uses API-key auth (Employer API token).  Skip OAuth.

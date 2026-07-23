@@ -53,6 +53,12 @@ import {
   type InterviewWritebackDecision,
 } from "../calendly-interview";
 import { normalizeEmail } from "@/lib/duplicates";
+import { appBaseUrl, oauthCallbackUrl, webhookUrl } from "@/lib/app-url";
+
+// Built from the one base-URL source (src/lib/app-url.ts) rather than typed
+// out here. A domain switch used to mean editing eight literals across five
+// provider files, and forgetting one broke that integration silently.
+const APP_BASE_URL = appBaseUrl();
 
 const PROVIDER = "calendly" as const;
 
@@ -60,10 +66,8 @@ const AUTHORIZE_URL = "https://auth.calendly.com/oauth/authorize";
 const TOKEN_URL = "https://auth.calendly.com/oauth/token";
 const API_BASE = "https://api.calendly.com";
 
-const REDIRECT_URI =
-  "https://driven-talent-standalone.vercel.app/api/integrations/oauth/calendly/callback";
-const WEBHOOK_URL =
-  "https://driven-talent-standalone.vercel.app/api/integrations/webhook/calendly";
+const REDIRECT_URI = oauthCallbackUrl(APP_BASE_URL, "calendly");
+const WEBHOOK_URL = webhookUrl(APP_BASE_URL, "calendly");
 
 class CalendlyClient implements IntegrationClient {
   // ---------------- OAuth ----------------
