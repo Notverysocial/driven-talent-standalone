@@ -17,7 +17,9 @@
 // Everything downstream of this file consumes the NORMALIZED domain types, so
 // the live ↔ mock swap and any field correction stay isolated here.
 
-export const UATTEND_BASE = "https://api.workwelltech.com";
+import { INTEGRATION_HOSTS } from "@/lib/integrations/integration-hosts";
+
+export const UATTEND_BASE = INTEGRATION_HOSTS.uattend;
 export const UATTEND_API_KEY_HEADER = "x-api-key";
 
 export const UATTEND_ENDPOINTS = {

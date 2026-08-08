@@ -25,6 +25,7 @@
 // Auth mode is "oauth" in types.ts.  PANDADOC_CLIENT_ID + PANDADOC_CLIENT_SECRET
 // must be set in Vercel (see dashboard setup checklist in the report).
 
+import { INTEGRATION_HOSTS } from "../integration-hosts";
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -46,9 +47,9 @@ const APP_BASE_URL = appBaseUrl();
 
 const PROVIDER = "pandadoc" as const;
 
-const AUTHORIZE_URL = "https://app.pandadoc.com/oauth2/authorize";
-const TOKEN_URL = "https://api.pandadoc.com/oauth2/access_token";
-const API_BASE = "https://api.pandadoc.com";
+const AUTHORIZE_URL = `${INTEGRATION_HOSTS.pandadocApp}/oauth2/authorize`;
+const TOKEN_URL = `${INTEGRATION_HOSTS.pandadocApi}/oauth2/access_token`;
+const API_BASE = INTEGRATION_HOSTS.pandadocApi;
 
 const REDIRECT_URI = oauthCallbackUrl(APP_BASE_URL, "pandadoc");
 const WEBHOOK_URL = webhookUrl(APP_BASE_URL, "pandadoc");

@@ -19,6 +19,7 @@
 // token via the /integrations Connect modal once Leangel's developer-portal
 // app is registered (see dashboard setup checklist in the report).
 
+import { INTEGRATION_HOSTS } from "../integration-hosts";
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -81,7 +82,7 @@ class IndeedClient implements IntegrationClient {
     // the token works, great — if not, we degrade.
     try {
       const res = await fetch(
-        "https://apis.indeed.com/employer/v1/jobs/stats",
+        `${INTEGRATION_HOSTS.indeedApi}/employer/v1/jobs/stats`,
         {
           method: "GET",
           headers: {

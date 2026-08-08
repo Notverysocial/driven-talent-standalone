@@ -11,7 +11,9 @@
 
 // Default API host. PrismHR tenants are host-specific; the real base is
 // supplied by Peoplease and stored on the integration row's config.api_base.
-export const PRISMHR_DEFAULT_BASE = "https://api.prismhr.com";
+import { INTEGRATION_HOSTS } from "@/lib/integrations/integration-hosts";
+
+export const PRISMHR_DEFAULT_BASE = INTEGRATION_HOSTS.prismhr;
 
 // The web-service credential is sent as an API key. The exact header/scheme
 // (Bearer token vs. basic web-service user, per PrismHR's auth) is confirmed at

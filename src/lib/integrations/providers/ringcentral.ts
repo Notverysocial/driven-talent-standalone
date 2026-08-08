@@ -33,6 +33,7 @@
 // checklist in the report). RINGCENTRAL_ENV (production | sandbox) toggles
 // the API host — defaults to production.
 
+import { INTEGRATION_HOSTS } from "../integration-hosts";
 import "server-only";
 import { timingSafeEqual } from "node:crypto";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -56,8 +57,8 @@ const PROVIDER = "ringcentral" as const;
 
 function apiBase(): string {
   return process.env.RINGCENTRAL_ENV === "sandbox"
-    ? "https://platform.devtest.ringcentral.com"
-    : "https://platform.ringcentral.com";
+    ? INTEGRATION_HOSTS.ringcentralSandbox
+    : INTEGRATION_HOSTS.ringcentralProd;
 }
 
 const REDIRECT_URI = oauthCallbackUrl(APP_BASE_URL, "ringcentral");

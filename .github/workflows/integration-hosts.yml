@@ -1,0 +1,50 @@
+# NON-REQUIRED, INFORMATIONAL — DNS-resolve every third-party integration host.
+#
+# WHY THIS EXISTS: the uAttend punch feed's base URL was
+# `https://api.uattend.com` from its very first commit. That hostname has no DNS
+# record and never had one, so the feed never worked — not "stopped working",
+# never. Nobody noticed for months, because the cron that would have exercised
+# it was separately being 307-redirected away by the auth proxy. This job would
+# have failed on the day that hostname was typed.
+#
+# WHY NON-REQUIRED: it depends on third-party DNS. A vendor blip, a registrar
+# hiccup, or a runner without egress must never block a merge. The signal here
+# is "someone look at this", not "stop the line". Making it required would
+# recreate the chronically-red check that this repo already had to fix once —
+# and a red check everyone ignores is worse than no check, because people
+# believe it is watching.
+#
+# The structural half of this guard IS required: e2e/logic/integration-hosts.spec.ts
+# fails the build if a host literal is declared anywhere except
+# src/lib/integrations/integration-hosts.ts. That part needs no network, so it
+# belongs in the required gate. This job checks that the declared hosts are real.
+
+name: integration-hosts
+
+on:
+  # Weekly: a host can die long after the code that names it was written, which
+  # is precisely the uAttend failure mode.
+  schedule:
+    - cron: "0 12 * * 1"
+  # And on demand, plus whenever the host table itself changes.
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/lib/integrations/integration-hosts.ts"
+      - "scripts/check-integration-hosts.mjs"
+      - ".github/workflows/integration-hosts.yml"
+
+jobs:
+  resolve:
+    name: resolve integration hosts (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No install step: the script is plain Node with no dependencies, reading
+      # the host table straight out of the TypeScript source.
+      - name: Resolve every declared integration host
+        run: node scripts/check-integration-hosts.mjs
