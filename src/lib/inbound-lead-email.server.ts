@@ -3,6 +3,7 @@ import { createClient } from "./supabase/server";
 import { sendEmail, resendConfigured } from "./email/resend.server";
 import type { SalesLead } from "./supabase/types";
 import { appBaseUrl } from "@/lib/app-url";
+import { isQuarantined } from "@/lib/lead-quarantine";
 
 // New-employer-lead email notification (revenue side).
 //
@@ -168,7 +169,13 @@ export async function notifyNewInboundLeads(): Promise<LeadNotifyResult> {
     return { ok: true, configured, considered: 0, sent: 0, note: "query_failed" };
   }
 
-  const leads = (data ?? []) as SalesLead[];
+  // Belt and braces on the spam quarantine. A quarantined lead is filed under
+  // source='other' precisely so the query above cannot see it, but this sweep is
+  // the one surface where a mistake actually reaches a person's inbox — so the
+  // marker is checked here too. If someone edits a lead's source back to
+  // inbound_web without clearing the marker, it still does not get emailed;
+  // restoring properly (the "Not spam" button on the lead) clears both.
+  const leads = ((data ?? []) as SalesLead[]).filter((l) => !isQuarantined(l));
   if (leads.length === 0) {
     return { ok: true, configured, considered: 0, sent: 0 };
   }

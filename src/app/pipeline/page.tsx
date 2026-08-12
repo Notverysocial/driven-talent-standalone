@@ -12,15 +12,28 @@ import {
   stageTone,
 } from "@/lib/sales-pipeline";
 import type { SalesLead, SalesLeadStage } from "@/lib/supabase/types";
-import { createSalesLead } from "./actions";
+import {
+  isQuarantined,
+  quarantineReasons,
+  quarantineScore,
+} from "@/lib/lead-quarantine";
+import { createSalesLead, restoreQuarantinedLead } from "./actions";
 import { StageMover } from "./StageMover";
 import { getServerDictionary } from "@/lib/i18n/server";
 
 export default async function SalesPipelinePage() {
-  const [leads, owners] = await Promise.all([
+  const [allLeads, owners] = await Promise.all([
     listSalesLeads(),
     listSalesOwners(),
   ]);
+
+  // Leads the public site auto-filed as suspected spam. They are held out of the
+  // board and every count on this page — otherwise the junk simply moves from
+  // the Dashboard into the "New" column and the problem is unchanged — and shown
+  // in their own section below, where a person can read them and restore any
+  // that turn out to be real. See src/lib/lead-quarantine.ts.
+  const quarantined = allLeads.filter(isQuarantined);
+  const leads = allLeads.filter((l) => !isQuarantined(l));
 
   const byStage = new Map<SalesLeadStage, SalesLead[]>();
   for (const s of SALES_LEAD_STAGES) byStage.set(s.id, []);
@@ -214,6 +227,81 @@ export default async function SalesPipelinePage() {
           })}
         </div>
       </div>
+
+      {/* Suspected spam — held out of every other count on this page */}
+      {quarantined.length > 0 && (
+        <div className="dt-card" style={{ marginBottom: 22 }}>
+          <div className="dt-card-head">
+            <div>
+              <h3>Suspected Spam</h3>
+              <div className="sub">
+                Auto-quarantined by the website form guard. Nobody was notified
+                and nothing was deleted — if one of these is a real employer,
+                press <strong>Not spam</strong> and it rejoins the inbound queue.
+              </div>
+            </div>
+            <Badge tone="red">{quarantined.length} held</Badge>
+          </div>
+          <div className="dt-table-wrap">
+            <table className="dt-table">
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 22 }}>Company / Contact</th>
+                  <th>Received</th>
+                  <th>Score</th>
+                  <th>Why it was flagged</th>
+                  <th style={{ textAlign: "right", paddingRight: 22 }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quarantined.map((l) => {
+                  const reasons = quarantineReasons(l);
+                  const score = quarantineScore(l);
+                  const restore = restoreQuarantinedLead.bind(null, l.id, null);
+                  return (
+                    <tr key={l.id}>
+                      <td style={{ paddingLeft: 22 }}>
+                        <Link href={`/pipeline/${l.id}`} style={{ fontWeight: 500 }}>
+                          {l.company_name}
+                        </Link>
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>
+                          {[l.contact_name, l.contact_email]
+                            .filter(Boolean)
+                            .join(" · ") || "—"}
+                        </div>
+                      </td>
+                      <td className="tab-num" style={{ fontSize: 12 }}>
+                        {fmtShortDate(l.created_at)}
+                      </td>
+                      <td className="tab-num" style={{ fontSize: 12 }}>
+                        {score ?? "—"}
+                      </td>
+                      <td style={{ fontSize: 12, color: "var(--dt-warm-500)" }}>
+                        {reasons.length ? (
+                          <ul style={{ margin: 0, paddingLeft: 16 }}>
+                            {reasons.map((r) => (
+                              <li key={r}>{r}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td style={{ textAlign: "right", paddingRight: 22 }}>
+                        <form action={restore}>
+                          <button type="submit" className="dt-btn">
+                            Not spam
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Closed (won/lost) summary table */}
       <div className="dt-card" style={{ marginBottom: 22 }}>
