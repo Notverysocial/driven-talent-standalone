@@ -13,6 +13,7 @@ import type {
   SalesLeadStage,
 } from "@/lib/supabase/types";
 import { requireUser } from "@/lib/auth.server";
+import { clearedSourceDetail, isQuarantined } from "@/lib/lead-quarantine";
 
 function s(v: FormDataEntryValue | null): string | null {
   if (typeof v !== "string") return null;
@@ -185,6 +186,68 @@ export async function updateLeadDetails(leadId: string, formData: FormData) {
 
   revalidatePath("/pipeline");
   revalidatePath(`/pipeline/${leadId}`);
+}
+
+/**
+ * "Not spam" — put an auto-quarantined lead back into the inbound queue.
+ *
+ * This is the escape hatch that makes the quarantine safe to have. The site's
+ * spam guard is deliberately biased towards quarantining rather than rejecting,
+ * which means the cost of a wrong call has to be one click, not a lost client:
+ *
+ *   source        -> 'inbound_web', so the Dashboard widget, the KPI, the
+ *                    sidebar badge and the notification sweep can all see it
+ *   source_detail -> marker, score and reasons stripped; which form it came
+ *                    from and its UTM tags kept, because those are still true
+ *   lead_notified_at -> cleared, so the next sweep emails the team about it
+ *                    exactly as if it had arrived clean
+ *
+ * The restore is recorded as an activity so the lead's history shows a person
+ * overruled the filter, and when.
+ */
+export async function restoreQuarantinedLead(
+  leadId: string,
+  actor?: string | null,
+) {
+  await requireUser();
+  const sb = await createClient();
+
+  const { data: lead, error: getErr } = await sb
+    .from("sales_leads")
+    .select("source_detail, next_action")
+    .eq("id", leadId)
+    .single();
+  if (getErr) throw new Error(getErr.message);
+
+  // Not quarantined (or already restored) — nothing to undo. Silent rather than
+  // an error, so a double-click on the button is harmless.
+  if (!isQuarantined(lead)) return;
+
+  const { error } = await sb
+    .from("sales_leads")
+    .update({
+      source: "inbound_web" as SalesLeadSource,
+      source_detail: clearedSourceDetail(lead),
+      lead_notified_at: null,
+      next_action: "Follow up on inbound employer form submission",
+    })
+    .eq("id", leadId);
+  if (error) throw new Error(error.message);
+
+  await logActivity(
+    leadId,
+    "note",
+    "Restored from spam quarantine — confirmed a real employer lead",
+    {
+      actor: actor ?? null,
+      body: `Was auto-quarantined as: ${lead.source_detail}`,
+      meta: { restored_from_quarantine: true },
+    },
+  );
+
+  revalidatePath("/pipeline");
+  revalidatePath(`/pipeline/${leadId}`);
+  revalidatePath("/dashboard");
 }
 
 export async function addLeadActivity(leadId: string, formData: FormData) {
