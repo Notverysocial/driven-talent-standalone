@@ -47,14 +47,22 @@ export function resolveCandidateFilters(
   };
 }
 
-/** Everything that defines the set, as a querystring. The "all" tab and empty
- *  values are omitted so links stay clean. */
+/** Everything that defines the set, as a querystring. Empty values are omitted
+ *  so links stay clean.
+ *
+ *  The tab is ALWAYS emitted, including "all". It used to be dropped on "all"
+ *  for tidier URLs, but an absent tab does not mean "all" — resolveCandidateFilters
+ *  reads it as *the viewer's default*, which is "mine" for a signed-in recruiter.
+ *  So a row opened from the All tab arrived at a detail page that rebuilt the
+ *  "mine" set instead, failed to find the candidate in it, and rendered no pager
+ *  at all. The list and the detail view have to agree on the set, and the only
+ *  way they can is if the URL says which one it is. */
 export function candidateContextParams(f: CandidateFilters): URLSearchParams {
   const p = new URLSearchParams();
   if (f.q) p.set("q", f.q);
   if (f.pos) p.set("pos", f.pos);
   if (f.client) p.set("client", f.client);
-  if (f.tab && f.tab !== "all") p.set("tab", f.tab);
+  if (f.tab) p.set("tab", f.tab);
   if (f.status) p.set("status", f.status);
   if (f.barred) p.set("barred", "1");
   return p;
