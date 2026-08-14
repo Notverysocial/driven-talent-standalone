@@ -11,10 +11,18 @@ import {
   tierLabel,
 } from "@/lib/candidates";
 import { listCandidates } from "@/lib/candidates.server";
-import { partitionBySendBar, sendBar } from "@/lib/candidate-eligibility";
+import { sendBar } from "@/lib/candidate-eligibility";
 import { listClientsForPicker } from "@/lib/legal-tasks.server";
-import { textMatches, idMatches } from "@/lib/filters";
-import type { Candidate, CandidateStatus } from "@/lib/supabase/types";
+import {
+  candidateContextParams,
+  isLifecycleTab as tabIsLifecycle,
+  isReadyToSendTab as tabIsReadyToSend,
+  resolveCandidateFilters,
+  selectCandidates,
+  type CandidateSearchParams,
+} from "@/lib/candidate-queue";
+import { queueDetailHref } from "@/lib/review-queue";
+import type { CandidateStatus } from "@/lib/supabase/types";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { CandidateStageMenu } from "./CandidateStageMenu";
 import { ClaimForMeButton, ReactivateButton } from "./AtsRowActions";
@@ -56,57 +64,39 @@ function eqi(a: string | null | undefined, b: string | null | undefined): boolea
 export default async function CandidatesListPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    q?: string; pos?: string; client?: string; tab?: string; status?: string;
-    /** "1" reveals candidates barred from being sent, on the ready-to-send
-     *  tabs where they are hidden by default. Opt-in and always announced. */
-    barred?: string;
-  }>;
+  searchParams: Promise<CandidateSearchParams>;
 }) {
   const sp = await searchParams;
-  const nameQuery = (sp.q ?? "").trim();
-  const posQuery = (sp.pos ?? "").trim();
-  const clientQuery = (sp.client ?? "").trim();
-  const statusQuery = (sp.status ?? "").trim();
-  const showBarred = sp.barred === "1";
 
-  // My Candidates is the default on login for a real recruiter; managers /
-  // the auth-off synthetic owner default to All (they see everyone).
   const me = await getCurrentUser();
   const viewerName = me?.profile.full_name ?? null;
   const isRealRecruiter = Boolean(me && me.id !== NIL_UUID);
   const isAdmin = roleAtLeast(me?.profile.role ?? "user", "admin");
-  const tab = (sp.tab ?? (isRealRecruiter ? "mine" : "all")).trim();
+
+  // The filter set + the selection it produces live in candidate-queue.ts,
+  // which the DETAIL page also uses so its Next button walks this exact table.
+  const filters = resolveCandidateFilters(sp, { isRealRecruiter });
+  const {
+    q: nameQuery,
+    pos: posQuery,
+    client: clientQuery,
+    status: statusQuery,
+    barred: showBarred,
+    tab,
+  } = filters;
   // The two lifecycle tabs (rehire pool / DNR) get a Reactivate action in the
   // Move column instead of the recruitment-stage menu (ported from Talent Pool).
-  const isLifecycleTab = tab === "available_for_rehire" || tab === "do_not_return";
-
-  // THE READY-TO-SEND TABS. Estefany described these as the candidates
-  // "ready to send out at any time" — the shortlist a recruiter pulls from
-  // when a client needs somebody now. A Do Not Return / Do Not Send person
-  // must not be sitting in it, because the failure mode is a recruiter under
-  // time pressure sending a barred person to a client.
-  //
-  // The DNR lifecycle TAB is excluded from this treatment for the obvious
-  // reason: looking at the DNR list is how you see barred people on purpose.
-  const isReadyToSendTab = tab === "screening_approved" || tab === "on_hold";
+  const isLifecycleTab = tabIsLifecycle(tab);
+  const isReadyToSendTab = tabIsReadyToSend(tab);
 
   // Simplify the ATS (card 02e36588) — build a candidates URL that preserves the
   // current search/tab/status context. Pass null to drop a key; defaults (tab
   // "all", empty values) are omitted so links stay clean.
   function hrefWith(overrides: Record<string, string | null>): string {
-    const base: Record<string, string> = {
-      q: nameQuery,
-      pos: posQuery,
-      client: clientQuery,
-      tab: tab === "all" ? "" : tab,
-      status: statusQuery,
-      barred: showBarred ? "1" : "",
-    };
-    const merged = { ...base, ...overrides };
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(merged)) {
+    const params = candidateContextParams(filters);
+    for (const [k, v] of Object.entries(overrides)) {
       if (v) params.set(k, v);
+      else params.delete(k);
     }
     const qs = params.toString();
     return `/candidates${qs ? `?${qs}` : ""}`;
@@ -118,45 +108,21 @@ export default async function CandidatesListPage({
     listRecruiters(),
   ]);
 
-  // Filter the pipeline by candidate name + position (case-insensitive
-  // substring, standardized in src/lib/filters.ts) and by client (exact
-  // client_id). All three compose with AND.
-  function matchesTab(c: Candidate): boolean {
-    switch (tab) {
-      case "all": return true;
-      case "mine": return eqi(c.recruiter, viewerName) || eqi(c.claimed_by, viewerName);
-      case "unassigned": return !c.recruiter && !c.claimed_by;
-      case "screening_approved": return c.screening_status === "approved";
-      case "on_hold": return c.screening_status === "on_hold";
-      case "available_for_rehire": return c.lifecycle_status === "available_for_rehire";
-      case "do_not_return": return c.lifecycle_status === "do_not_return";
-      default: return eqi(c.recruiter, tab) || eqi(c.claimed_by, tab);
-    }
-  }
-  // Candidates in the current tab + text/client context (before the stage
-  // filter). Drives the stage-tile counts so those counts don't change when a
-  // tile is selected.
-  const matched = allCandidates.filter(
-    (c) =>
-      textMatches(c.full_name, nameQuery) &&
-      textMatches(c.applied_for, posQuery) &&
-      idMatches(c.client_id, clientQuery) &&
-      matchesTab(c),
+  const { barredRows, candidates, visible } = selectCandidates(
+    allCandidates,
+    filters,
+    viewerName,
   );
-
-  // On the ready-to-send tabs, hold back anyone barred from being sent. The
-  // count is kept and REPORTED — a list that quietly drops people is its own
-  // kind of wrong, and hiding the number would just move the surprise later.
-  const { sendable, barred: barredRows } = isReadyToSendTab
-    ? partitionBySendBar(matched)
-    : { sendable: matched, barred: [] as typeof matched };
   const barredHeld = barredRows.length;
-  const candidates = isReadyToSendTab && !showBarred ? sendable : matched;
-  // The rows actually shown in the (now single) table — narrowed by the clicked
-  // stage tile, if any.
-  const visible = statusQuery
-    ? candidates.filter((c) => c.status === statusQuery)
-    : candidates;
+
+  // The context every candidate row links out with, plus each row's slot in the
+  // visible table — that pair is what lets the detail view page through this
+  // same set with Prev/Next.
+  const context = candidateContextParams(filters);
+  const rowIndex = new Map(visible.map((c, idx) => [c.id, idx]));
+  const detailHref = (id: string) =>
+    queueDetailHref("/candidates", id, context, rowIndex.get(id) ?? 0);
+
   const clientName =
     clients.find((cl) => cl.id === clientQuery)?.name ?? clientQuery;
 
@@ -460,7 +426,7 @@ export default async function CandidatesListPage({
                       <tr key={c.id}>
                         <td style={{ paddingLeft: 22 }}>
                           <Link
-                            href={`/candidates/${c.id}`}
+                            href={detailHref(c.id)}
                             className="dt-person dt-person-link"
                           >
                             <Avatar name={c.full_name} />

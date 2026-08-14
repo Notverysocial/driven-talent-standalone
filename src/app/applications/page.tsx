@@ -12,7 +12,15 @@ import {
 import { IntakeCard, type IntakeCalendlyContext } from "./IntakeCard";
 import { getServerDictionary } from "@/lib/i18n/server";
 import { getCalendlySchedulingContext } from "@/lib/integrations/calendly-scheduling.server";
-import { textMatches } from "@/lib/filters";
+import {
+  anyApplicationFilter,
+  applicationContextParams,
+  groupApplications,
+  monthKey,
+  readApplicationFilters,
+  type ApplicationSearchParams,
+} from "@/lib/application-queue";
+import { queueDetailHref } from "@/lib/review-queue";
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -21,9 +29,6 @@ function fmtDateTime(d: string | null) {
   });
 }
 
-function monthKey(d: string): string {
-  return d.slice(0, 7);
-}
 function monthLabel(key: string): string {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleString("en-US", { month: "long", year: "numeric" });
@@ -32,32 +37,22 @@ function monthLabel(key: string): string {
 export default async function ApplicationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    q?: string;
-    month?: string;
-    day?: string;
-    status?: string;
-    source?: string;
-    position?: string;
-    city?: string;
-    minExp?: string;
-    sort?: string;
-  }>;
+  searchParams: Promise<ApplicationSearchParams>;
 }) {
   const sp = await searchParams;
-  const search = (sp.q ?? "").trim();
-  const filterMonth = (sp.month ?? "").trim();
-  const filterDay = (sp.day ?? "").trim();
-  const filterStatusRaw = (sp.status ?? "").trim();
-  const filterSource = (sp.source ?? "").trim();
-  const filterPosition = (sp.position ?? "").trim();
-  const filterCity = (sp.city ?? "").trim();
-  const filterMinExpRaw = (sp.minExp ?? "").trim();
-  const filterMinExp = filterMinExpRaw ? Number(filterMinExpRaw) : null;
-  // Waiting-age sort (card cf34006d). DEFAULT is oldest-first so the longest-
-  // waiting applicants surface at the top of the New queue instead of being
-  // buried under the newest — the whole point is to work the queue oldest-first.
-  const sortMode = sp.sort === "newest" ? "newest" : "oldest";
+  // The filter set is read + applied by src/lib/application-queue.ts, which the
+  // DETAIL page also uses so its Next button walks this exact list.
+  const filters = readApplicationFilters(sp);
+  const {
+    q: search,
+    month: filterMonth,
+    day: filterDay,
+    source: filterSource,
+    position: filterPosition,
+    city: filterCity,
+    minExp: filterMinExpRaw,
+    sort: sortMode,
+  } = filters;
 
   const tb = (await getServerDictionary()).topbar.applications;
   const all = await listApplicationIntakes();
@@ -96,61 +91,31 @@ export default async function ApplicationsPage({
   const positions = Array.from(positionSet).sort();
   const cities = Array.from(citySet).sort();
 
-  const validStatus = INTAKE_STATUSES.some((s) => s.id === filterStatusRaw)
-    ? (filterStatusRaw as ApplicationIntakeStatus)
-    : undefined;
+  const validStatus = filters.status ?? undefined;
 
-  const searchLower = search.toLowerCase();
-  const intakes = all.filter((i) => {
-    if (filterMonth && (!i.created_at || monthKey(i.created_at) !== filterMonth)) return false;
-    if (filterDay && (!i.created_at || i.created_at.slice(0, 10) !== filterDay)) return false;
-    if (validStatus && i.status !== validStatus) return false;
-    if (filterSource && i.source !== filterSource) return false;
-    // Standardized position match: case-insensitive substring (shared with
-    // candidates + recruiters via src/lib/filters.ts) instead of exact match.
-    if (!textMatches(i.position_of_interest, filterPosition)) return false;
-    if (filterCity && i.city !== filterCity) return false;
-    if (filterMinExp !== null && !Number.isNaN(filterMinExp)) {
-      if (i.experience_years == null || i.experience_years < filterMinExp) return false;
-    }
-    if (searchLower) {
-      const hay = `${i.full_name ?? ""} ${i.position_of_interest ?? ""} ${i.email ?? ""}`.toLowerCase();
-      if (!hay.includes(searchLower)) return false;
-    }
-    return true;
-  });
+  // Filtering, sorting and grouping — shared with the detail view's pager, so
+  // "Next" cannot drift into a different set. `queue` is the three sections
+  // concatenated in render order, i.e. the order Next actually travels.
+  const { filtered: intakes, newIntakes, reviewed, promoted, queue } =
+    groupApplications(all, filters);
 
-  const anyFilter = Boolean(
-    search || filterMonth || filterDay || validStatus ||
-    filterSource || filterPosition || filterCity || filterMinExpRaw,
-  );
+  const anyFilter = anyApplicationFilter(filters);
 
   // Counts from the full data set so the KPI strip is a constant tally.
   const counts = new Map<ApplicationIntakeStatus, number>();
   for (const s of INTAKE_STATUSES) counts.set(s.id, 0);
   for (const i of all) counts.set(i.status, (counts.get(i.status) ?? 0) + 1);
 
-  // Sort by waiting age (created_at). Oldest-first (default) puts the longest-
-  // waiting applicants on top of the New queue.
-  const byAge = (a: ApplicationIntake, b: ApplicationIntake) => {
-    const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return sortMode === "oldest" ? ta - tb : tb - ta;
-  };
-  const newIntakes = intakes.filter((i) => i.status === "new").sort(byAge);
-  const reviewed = intakes.filter((i) => i.status !== "new" && i.status !== "promoted");
-  const promoted = intakes.filter((i) => i.status === "promoted");
+  // The context every applicant card links out with, plus each applicant's slot
+  // in it — that pair is what lets the detail view page through this same set.
+  const context = applicationContextParams(filters);
+  const queueIndex = new Map(queue.map((i, idx) => [i.id, idx]));
+  const detailHref = (id: string) =>
+    queueDetailHref("/applications", id, context, queueIndex.get(id) ?? 0);
 
-  // Build a base querystring that preserves the non-status filters.
-  const baseParams = new URLSearchParams();
-  if (search) baseParams.set("q", search);
-  if (filterMonth) baseParams.set("month", filterMonth);
-  if (filterDay) baseParams.set("day", filterDay);
-  if (filterSource) baseParams.set("source", filterSource);
-  if (filterPosition) baseParams.set("position", filterPosition);
-  if (filterCity) baseParams.set("city", filterCity);
-  if (filterMinExpRaw) baseParams.set("minExp", filterMinExpRaw);
-  if (sortMode !== "oldest") baseParams.set("sort", sortMode);
+  // Base querystring for the status tiles: the same context minus status.
+  const baseParams = new URLSearchParams(context);
+  baseParams.delete("status");
 
   // Sort toggle for the New queue (oldest-first is the default and the point).
   const sortToggle = (() => {
@@ -349,13 +314,13 @@ export default async function ApplicationsPage({
           empty state). With a status filter active, only render the groups
           that actually have matching rows. */}
       {(!validStatus || newIntakes.length > 0) && (
-        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
+        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
       )}
       {reviewed.length > 0 && (
-        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} />
+        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} />
       )}
       {promoted.length > 0 && (
-        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} />
+        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} />
       )}
 
       {all.length === 0 && (
@@ -398,6 +363,7 @@ function Section({
   fmt,
   calendly,
   recruiters,
+  detailHref,
   hideWhenEmpty = false,
   action,
 }: {
@@ -407,6 +373,8 @@ function Section({
   fmt: (d: string | null) => string;
   calendly: IntakeCalendlyContext;
   recruiters: string[];
+  /** Detail link carrying the current filters + this row's slot in the set. */
+  detailHref: (id: string) => string;
   hideWhenEmpty?: boolean;
   action?: React.ReactNode;
 }) {
@@ -439,7 +407,7 @@ function Section({
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
         {rows.map((intake) => (
-          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} recruiters={recruiters} />
+          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} recruiters={recruiters} detailHref={detailHref(intake.id)} />
         ))}
       </div>
     </div>

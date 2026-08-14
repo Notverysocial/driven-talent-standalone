@@ -32,11 +32,16 @@ export function IntakeCard({
   createdLabel,
   calendly,
   recruiters = [],
+  detailHref,
 }: {
   intake: ApplicationIntake;
   createdLabel: string;
   calendly: IntakeCalendlyContext;
   recruiters?: string[];
+  /** Built by the list page so it carries the current filters and this row's
+   *  slot in them — that is what the detail view's Prev/Next pages through.
+   *  Falls back to the bare detail URL (no pager) when absent. */
+  detailHref?: string;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -120,7 +125,7 @@ export function IntakeCard({
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start" }}>
         <Link
-          href={`/applications/${intake.id}`}
+          href={detailHref ?? `/applications/${intake.id}`}
           style={{
             flex: 1,
             minWidth: 0,
