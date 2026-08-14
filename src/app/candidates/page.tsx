@@ -181,7 +181,11 @@ export default async function CandidatesListPage({
           return (
             <Link
               key={t.key}
-              href={hrefWith({ tab: t.key === "all" ? "" : t.key, status: null })}
+              // The tab is named explicitly, "all" included. Dropping it left
+              // the All button pointing at a bare /candidates, which a signed-in
+              // recruiter's default resolves back to My Candidates — so All was
+              // unreachable by clicking it.
+              href={hrefWith({ tab: t.key, status: null })}
               className={"dt-btn" + (active ? " dt-btn-gold" : " dt-btn-ghost")}
               style={{ fontSize: 12, padding: "5px 12px" }}
             >
