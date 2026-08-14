@@ -16,6 +16,23 @@ import {
 } from "@/lib/intake-resume";
 import { CandidateNotes } from "@/components/CandidateNotes";
 import { listNotes } from "@/lib/candidate-notes.server";
+import { RecordPager } from "@/components/RecordPager";
+import { listApplicationIntakes } from "@/lib/recruiting.server";
+import {
+  applicationContextParams,
+  applicationListHref,
+  groupApplications,
+  readApplicationFilters,
+  type ApplicationSearchParams,
+} from "@/lib/application-queue";
+import {
+  cameFromList,
+  locateInQueue,
+  readCarriedIndex,
+  QUEUE_FROM_PARAM,
+  QUEUE_INDEX_PARAM,
+  type QueuePosition,
+} from "@/lib/review-queue";
 
 function fmtDateTime(d: string | null): string {
   if (!d) return "—";
@@ -30,8 +47,39 @@ function fmtDateTime(d: string | null): string {
 
 export default async function ApplicationDetailPage(props: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<
+    ApplicationSearchParams & { [QUEUE_FROM_PARAM]?: string; [QUEUE_INDEX_PARAM]?: string }
+  >;
 }) {
   const { id } = await props.params;
+  const sp = await props.searchParams;
+
+  // Prev/Next through the set the reviewer filtered to on /applications. The
+  // list is rebuilt here from the same querystring with the same pure functions
+  // the list page uses (groupApplications), so "next" is the next person in
+  // THAT set — not the next row of the unfiltered table. No pager when this
+  // page was reached by a deep link rather than from the list.
+  const fromList = cameFromList(sp[QUEUE_FROM_PARAM]);
+  let queuePosition: QueuePosition | null = null;
+  let listHref = "/applications";
+  let queueContext = new URLSearchParams();
+  if (fromList) {
+    const filters = readApplicationFilters(sp);
+    queueContext = applicationContextParams(filters);
+    listHref = applicationListHref(filters);
+    try {
+      const { queue } = groupApplications(await listApplicationIntakes(), filters);
+      queuePosition = locateInQueue(
+        queue.map((i) => i.id),
+        id,
+        readCarriedIndex(sp[QUEUE_INDEX_PARAM]),
+      );
+    } catch (err) {
+      // A failed list read costs the reviewer the pager, not the record.
+      console.error(`[applications/${id}] could not rebuild the review queue`, err);
+    }
+  }
+
   let detail: ApplicationIntakeDetail | null = null;
   try {
     detail = await getApplicationIntakeDetail(id);
@@ -75,9 +123,20 @@ export default async function ApplicationDetailPage(props: {
         scriptWord=""
         title={detail.full_name ?? "Unknown applicant"}
         actions={
-          <Link href="/applications" className="dt-btn">
-            ← All Applications
-          </Link>
+          <>
+            {/* Back to the list the reviewer came from, filters intact. */}
+            <Link href={listHref} className="dt-btn">
+              ← All Applications
+            </Link>
+            {queuePosition && (
+              <RecordPager
+                basePath="/applications"
+                position={queuePosition}
+                context={queueContext}
+                noun="applicant"
+              />
+            )}
+          </>
         }
       />
 

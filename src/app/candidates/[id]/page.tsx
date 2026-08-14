@@ -36,15 +36,74 @@ import { listCandidatePhotos } from "@/lib/candidate-photos.server";
 import { listCandidateInterviews } from "@/lib/interviews.server";
 import { findDuplicateCandidatesFor } from "@/lib/duplicates.server";
 import { isIntegrationWorking } from "@/lib/integrations/health.server";
+import { RecordPager } from "@/components/RecordPager";
+import { listCandidates } from "@/lib/candidates.server";
+import { getCurrentUser } from "@/lib/auth.server";
+import {
+  candidateContextParams,
+  candidateListHref,
+  resolveCandidateFilters,
+  selectCandidates,
+  type CandidateSearchParams,
+} from "@/lib/candidate-queue";
+import {
+  cameFromList,
+  locateInQueue,
+  readCarriedIndex,
+  QUEUE_FROM_PARAM,
+  QUEUE_INDEX_PARAM,
+  type QueuePosition,
+} from "@/lib/review-queue";
+
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 export default async function CandidateDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<
+    CandidateSearchParams & { [QUEUE_FROM_PARAM]?: string; [QUEUE_INDEX_PARAM]?: string }
+  >;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const cand = await getCandidate(id);
   if (!cand) notFound();
+
+  // Prev/Next through the set the reviewer filtered to on /candidates — the
+  // same tab, search, client and stage. The set is rebuilt here from the
+  // querystring with the same pure functions the list page uses
+  // (selectCandidates), so "next" is the next person in THAT set rather than
+  // the next row of the full ATS table. Deep links get no pager.
+  const fromList = cameFromList(sp[QUEUE_FROM_PARAM]);
+  let queuePosition: QueuePosition | null = null;
+  let listHref = "/candidates";
+  let queueContext = new URLSearchParams();
+  if (fromList) {
+    try {
+      const me = await getCurrentUser();
+      const filters = resolveCandidateFilters(sp, {
+        isRealRecruiter: Boolean(me && me.id !== NIL_UUID),
+      });
+      queueContext = candidateContextParams(filters);
+      listHref = candidateListHref(filters);
+      const { visible } = selectCandidates(
+        await listCandidates(),
+        filters,
+        me?.profile.full_name ?? null,
+      );
+      queuePosition = locateInQueue(
+        visible.map((c) => c.id),
+        id,
+        readCarriedIndex(sp[QUEUE_INDEX_PARAM]),
+      );
+    } catch (err) {
+      // A failed list read costs the reviewer the pager, not the record.
+      console.error(`[candidates/${id}] could not rebuild the review queue`, err);
+    }
+  }
+
   const [notes, activity, photos, interviews, duplicates, pandadocWorking, calendlyWorking] = await Promise.all([
     // Candidate notes PLUS everything written while they were still an
     // applicant, merged newest-first and labelled. Read-through by lineage —
@@ -85,9 +144,18 @@ export default async function CandidateDetailPage({
         title="Candidate"
         actions={
           <>
-            <Link href="/candidates" className="dt-btn">
+            {/* Back to the list the reviewer came from, filters intact. */}
+            <Link href={listHref} className="dt-btn">
               ← All Candidates
             </Link>
+            {queuePosition && (
+              <RecordPager
+                basePath="/candidates"
+                position={queuePosition}
+                context={queueContext}
+                noun="candidate"
+              />
+            )}
             <ScreeningStatusActions
               candidateId={cand.id}
               current={cand.screening_status}
