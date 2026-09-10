@@ -21,6 +21,9 @@ import {
   type ApplicationSearchParams,
 } from "@/lib/application-queue";
 import { queueDetailHref } from "@/lib/review-queue";
+import { AtsTabs } from "../candidates/AtsTabs";
+import { getNewIntakeBacklog } from "@/lib/recruiting.server";
+
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -69,6 +72,7 @@ export default async function ApplicationsPage({
   // Calendly context (connected + base URL + phone-screen slug) is read once
   // and handed to each intake card, which builds its own prefilled URL.
   const cal = await getCalendlySchedulingContext();
+  const backlog = await getNewIntakeBacklog();
   const calendly = {
     connected: cal.connected,
     schedulingUrl: cal.schedulingUrl,
@@ -166,6 +170,12 @@ export default async function ApplicationsPage({
             </Link>
           </>
         }
+      />
+
+      <AtsTabs
+        activeSection="applicants"
+        newApplicationsCount={backlog.count}
+        newApplicationsOldestDays={backlog.oldestDays}
       />
 
       <div

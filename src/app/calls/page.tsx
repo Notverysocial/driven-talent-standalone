@@ -8,6 +8,9 @@ import { CALL_STATUSES, type InboundCall, type InboundCallStatus } from "@/lib/r
 import { logInboundCall } from "./actions";
 import { CallRow } from "./CallRow";
 import { getServerDictionary } from "@/lib/i18n/server";
+import { AtsTabs } from "../candidates/AtsTabs";
+import { getNewIntakeBacklog } from "@/lib/recruiting.server";
+
 
 function fmtDateTime(d: string | null) {
   if (!d) return "—";
@@ -86,6 +89,7 @@ export default async function InboundCallsPage({
   for (const c of all) counts.set(c.follow_up_status, (counts.get(c.follow_up_status) ?? 0) + 1);
 
   const tb = (await getServerDictionary()).topbar.calls;
+  const backlog = await getNewIntakeBacklog();
 
   // Preserve the active filter querystring when toggling full-view.
   const baseParams = new URLSearchParams();
@@ -114,6 +118,16 @@ export default async function InboundCallsPage({
           </>
         }
       />
+
+      {/* Full view is the deliberate distraction-free mode for working the call
+          log, so the ATS bar stays out of it. */}
+      {!fullView && (
+        <AtsTabs
+          activeSection="calls"
+          newApplicationsCount={backlog.count}
+          newApplicationsOldestDays={backlog.oldestDays}
+        />
+      )}
 
       {!fullView && (
         <div
