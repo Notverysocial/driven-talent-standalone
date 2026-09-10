@@ -215,7 +215,7 @@ export const es: Dictionary = {
     kpiNewApplicantsSameAs: "igual que el mes pasado",
     kpiNewApplicantsVsLast: "vs. el mes pasado",
     applicantsPerMonthTitle: "Postulantes Por Mes",
-    applicantsPerMonthSub: "Sitio web · Indeed · Facebook · LinkedIn · Instagram — este año",
+    applicantsPerMonthSub: "Nuevos postulantes por origen — este año",
     applicantsPerMonthOpen: "Abrir Seguimiento de Postulantes",
   },
 

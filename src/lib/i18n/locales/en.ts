@@ -223,7 +223,7 @@ export const en = {
     kpiNewApplicantsSameAs: "same as last month",
     kpiNewApplicantsVsLast: "vs last month",
     applicantsPerMonthTitle: "Applicants Per Month",
-    applicantsPerMonthSub: "Website · Indeed · Facebook · LinkedIn · Instagram — this year",
+    applicantsPerMonthSub: "New applicants by source — this year",
     applicantsPerMonthOpen: "Open Applicant Tracking",
   },
 
