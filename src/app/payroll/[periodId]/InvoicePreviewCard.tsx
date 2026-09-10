@@ -9,7 +9,7 @@ import { fmtMoney } from "@/lib/payroll";
 // the run before committing.
 
 export function InvoicePreviewCard({ preview }: { preview: PeriodInvoicePreview }) {
-  const { groups, lastRun, totals } = preview;
+  const { groups, lastRun, totals, departmentWarnings } = preview;
   return (
     <div className="dt-card gold-edge" style={{ marginBottom: 22 }}>
       <div className="dt-card-head">
@@ -31,6 +31,33 @@ export function InvoicePreviewCard({ preview }: { preview: PeriodInvoicePreview 
           )}
         </div>
       </div>
+
+      {/* Per-department degradation. Rocio asked for FabFitFun invoices split
+          by department; when assignments carry no department they all collapse
+          into one "General" invoice and the run still reports success. The
+          invoice is not wrong, it is the wrong SHAPE — the hardest kind of
+          billing error to notice, so it gets said out loud here. */}
+      {departmentWarnings.length > 0 && (
+        <div
+          style={{
+            margin: "14px 18px 0",
+            padding: "10px 12px",
+            background: "rgba(230,145,0,0.08)",
+            border: "1px solid rgba(230,145,0,0.35)",
+            borderRadius: 6,
+            fontSize: 12,
+            lineHeight: 1.55,
+            color: "#9A5B00",
+          }}
+        >
+          <strong>Per-department invoicing will not apply.</strong>
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {departmentWarnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Billing-at-cost banner. This is the one failure mode that silently
           loses money: no markup anywhere means the client is charged exactly
