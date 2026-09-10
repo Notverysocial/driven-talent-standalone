@@ -29,6 +29,9 @@ import { ClaimForMeButton, ReactivateButton } from "./AtsRowActions";
 import { getCurrentUser, roleAtLeast } from "@/lib/auth.server";
 import { listRecruiters } from "@/lib/recruiters.server";
 import { RecruiterAdmin } from "../recruiters/RecruiterAdmin";
+import { AtsTabs } from "./AtsTabs";
+import { getNewIntakeBacklog } from "@/lib/recruiting.server";
+
 
 function fmtDate(d: string | null) {
   if (!d) return "—";
@@ -36,26 +39,6 @@ function fmtDate(d: string | null) {
 }
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
-
-// Change 2 (Leangel 2026-07-08) — ATS internal tabs (text-specified). The exact
-// tab-bar VISUAL, ordering, the Owner column + avatar, the "you" badge, and the
-// nav collapse of Candidates + Talent Pool + Recruiter Tabs into one "ATS" item
-// are MOCKUP-DEPENDENT (Mockup 2) and left for the visual pass. This ships the
-// tab structure + filtering behavior on the existing candidates list.
-const ATS_TABS: { key: string; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "mine", label: "⭐ My Candidates" },
-  { key: "unassigned", label: "Unassigned" },
-  { key: "Rocio", label: "Rocio" },
-  { key: "Estefany", label: "Estefany" },
-  { key: "Rodrigo", label: "Rodrigo" },
-  { key: "Priscila", label: "Priscila" },
-  { key: "Nathalia", label: "Nathalia" },
-  { key: "screening_approved", label: "✅ Screening Approved" },
-  { key: "on_hold", label: "⏸ On Hold" },
-  { key: "available_for_rehire", label: "Available for Rehire" },
-  { key: "do_not_return", label: "Do Not Return" },
-];
 
 function eqi(a: string | null | undefined, b: string | null | undefined): boolean {
   return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -68,6 +51,7 @@ export default async function CandidatesListPage({
 }) {
   const sp = await searchParams;
 
+  const backlog = await getNewIntakeBacklog();
   const me = await getCurrentUser();
   const viewerName = me?.profile.full_name ?? null;
   const isRealRecruiter = Boolean(me && me.id !== NIL_UUID);
@@ -161,39 +145,15 @@ export default async function CandidatesListPage({
           clean look is preserved. */}
       {isAdmin && <RecruiterAdmin recruiters={recruiters} />}
 
-      {/* ATS internal tabs — Change 2. The Owner column + "you" badge ship in
-          the table below (dt-* design system). NOTE(mockup): the exact tab-bar
-          visual/ordering and the nav merge into a single "ATS" item await
-          Mockup 2; this is the behavioral scaffold. */}
-      <div
-        style={{
-          display: "flex",
-          gap: 6,
-          flexWrap: "wrap",
-          marginBottom: 18,
-          borderBottom: "1px solid var(--dt-warm-150)",
-          paddingBottom: 10,
-        }}
-      >
-        {ATS_TABS.map((t) => {
-          const active = tab === t.key;
-          // Switching tab resets the stage-tile filter so counts read cleanly.
-          return (
-            <Link
-              key={t.key}
-              // The tab is named explicitly, "all" included. Dropping it left
-              // the All button pointing at a bare /candidates, which a signed-in
-              // recruiter's default resolves back to My Candidates — so All was
-              // unreachable by clicking it.
-              href={hrefWith({ tab: t.key, status: null })}
-              className={"dt-btn" + (active ? " dt-btn-gold" : " dt-btn-ghost")}
-              style={{ fontSize: 12, padding: "5px 12px" }}
-            >
-              {active ? <span>{t.label}</span> : t.label}
-            </Link>
-          );
-        })}
-      </div>
+      {/* ATS tab bar — Applicants and Inbound Calls now sit inside the ATS
+          alongside the candidate tabs (Estefany 2026-07-06). Shared component so
+          all three pages render the identical bar. */}
+      <AtsTabs
+        activeTab={tab}
+        hrefForTab={(key) => hrefWith({ tab: key, status: null })}
+        newApplicationsCount={backlog.count}
+        newApplicationsOldestDays={backlog.oldestDays}
+      />
 
       <div
         style={{

@@ -40,13 +40,19 @@ const NAV: NavEntry[] = [
   // deletion + messaging-table cleanup are an Antonio-only stop-point.
 
   { sectionKey: "recruiting" },
-  { id: "applications", labelKey: "applications", icon: "file",      href: "/applications" },
-  { id: "calls",        labelKey: "calls",        icon: "message",   href: "/calls" },
-  // ATS — Change 2 (Leangel 2026-07-08). Collapses the former Candidates,
-  // Talent Pool, and Recruiter Tabs items into one entry. The internal tabs
-  // (All · ⭐ My Candidates · Unassigned · <recruiters> · Available for Rehire ·
-  // Do Not Return) live on /candidates; /talent-pool and /recruiters redirect
-  // into those tabs so old links never 404.
+  // ATS — Change 2 (Leangel 2026-07-08), finished 2026-09-10. One nav entry for
+  // the whole funnel. It first collapsed Candidates + Talent Pool + Recruiter
+  // Tabs; Applicant Tracking and Inbound Calls were left beside it, so the team
+  // still had three doors into the same funnel. They are now the first two tabs
+  // on the shared ATS bar (app/candidates/AtsTabs.tsx), which renders on
+  // /candidates, /applications and /calls alike.
+  //
+  // Their routes are untouched — they hold real, different surfaces, and one
+  // section does not have to mean one table. /talent-pool and /recruiters still
+  // redirect into tabs so old links never 404.
+  //
+  // The unreviewed-intake badge moved with them onto the Applicants tab; it is
+  // load-bearing (card 1cb60f5c) and must not be dropped in a nav merge.
   { id: "ats",          labelKey: "ats",          icon: "star",      href: "/candidates" },
   { id: "positions",    labelKey: "positions",    icon: "clipboard", href: "/positions" },
   { id: "job-postings", labelKey: "jobPostings",  icon: "file",      href: "/job-postings" },
@@ -213,7 +219,11 @@ export function Sidebar({
               </span>
               <span>
                 {t(`nav.${entry.labelKey}`)}
-                {entry.id === "applications" && newApplicationsCount > 0 && (
+                {/* Retargeted from the removed "applications" entry onto ATS,
+                    which is where that backlog now lives. Dropping it would
+                    have removed the only app-wide view of an ageing intake
+                    pile (card 1cb60f5c). */}
+                {entry.id === "ats" && newApplicationsCount > 0 && (
                   // Backlog aging past a week turns the badge red and shows the
                   // oldest wait, so an aging pile of unreviewed intakes cannot be
                   // ignored (card 1cb60f5c).
