@@ -9,23 +9,11 @@ import type {
   OnboardingDocument,
   SickTimeEntry,
 } from "./supabase/types";
-import { weightedAttendancePct, countAttendance, isoDaysAgo } from "./staffing";
+import { isoDaysAgo } from "./staffing";
+import { buildRosterRows, type RosterEmployee, type RosterRow } from "./roster-rows";
+export type { RosterRow } from "./roster-rows";
 
-export type EmployeeWithJoins = Employee & {
-  employee_assignments: (EmployeeAssignment & { clients: Client })[];
-  attendance_entries: AttendanceEntry[];
-};
-
-export type RosterRow = {
-  employee: Employee;
-  assignment: EmployeeAssignment;
-  client: Client;
-  assignmentCount: number;
-  attendance30d: AttendanceEntry[];
-  attendancePct: number;
-  missedDays: number;
-  noShows: number;
-};
+export type EmployeeWithJoins = RosterEmployee;
 
 export async function listRoster(): Promise<{
   rows: RosterRow[];
@@ -38,9 +26,12 @@ export async function listRoster(): Promise<{
   const [empRes, clientsRes] = await Promise.all([
     supabase
       .from("employees")
+      // LEFT join, not inner: an employee with no active assignment must still
+      // appear, flagged as unassigned. The embedded `.active` filter below
+      // trims the assignment rows without dropping the employee.
       .select(`
         *,
-        employee_assignments!inner ( *, clients (*) ),
+        employee_assignments!left ( *, clients (*) ),
         attendance_entries ( * )
       `)
       .neq("status", "inactive")
@@ -54,25 +45,7 @@ export async function listRoster(): Promise<{
   if (clientsRes.error) throw new Error(clientsRes.error.message);
 
   const employees = (empRes.data ?? []) as unknown as EmployeeWithJoins[];
-
-  const rows: RosterRow[] = [];
-  for (const emp of employees) {
-    const assignmentCount = emp.employee_assignments.length;
-    for (const a of emp.employee_assignments) {
-      const att = emp.attendance_entries.filter((x) => x.client_id === a.client_id);
-      const counts = countAttendance(att);
-      rows.push({
-        employee: emp,
-        assignment: a,
-        client: a.clients,
-        assignmentCount,
-        attendance30d: att,
-        attendancePct: weightedAttendancePct(att),
-        missedDays: counts.missed + counts.noShow,
-        noShows: counts.noShow,
-      });
-    }
-  }
+  const rows = buildRosterRows(employees);
 
   return { rows, clients: (clientsRes.data ?? []) as Client[] };
 }
