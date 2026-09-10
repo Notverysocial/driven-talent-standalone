@@ -54,6 +54,10 @@ import {
   QUEUE_INDEX_PARAM,
   type QueuePosition,
 } from "@/lib/review-queue";
+import { DeleteCandidateButton } from "./DeleteCandidateButton";
+import { getCandidateDeleteImpact } from "../actions";
+import { roleAtLeast } from "@/lib/auth.server";
+
 
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
@@ -78,6 +82,19 @@ export default async function CandidateDetailPage({
   // the next row of the full ATS table. Deep links get no pager.
   const fromList = cameFromList(sp[QUEUE_FROM_PARAM]);
   let queuePosition: QueuePosition | null = null;
+  // Delete is admin-only, and refused outright for a hired candidate: that row
+  // is employment lineage — application_intakes points at it, and notes are
+  // read through it after promotion rather than moved.
+  const viewer = await getCurrentUser();
+  const canDelete = roleAtLeast(viewer?.profile.role ?? "user", "admin");
+  const deleteImpact = canDelete
+    ? await getCandidateDeleteImpact(cand.id)
+    : { interviews: 0, notes: 0, calls: 0, intakes: 0, bonuses: 0 };
+  const deleteBlockedReason =
+    cand.promoted_employee_id || cand.status === "hired"
+      ? `${cand.full_name} was hired and is linked to an employee record. Use Do Not Return, or set the status to Rejected, instead.`
+      : null;
+
   let listHref = "/candidates";
   let queueContext = new URLSearchParams();
   if (fromList) {
@@ -421,6 +438,26 @@ export default async function CandidateDetailPage({
             <div style={{ padding: "18px 24px 22px" }}>
               <CandidateProfileFields cand={cand} />
             </div>
+            {/* Delete lives at the bottom of the profile card, admin-only, and
+                behind a typed confirmation — see DeleteCandidateButton for why
+                the schema makes that necessary rather than decorative. */}
+            {canDelete && (
+              <div
+                style={{
+                  borderTop: "1px solid var(--dt-warm-150)",
+                  padding: "14px 24px 18px",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <DeleteCandidateButton
+                  candidateId={cand.id}
+                  candidateName={cand.full_name}
+                  impact={deleteImpact}
+                  blockedReason={deleteBlockedReason}
+                />
+              </div>
+            )}
           </div>
 
           <div className="dt-card gold-edge">

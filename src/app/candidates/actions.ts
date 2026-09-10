@@ -7,7 +7,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireUser } from "@/lib/auth.server";
+import { assertRole, requireUser } from "@/lib/auth.server";
 import {
   CANDIDATE_STATUSES,
   DEFAULT_CRITERIA,
@@ -638,4 +638,117 @@ export async function getSignedOfferDocUrl(path: string): Promise<string | null>
     .createSignedUrl(path, 60 * 10);
   if (error) return null;
   return data.signedUrl;
+}
+
+// ---------------------------------------------------------------------------
+// Delete a candidate.
+//
+// There was no delete control at all — the only way to remove a candidate was
+// a DBA. That is a real gap for the obvious cases: a duplicate, a spam intake
+// that got promoted by mistake, a test record.
+//
+// It is guarded harder than it looks like it needs to be, because the schema
+// gives almost no protection of its own. Nothing references candidates with
+// ON DELETE RESTRICT, so a plain delete ALWAYS succeeds and quietly takes the
+// surrounding data with it:
+//
+//   interviews            ON DELETE CASCADE  → rows destroyed
+//   conversations         ON DELETE SET NULL → thread detached
+//   application_intakes   ON DELETE SET NULL → the promote linkage is severed
+//   inbound_calls         ON DELETE SET NULL → call history detached
+//   bonuses               ON DELETE SET NULL → payment record detached
+//   sales_leads           ON DELETE SET NULL → conversion record detached
+//   candidate_notes       NO FOREIGN KEY     → orphaned forever, silently
+//
+// So: hired candidates are refused outright, notes are cleaned up by hand
+// because the database will not do it, and what is about to happen is counted
+// and written to the activity log BEFORE the row goes.
+export type DeleteCandidateImpact = {
+  interviews: number;
+  notes: number;
+  calls: number;
+  intakes: number;
+  bonuses: number;
+};
+
+/** What a delete would destroy or detach. Read-only — safe to call to render a warning. */
+export async function getCandidateDeleteImpact(
+  candidateId: string,
+): Promise<DeleteCandidateImpact> {
+  await requireUser();
+  const sb = await createClient();
+  const count = async (table: string, column: string) => {
+    const { count: n } = await sb
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq(column, candidateId);
+    return n ?? 0;
+  };
+  const [interviews, calls, intakes, bonuses] = await Promise.all([
+    count("interviews", "candidate_id"),
+    count("inbound_calls", "candidate_id"),
+    count("application_intakes", "promoted_candidate_id"),
+    count("bonuses", "candidate_id"),
+  ]);
+  const { count: notes } = await sb
+    .from("candidate_notes")
+    .select("id", { count: "exact", head: true })
+    .eq("subject_type", "candidate")
+    .eq("subject_id", candidateId);
+  return { interviews, notes: notes ?? 0, calls, intakes, bonuses };
+}
+
+export async function deleteCandidate(candidateId: string) {
+  await assertRole("admin");
+  const sb = await createClient();
+
+  const { data: cand, error: getErr } = await sb
+    .from("candidates")
+    .select("id, full_name, status, promoted_employee_id")
+    .eq("id", candidateId)
+    .maybeSingle();
+  if (getErr) throw new Error(getErr.message);
+  if (!cand) throw new Error("Candidate not found.");
+
+  // A candidate who became an employee is employment lineage, not a record to
+  // tidy away. Their notes are read through this row (candidate_notes survives
+  // promotion by lineage, it does not move), and application_intakes points at
+  // it to show where the hire came from. Deleting breaks both, silently.
+  if (cand.promoted_employee_id || cand.status === "hired") {
+    throw new Error(
+      `${cand.full_name} was hired and is linked to an employee record. ` +
+        "Deleting would break that employee's history. Use Do Not Return, or " +
+        "set the status to Rejected, instead.",
+    );
+  }
+
+  const impact = await getCandidateDeleteImpact(candidateId);
+
+  // Logged BEFORE the delete: afterwards there is no subject left to attach to,
+  // and this is the only trace that will remain.
+  await logActivity({
+    subjectId: candidateId,
+    action: "deleted",
+    summary:
+      `Candidate deleted — ${cand.full_name}. Removed ${impact.interviews} interview(s), ` +
+      `${impact.notes} note(s); detached ${impact.calls} call(s), ${impact.intakes} intake(s), ` +
+      `${impact.bonuses} bonus record(s).`,
+  });
+
+  // candidate_notes has NO foreign key to candidates (subject_id is a bare
+  // uuid, so the table can serve applicants/onboarding/employees too). Nothing
+  // cascades. Clean them up here or they orphan permanently.
+  const { error: notesErr } = await sb
+    .from("candidate_notes")
+    .delete()
+    .eq("subject_type", "candidate")
+    .eq("subject_id", candidateId);
+  if (notesErr) throw new Error(notesErr.message);
+
+  const { error: delErr } = await sb.from("candidates").delete().eq("id", candidateId);
+  if (delErr) throw new Error(delErr.message);
+
+  revalidatePath("/candidates");
+  revalidatePath("/dashboard");
+  redirect("/candidates");
 }
