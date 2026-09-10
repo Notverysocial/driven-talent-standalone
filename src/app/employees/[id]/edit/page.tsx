@@ -6,6 +6,10 @@ import { getEmployeeProfile } from "@/lib/employees.server";
 import { listClientsForPicker } from "@/lib/hr.server";
 import { listTeamMembersForPicker } from "@/lib/legal-tasks.server";
 import { POSITIONS, DEPARTMENTS, SHIFTS } from "@/lib/staffing";
+// A client that bills under its own coded departments gets those names, so the
+// string on our invoice matches the one they reconcile against. FabFitFun bills
+// "503 Inventory Control", not "Inventory".
+import { departmentOptionsFor } from "@/lib/client-departments";
 import { addAssignment, updateEmployee } from "@/app/roster/actions";
 
 export default async function EditEmployeePage({
@@ -90,7 +94,7 @@ export default async function EditEmployeePage({
                 label="Department"
                 name="department"
                 defaultValue={primary.department}
-                options={dedupeOptions([primary.department, ...DEPARTMENTS])}
+                options={dedupeOptions([primary.department, ...departmentOptionsFor(primary.client.name), ...DEPARTMENTS])}
               />
               <SelectField
                 label="Shift"

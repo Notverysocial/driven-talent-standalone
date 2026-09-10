@@ -21,6 +21,10 @@ import { nextInvoiceNumber } from "./invoices";
 import { countInvoices } from "./invoices.server";
 import { resolveMarkup, summariseSources, type MarkupSource, type ResolvedMarkup } from "./markup";
 import type { InvoiceRun, PayrollPeriod } from "./supabase/types";
+// Shared with lib/client-departments.ts so the invoice grouping and the
+// coverage warning cannot disagree about what "no department" collapses to.
+import { DEFAULT_DEPARTMENT as DEFAULT_DEPT, departmentCoverage, hasCodedDepartments } from "./client-departments";
+
 
 export type InvoicePreviewLine = {
   employeeId: string;
@@ -64,6 +68,12 @@ export type InvoicePreviewGroup = {
 export type PeriodInvoicePreview = {
   period: PayrollPeriod;
   groups: InvoicePreviewGroup[];
+  /**
+   * Clients that bill per department but have assignments without one, so this
+   * run will produce a single lump invoice instead of one per department.
+   * Empty when nothing is degraded.
+   */
+  departmentWarnings: string[];
   lastRun: InvoiceRun | null;
   totals: {
     invoices: number;
@@ -82,7 +92,6 @@ export type PeriodInvoicePreview = {
   };
 };
 
-const DEFAULT_DEPT = "General";
 
 type TcRow = {
   id: string;
@@ -156,6 +165,18 @@ export async function previewInvoicesForPeriod(
   const assignByEmpClient = new Map<string, AssignmentRow>();
   for (const a of assigns) {
     assignByEmpClient.set(`${a.employee_id}::${a.client_id}`, a);
+  }
+
+  // Per-client department coverage, for the preview warning. A client that
+  // bills by department but has assignments without one silently collapses into
+  // a single lump invoice — the run succeeds and the invoice is simply the
+  // wrong shape, which is the hardest kind of billing error to notice.
+  const deptsByClient = new Map<string, { name: string; depts: (string | null)[] }>();
+  for (const t of tcs) {
+    const a = assignByEmpClient.get(`${t.employee_id}::${t.client_id}`);
+    const entry = deptsByClient.get(t.client_id) ?? { name: t.clients.name, depts: [] };
+    entry.depts.push(a?.department ?? null);
+    deptsByClient.set(t.client_id, entry);
   }
 
   // Group: (client_id, department, branch?) → lines
@@ -274,9 +295,17 @@ export async function previewInvoicesForPeriod(
   const totalsBilled = groups.reduce((s, g) => s + g.subtotal, 0);
   const totalsCost = groups.reduce((s, g) => s + g.totalCost, 0);
 
+  const departmentWarnings: string[] = [];
+  for (const [, entry] of deptsByClient) {
+    if (!hasCodedDepartments(entry.name)) continue;
+    const cov = departmentCoverage(entry.name, entry.depts);
+    if (cov.degraded && cov.message) departmentWarnings.push(cov.message);
+  }
+
   return {
     period: p,
     groups,
+    departmentWarnings,
     lastRun: (runRow ?? null) as InvoiceRun | null,
     totals: {
       invoices: groups.length,
