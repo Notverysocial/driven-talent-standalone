@@ -111,6 +111,10 @@ function LastFourteenDays({ records }: { records: AttendanceEntry[] }) {
   );
 }
 
+// Sentinel client-filter value for "has no active placement". Not a UUID, so it
+// can never collide with a real client id.
+const UNASSIGNED = "__unassigned__";
+
 export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Client[] }) {
   const [f, setF] = useState<FilterState>(INITIAL);
 
@@ -118,13 +122,19 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
     const q = f.search.trim().toLowerCase();
     return rows.filter((r) => {
       if (q) {
-        const hay = `${r.employee.full_name} ${r.assignment.position} ${r.assignment.department} ${r.client.name}`.toLowerCase();
+        const hay = `${r.employee.full_name} ${r.assignment?.position ?? ""} ${r.assignment?.department ?? ""} ${r.client?.name ?? "unassigned"}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
-      if (f.client !== "all" && r.assignment.client_id !== f.client) return false;
-      if (f.position !== "all" && r.assignment.position !== f.position) return false;
-      if (f.department !== "all" && r.assignment.department !== f.department) return false;
-      if (f.shift !== "all" && r.assignment.shift !== f.shift) return false;
+      // "unassigned" is its own client bucket; any other client filter excludes
+      // rows that have no placement, because they cannot match one.
+      if (f.client === UNASSIGNED) {
+        if (r.assignment) return false;
+      } else if (f.client !== "all" && r.assignment?.client_id !== f.client) {
+        return false;
+      }
+      if (f.position !== "all" && r.assignment?.position !== f.position) return false;
+      if (f.department !== "all" && r.assignment?.department !== f.department) return false;
+      if (f.shift !== "all" && r.assignment?.shift !== f.shift) return false;
       const band = r.employee.band ?? bandFromScore(r.employee.score);
       if (f.band !== "all" && band !== f.band) return false;
       return true;
@@ -137,6 +147,7 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
   );
 
   const totalEmployees = new Set(rows.map((r) => r.employee.id)).size;
+  const unassignedCount = rows.filter((r) => !r.assignment).length;
   const filtersActive =
     f.search.trim() !== "" ||
     f.client !== "all" ||
@@ -194,8 +205,17 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
         >
           All · {rows.length}
         </button>
+        {unassignedCount > 0 && (
+          <button
+            className={"dt-chip" + (f.client === UNASSIGNED ? " active" : "")}
+            onClick={() => setF((s) => ({ ...s, client: UNASSIGNED }))}
+            title="On the roster but not placed with a client yet"
+          >
+            Unassigned · {unassignedCount}
+          </button>
+        )}
         {clients.map((c) => {
-          const n = rows.filter((r) => r.assignment.client_id === c.id).length;
+          const n = rows.filter((r) => r.assignment?.client_id === c.id).length;
           if (n === 0) return null;
           return (
             <button
@@ -307,7 +327,7 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
                 const band = r.employee.band ?? bandFromScore(r.employee.score);
                 const bandTone = bandColor(band);
                 return (
-                  <tr key={r.assignment.id}>
+                  <tr key={r.assignment?.id ?? `unassigned-${r.employee.id}`}>
                     <td style={{ paddingLeft: 22 }}>
                       <Link href={`/employees/${r.employee.id}`} className="dt-person dt-person-link">
                         <Avatar name={r.employee.full_name} />
@@ -326,20 +346,43 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
                       </Badge>
                     </td>
                     <td>
-                      <span style={{ fontWeight: 400 }}>{r.client.name}</span>
-                      <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3, letterSpacing: "0.06em" }}>
-                        {r.client.city ?? "—"}
-                      </div>
+                      {r.client ? (
+                        <>
+                          <span style={{ fontWeight: 400 }}>{r.client.name}</span>
+                          <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3, letterSpacing: "0.06em" }}>
+                            {r.client.city ?? "—"}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ fontWeight: 400, color: "var(--dt-gold-deep)" }}>Unassigned</span>
+                          <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3, letterSpacing: "0.06em" }}>
+                            Not placed with a client yet
+                          </div>
+                        </>
+                      )}
                     </td>
                     <td>
-                      <span style={{ fontWeight: 300 }}>{r.assignment.position}</span>
-                      <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3 }}>
-                        {r.assignment.department}
-                      </div>
+                      {r.assignment ? (
+                        <>
+                          <span style={{ fontWeight: 300 }}>{r.assignment.position}</span>
+                          <div style={{ fontSize: 10.5, color: "var(--dt-warm-500)", marginTop: 3 }}>
+                            {r.assignment.department}
+                          </div>
+                        </>
+                      ) : (
+                        <Link
+                          href={`/employees/${r.employee.id}`}
+                          className="dt-btn"
+                          style={{ fontSize: 11, padding: "4px 10px" }}
+                        >
+                          Assign to a client →
+                        </Link>
+                      )}
                     </td>
                     <td>
                       <span className="tab-num" style={{ fontSize: 12, color: "var(--dt-warm-700)", fontFamily: "var(--dt-mono)" }}>
-                        {r.assignment.shift}
+                        {r.assignment?.shift ?? "—"}
                       </span>
                     </td>
                     <td>
@@ -373,7 +416,7 @@ export function RosterClient({ rows, clients }: { rows: RosterRow[]; clients: Cl
                       <LastFourteenDays records={r.attendance30d} />
                     </td>
                     <td className="tab-num" style={{ textAlign: "right", paddingRight: 22, fontWeight: 400 }}>
-                      ${Number(r.assignment.hourly_rate).toFixed(2)}/hr
+                      {r.assignment ? `$${Number(r.assignment.hourly_rate).toFixed(2)}/hr` : "—"}
                     </td>
                   </tr>
                 );
