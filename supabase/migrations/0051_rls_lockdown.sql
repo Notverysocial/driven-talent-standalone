@@ -1,8 +1,55 @@
 -- 0051_rls_lockdown.sql
 --
 -- ############################################################################
--- ##  DRAFT — DO NOT APPLY WITHOUT ANTONIO'S EXPLICIT GO.                    ##
--- ##  Drafted 2026-09-10. Verified against production, but NOT executed.     ##
+-- ##  DRAFT — BLOCKED. DO NOT APPLY. THIS FILE IS NOT SAFE AS WRITTEN.       ##
+-- ##  Drafted 2026-09-10. Approved for apply 2026-09-10, then WITHHELD after ##
+-- ##  a pre-apply check found the blocker below. NOT executed.               ##
+-- ############################################################################
+--
+-- ############################################################################
+-- ##  BLOCKER — APPLYING THIS TODAY SILENTLY KILLS FOUR PRODUCTION CRONS     ##
+-- ############################################################################
+--
+-- Vercel Cron requests carry NO session cookie. src/proxy.ts allowlists the
+-- cron paths for exactly that reason. So when a cron route reaches the database
+-- through `createClient()` — the COOKIE client in src/lib/supabase/server.ts —
+-- there is no session to attach, and it authenticates as the bare anon key.
+-- Those jobs are running as role `anon` in production right now, and they work
+-- only because of the very policies this migration removes.
+--
+-- Five cron-reachable modules do this:
+--
+--   src/lib/integrity/applicant-audit.server.ts:83,300,316   /api/integrity/applicant-audit
+--   src/lib/inbound-lead-email.server.ts:146                 /api/leads/notify
+--   src/lib/uattend/ingest.server.ts:108                     /api/timecards/uattend-weekly
+--   src/lib/talent-pool.server.ts:25,57,119                  /api/talent-pool/digest
+--   src/lib/workflows.server.ts (11 sites)                   /api/workflows/tick
+--
+-- Only /api/integrations/cron uses createServiceClient() and is unaffected.
+--
+-- PROOF, not inference: integrity_audit_runs holds one row per day written at
+-- 13:00 UTC — 2026-09-10T13:00:32Z, 2026-09-09T13:00:33Z, 2026-09-08T13:00:47Z,
+-- 53 rows total. That is the daily cron INSERTING as anon, today.
+--
+-- WHY THIS WOULD BE WORSE THAN AN OUTAGE: `to authenticated` does not error for
+-- anon. A SELECT returns [] and an INSERT is refused by RLS without raising.
+-- Every one of these jobs would report success while doing nothing — including
+-- the uAttend weekly timecard pull that feeds PAYROLL. That is precisely the
+-- failure mode docs/UATTEND-SYNC-OUTAGE.md exists to describe: "the job did not
+-- fail; it did not exist," seventeen days dark.
+--
+-- REQUIRED BEFORE THIS FILE CAN BE APPLIED
+--   1. Move the five modules' cron paths onto createServiceClient(). A cron has
+--      no user, so RLS is the wrong control for it; the route's CRON_SECRET is
+--      the right one, and it already fails closed (src/lib/cron-auth.ts).
+--   2. Deploy, then WATCH a cron actually run. /api/leads/notify is every 15
+--      minutes, so it gives a receipt inside the hour. Do not accept "it
+--      deployed" as evidence — check that a row lands.
+--   3. Only then apply this migration.
+--
+-- Do not "fix" this by leaving the cron-written tables open. That would keep
+-- timecards, candidates and sales_leads readable by the published anon key,
+-- which is most of the exposure this file exists to close.
 -- ############################################################################
 --
 -- WHAT THIS FIXES
