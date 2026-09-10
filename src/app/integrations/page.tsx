@@ -27,6 +27,21 @@ import { DisconnectButton } from "./DisconnectButton";
 import { syncIntegrationAction } from "./actions";
 import { UattendMappingEditor } from "./UattendMappingEditor";
 
+// The last SUCCESSFUL sync's non-fatal note, from `config.last_warning`.
+// This block is deliberately independent of `status`: a warning never sets
+// status='error', so the error block below can never render one. That is why
+// uAttend's unmapped-employee backlog was invisible here for weeks while the
+// dashboard audit was simultaneously calling the same integration "Not
+// working" — see recordSyncEnd in lib/integrations/db.ts.
+function readWarning(config: unknown): string | null {
+  if (!config || typeof config !== "object") return null;
+  const lw = (config as Record<string, unknown>).last_warning;
+  if (!lw || typeof lw !== "object") return null;
+  const msg = (lw as Record<string, unknown>).message;
+  return typeof msg === "string" && msg.trim() ? msg : null;
+}
+
+
 export const dynamic = "force-dynamic";
 
 const STATUS_TONE: Record<
@@ -329,6 +344,38 @@ export default async function IntegrationsPage({
                 />
                 {provider === "uattend" && <UattendWeeklyPullRow row={row} />}
                 {provider === "calendly" && <CalendlyCardExtras row={row} />}
+                {readWarning(row?.config) && (
+                  <details
+                    style={{
+                      marginTop: 6,
+                      padding: "8px 10px",
+                      background: "rgba(191, 141, 42, 0.07)",
+                      border: "1px solid rgba(191, 141, 42, 0.22)",
+                      borderRadius: 4,
+                    }}
+                  >
+                    <summary
+                      style={{
+                        cursor: "pointer",
+                        fontSize: 11.5,
+                        color: "var(--dt-gold-deep)",
+                        fontWeight: 500,
+                      }}
+                    >
+                      Synced with a warning
+                    </summary>
+                    <pre
+                      style={{
+                        marginTop: 6,
+                        fontSize: 11,
+                        whiteSpace: "pre-wrap",
+                        color: "var(--dt-warm-700, #5a4a3a)",
+                      }}
+                    >
+                      {readWarning(row?.config)}
+                    </pre>
+                  </details>
+                )}
                 {status === "error" && row?.last_error && (
                   <details
                     style={{

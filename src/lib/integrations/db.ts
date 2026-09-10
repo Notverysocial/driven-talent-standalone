@@ -86,19 +86,46 @@ export async function recordSyncStart(
 // the provider's default interval; on failure we flip status=error
 // and stash the message in last_error (truncated to 1KB so a noisy
 // stack trace doesn't bloat the row).
+//
+// INVARIANT: `last_error` means "the last sync FAILED" and nothing else.
+// integration-truth.ts uses it as its single success/failure signal, so any
+// other use of the column becomes a false outage on the dashboard audit.
 export async function recordSyncEnd(
   provider: IntegrationProvider,
   ok: boolean,
   count: number = 0,
   error: string | null = null,
-  // A non-fatal condition worth showing the operator. Written to last_error so
-  // the card stays loud, WITHOUT flipping status to 'error' — an error status
-  // used to be a one-way door out of the cron loop.
+  // A non-fatal condition worth showing the operator — e.g. uAttend punches
+  // whose employee id has no mapping yet. It is NOT a failure.
+  //
+  // This used to be written into `last_error` to keep the card loud without
+  // flipping status to 'error' (an error status was once a one-way door out of
+  // the cron loop). That broke the column's invariant above, and cost us both
+  // ways: integration-truth.ts read the warning as "Last sync FAILED" and
+  // rendered a healthy, actively-syncing uAttend as "Not working", while
+  // /integrations showed the operator nothing at all, because its error block
+  // only renders when status === 'error' — which a warning deliberately never
+  // sets. Loud in the one place it shouldn't be, silent in the one place it
+  // should.
+  //
+  // Warnings now live in `config.last_warning` — side-band state the verdict
+  // layer treats as an observation, never a verdict.
   warning: string | null = null,
 ): Promise<void> {
   const now = new Date();
   const intervalMin = INTEGRATION_DEFAULT_INTERVAL_MIN[provider] ?? 30;
   const next = new Date(now.getTime() + intervalMin * 60 * 1000);
+
+  // Read-then-merge so recording a warning cannot clobber sibling config keys —
+  // uAttend's `employee_mapping`, the weekly-pull bookmark, OAuth metadata.
+  // Same pattern as storeOAuthTokens below.
+  const current = await getIntegration(provider);
+  const mergedConfig = {
+    ...(current?.config ?? {}),
+    last_warning: warning
+      ? { message: warning.slice(0, 1024), at: now.toISOString() }
+      : null,
+  };
 
   const patch: IntegrationPatch = ok
     ? {
@@ -106,7 +133,8 @@ export async function recordSyncEnd(
         last_sync_at: now.toISOString(),
         next_sync_at: next.toISOString(),
         last_sync_count: count,
-        last_error: warning ? warning.slice(0, 1024) : null,
+        last_error: null,
+        config: mergedConfig,
       }
     : {
         status: "error",
@@ -114,6 +142,7 @@ export async function recordSyncEnd(
         next_sync_at: next.toISOString(),
         last_sync_count: count,
         last_error: (error ?? "Unknown error").slice(0, 1024),
+        config: mergedConfig,
       };
 
   await updateIntegrationStatus(provider, patch);

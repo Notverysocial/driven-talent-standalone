@@ -25,6 +25,7 @@ function input(over: Partial<IntegrationTruthInput>): IntegrationTruthInput {
     tokenExpiresAt: "2026-07-19T14:00:00.000Z", // 2h in the future
     lastSyncAt: "2026-07-19T11:55:00.000Z", // 5 min ago, well inside cadence
     lastError: null,
+    lastWarning: null,
     eventCount: 5,
     now: new Date(NOW),
     ...over,
@@ -162,4 +163,61 @@ test("summarize splits alarm from stale for the audit tiers", () => {
   expect(s.stale).toBe(1);
   expect(s.notConfigured).toBe(1);
   expect(s.disagreeing).toBe(1);
+});
+
+// ---------------------------------------------------------------------------
+// THE uATTEND CASE (2026-09-10): a warning is not an outage.
+//
+// PR #68 started writing non-fatal warnings into `last_error` on SUCCESSFUL
+// syncs. This module treats `last_error` as its single failure signal, so a
+// uAttend integration that was syncing every 30 minutes — 11,519 punches, a
+// sync 4 minutes old — reported "Not working" because some uAttend employee ids
+// had no mapping yet. These tests pin the corrected contract.
+// ---------------------------------------------------------------------------
+
+test("THE uATTEND CASE: a successful sync carrying a warning is WORKING, not an outage", () => {
+  const h = deriveIntegrationTruth(
+    input({
+      provider: "uattend",
+      lastError: null,
+      lastWarning:
+        "Unmapped uAttend employees: 701612, 778411, 871202, 883844, 885734",
+    }),
+  );
+  expect(h.level).toBe("ok");
+  expect(h.headline).toBe("Working");
+  // The warning is still SHOWN — it is real work — but only as an observation.
+  expect(h.observations.join(" ")).toMatch(/succeeded with a warning/i);
+  expect(h.observations.join(" ")).toMatch(/701612/);
+  // And it must never be phrased as a failure.
+  expect(h.reasons.join(" ")).not.toMatch(/FAILED/i);
+  expect(h.statusDisagrees).toBe(false);
+});
+
+test("a warning can never move the verdict, whatever else is true", () => {
+  const warned = deriveIntegrationTruth(
+    input({ provider: "uattend", lastWarning: "some non-fatal note" }),
+  );
+  const clean = deriveIntegrationTruth(input({ provider: "uattend" }));
+  expect(warned.level).toBe(clean.level);
+});
+
+test("a REAL failure is still an alarm — the warning path must not mask it", () => {
+  const h = deriveIntegrationTruth(
+    input({
+      provider: "uattend",
+      lastError: "uAttend 401 /user: unauthorized",
+      lastWarning: "Unmapped uAttend employees: 701612",
+    }),
+  );
+  expect(h.level).toBe("alarm");
+  expect(h.reasons.join(" ")).toMatch(/Last sync FAILED/i);
+});
+
+test("summarize does not count a warned-but-working integration as an alarm", () => {
+  const all = [
+    deriveIntegrationTruth(input({ provider: "uattend", lastWarning: "unmapped ids" })),
+    deriveIntegrationTruth(input({ provider: "calendly" })),
+  ];
+  expect(summarizeIntegrationTruth(all).alarm).toBe(0);
 });

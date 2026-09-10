@@ -29,6 +29,15 @@ import type { IntegrationProvider, IntegrationStatus } from "./types";
 // on success and set on failure (integrations/db.ts), which makes it reliable.
 // `last_sync_at` is written on BOTH paths, so it proves attempt, not success.
 //
+// THAT RELIABILITY IS A CONTRACT, AND IT WAS BROKEN ONCE. PR #68 began writing
+// non-fatal warnings into `last_error` on SUCCESSFUL syncs, to keep the card
+// loud. This module was never told, so it read every warning as "Last sync
+// FAILED" — and uAttend, which was syncing correctly every 30 minutes with a
+// backlog of unmapped employee ids, reported "Not working" on the dashboard
+// audit for weeks. Warnings now arrive separately as `lastWarning` and can only
+// ever be an observation. Two meanings in one column is how a verdict layer
+// starts lying.
+//
 // Facts that are not verdicts live in `observations` and can never change
 // `level`.
 //
@@ -63,6 +72,12 @@ export type IntegrationTruthInput = {
   lastSyncAt: string | null;
   /** Cleared on a successful sync, set on failure — the success signal. */
   lastError: string | null;
+  /**
+   * A non-fatal condition recorded by the last SUCCESSFUL sync
+   * (`integrations.config.last_warning`). Surfaced to the operator, but it can
+   * never move `level` — a warning is not an outage.
+   */
+  lastWarning: string | null;
   /** Real inbound evidence. Null when not measurable. A COUNT, not a verdict. */
   eventCount: number | null;
   now: Date;
@@ -155,6 +170,11 @@ export function deriveIntegrationTruth(
   if (tokenExpired && input.hasRefreshToken) {
     observations.push(
       "The stored access token has expired, which is normal — a refresh token is present and mints a new one on the next call.",
+    );
+  }
+  if (input.lastWarning) {
+    observations.push(
+      `Last sync succeeded with a warning: ${input.lastWarning}`,
     );
   }
   if (input.eventCount != null && EXPECTS_EVENTS[input.provider]) {
