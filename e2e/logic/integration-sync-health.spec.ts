@@ -240,22 +240,38 @@ test.describe("cron eligibility — a failed run must not be a one-way door", ()
 // ---------------------------------------------------------------------------
 
 // Mirrors the branch in src/lib/integrations/db.ts recordSyncEnd.
+//
+// CAUTION, and the reason this comment is long: this helper is a SECOND
+// IMPLEMENTATION of that branch, and on 2026-09-10 it did exactly what second
+// implementations do. The real recordSyncEnd was corrected to stop writing
+// warnings into `last_error`; this mirror was not, so the suite stayed green
+// while asserting the opposite of the shipped behaviour. If you change
+// recordSyncEnd, change this — it cannot detect the drift for you.
 function statusFor(result: { ok: boolean; warning?: string | null }): {
   status: string;
   lastErrorSet: boolean;
+  lastWarningSet: boolean;
 } {
   return result.ok
-    ? { status: "connected", lastErrorSet: Boolean(result.warning) }
-    : { status: "error", lastErrorSet: true };
+    ? {
+        status: "connected",
+        // A successful sync NEVER sets last_error. That column means "the last
+        // sync FAILED" and is integration-truth.ts's only failure signal.
+        lastErrorSet: false,
+        lastWarningSet: Boolean(result.warning),
+      }
+    : { status: "error", lastErrorSet: true, lastWarningSet: false };
 }
 
-test.describe("a warning keeps the job alive but stays loud", () => {
-  test("unmapped employees: stays connected AND still writes last_error", () => {
-    // The whole point. It must remain visible (last_error set, card loud) while
-    // NOT flipping to a status the cron refuses to retry.
+test.describe("a warning keeps the job alive and stays visible — without lying", () => {
+  test("unmapped employees: stays connected, records a WARNING, leaves last_error clear", () => {
+    // The whole point. It must remain visible to the operator while neither
+    // flipping to a status the cron refuses to retry, NOR tripping the verdict
+    // layer into reporting a healthy integration as an outage.
     const r = statusFor({ ok: true, warning: "Unmapped uAttend employees: 1001, 1002" });
     expect(r.status).toBe("connected");
-    expect(r.lastErrorSet).toBe(true);
+    expect(r.lastErrorSet).toBe(false);
+    expect(r.lastWarningSet).toBe(true);
     expect(isCronEligible(r.status)).toBe(true);
   });
 
@@ -263,6 +279,7 @@ test.describe("a warning keeps the job alive but stays loud", () => {
     const r = statusFor({ ok: true, warning: null });
     expect(r.status).toBe("connected");
     expect(r.lastErrorSet).toBe(false);
+    expect(r.lastWarningSet).toBe(false);
   });
 
   test("a real failure still errors — and is now still retried", () => {

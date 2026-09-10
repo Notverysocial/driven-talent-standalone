@@ -7,6 +7,19 @@ import {
 } from "./integration-truth";
 import type { IntegrationProvider, IntegrationRow, IntegrationStatus } from "./types";
 
+// `integrations.config.last_warning` is written by recordSyncEnd as
+// { message, at } on a SUCCESSFUL sync that had something non-fatal to say.
+// Config is untyped jsonb, so narrow defensively — a malformed value must read
+// as "no warning", never crash the audit that exists to report the truth.
+function readLastWarning(config: unknown): string | null {
+  if (!config || typeof config !== "object") return null;
+  const lw = (config as Record<string, unknown>).last_warning;
+  if (!lw || typeof lw !== "object") return null;
+  const msg = (lw as Record<string, unknown>).message;
+  return typeof msg === "string" && msg.trim() ? msg : null;
+}
+
+
 // Gathers the REAL evidence behind each integration's health.
 //
 // Every query is fail-safe. Health is a diagnostic surface: if it cannot read
@@ -133,6 +146,7 @@ export async function getIntegrationHealth(): Promise<IntegrationHealthRow[]> {
         tokenExpiresAt: row?.token_expires_at ?? null,
         lastSyncAt: row?.last_sync_at ?? null,
         lastError: row?.last_error ?? null,
+        lastWarning: readLastWarning(row?.config),
         eventCount,
         now,
       };
