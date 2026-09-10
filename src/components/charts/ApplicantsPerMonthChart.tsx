@@ -4,6 +4,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -16,15 +17,34 @@ import {
   CHART_FONT,
   GRID_STYLE,
 } from "./chart-theme";
+import {
+  SOURCE_LABEL,
+  type ApplicantsPerMonth,
+  type SourceKey,
+} from "@/lib/applicant-sources";
 
-type Row = { month: string; label: string; count: number };
+// "Applicants Per Month" (Leangel, 2026-07-08) — 12 months of new-applicant
+// volume, stacked by the channels that ACTUALLY carry rows.
+//
+// This card used to draw one flat total under a subtitle reading
+// "Website · Indeed · Facebook · LinkedIn · Instagram", which asserted a
+// five-way split the data never had — and three of those five have no
+// integration in this codebase at all. The legend below is generated from
+// `data.present`, so it can only ever name channels with real applicants in
+// them. Nothing is zero-padded to round out the picture.
 
-// Change 3 (Leangel 2026-07-08) — "Applicants Per Month": 12 months (Jan–Dec)
-// of combined new-applicant volume across Website + Indeed + Facebook +
-// LinkedIn + Instagram. Matches the existing Recharts + chart-theme look.
-export function ApplicantsPerMonthChart({ data }: { data: Row[] }) {
-  const total = data.reduce((s, d) => s + d.count, 0);
-  if (total === 0) {
+const SOURCE_FILL: Record<SourceKey, string> = {
+  website: CHART_COLORS.gold,
+  indeed: CHART_COLORS.blackSoft,
+  referral: CHART_COLORS.success,
+  phone: CHART_COLORS.warm500,
+  recruiter: CHART_COLORS.goldDeep,
+  imported: CHART_COLORS.warm300,
+  unspecified: CHART_COLORS.warm150,
+};
+
+export function ApplicantsPerMonthChart({ data }: { data: ApplicantsPerMonth }) {
+  if (data.total === 0) {
     return (
       <div
         style={{
@@ -40,10 +60,13 @@ export function ApplicantsPerMonthChart({ data }: { data: Row[] }) {
     );
   }
 
+  const present = data.present;
+  const single = present.length === 1;
+
   return (
-    <div style={{ width: "100%", height: 240 }}>
+    <div style={{ width: "100%", height: 268 }}>
       <ResponsiveContainer>
-        <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+        <BarChart data={data.months} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
           <CartesianGrid vertical={false} {...GRID_STYLE} />
           <XAxis
             dataKey="label"
@@ -69,9 +92,28 @@ export function ApplicantsPerMonthChart({ data }: { data: Row[] }) {
               fontSize: 12,
               padding: "8px 12px",
             }}
-            formatter={(value) => [`${value as number}`, "Applicants"]}
+            formatter={(value, name) => [`${value as number}`, String(name)]}
           />
-          <Bar dataKey="count" fill={CHART_COLORS.gold} barSize={18} radius={[1, 1, 0, 0]} />
+          {/* Only drawn when there is genuinely more than one channel to tell
+              apart — a legend with a single entry is noise. */}
+          {!single && (
+            <Legend
+              verticalAlign="bottom"
+              height={26}
+              wrapperStyle={{ fontFamily: CHART_FONT, fontSize: 11.5 }}
+            />
+          )}
+          {present.map((key, i) => (
+            <Bar
+              key={key}
+              dataKey={key}
+              name={SOURCE_LABEL[key]}
+              stackId="applicants"
+              fill={SOURCE_FILL[key]}
+              barSize={18}
+              radius={i === present.length - 1 ? [1, 1, 0, 0] : [0, 0, 0, 0]}
+            />
+          ))}
         </BarChart>
       </ResponsiveContainer>
     </div>
