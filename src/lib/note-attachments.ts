@@ -166,3 +166,87 @@ export type NoteAttachment = {
 export function attachmentHref(id: string): string {
   return `/api/note-attachments/${id}`;
 }
+
+// ---------------------------------------------------------------------------
+// DIRECT-TO-STORAGE UPLOADS — why the bytes never touch a Server Action.
+//
+// PR #98 posted the files through the addNote Server Action. On Vercel a
+// function request body over ~4.5 MB is refused at the platform edge with
+// 413 FUNCTION_PAYLOAD_TOO_LARGE before any app code runs — verified live
+// 2026-09-11: a 5 MB note failed with no log line while two 1 KB files saved.
+// next.config's 25mb bodySizeLimit cannot raise a PLATFORM limit.
+//
+// So the browser now puts each file straight into Supabase Storage on a
+// signed upload URL the server mints (prepareNoteAttachmentUploads), and the
+// Server Action only ever receives this small manifest. The bucket still
+// enforces the 25 MB size limit and the MIME allow-list on the upload itself.
+// ---------------------------------------------------------------------------
+
+/** What the server hands the browser for one file: where it goes + a one-time token. */
+export type UploadTicket = { id: string; path: string; token: string };
+
+/** What the browser sends back once a file is in storage. */
+export type UploadedAttachment = { id: string; path: string; name: string };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuid(s: unknown): s is string {
+  return typeof s === "string" && UUID_RE.test(s);
+}
+
+/** The folder every object of one note lives in. */
+export function noteFolder(subjectType: string, subjectId: string, noteId: string): string {
+  return `${subjectType}/${subjectId}/${noteId}/`;
+}
+
+/** True when `path` is a single object directly inside `folder`. */
+export function isObjectInFolder(path: unknown, folder: string): path is string {
+  return (
+    typeof path === "string" &&
+    path.startsWith(folder) &&
+    path.length > folder.length &&
+    !path.includes("..") &&
+    !path.slice(folder.length).includes("/")
+  );
+}
+
+const MALFORMED = "The attachment upload was malformed. Nothing was saved — please attach the files again.";
+
+/**
+ * Parse the manifest the composer sends with a note. The browser is NOT
+ * trusted: every path must sit in THIS note's folder and begin with its own
+ * attachment id, so a manifest can never claim an object that belongs to a
+ * different note or subject. Sizes are deliberately not taken from here —
+ * the server reads each object's real size and type from storage.
+ */
+export function parseAttachmentManifest(
+  raw: unknown,
+  subjectType: string,
+  subjectId: string,
+  noteId: string,
+): { ok: true; files: UploadedAttachment[] } | { ok: false; error: string } {
+  if (raw == null || raw === "") return { ok: true, files: [] };
+  if (!isUuid(noteId)) return { ok: false, error: MALFORMED };
+  let list: unknown;
+  try {
+    list = JSON.parse(String(raw));
+  } catch {
+    return { ok: false, error: MALFORMED };
+  }
+  if (!Array.isArray(list)) return { ok: false, error: MALFORMED };
+  if (list.length > MAX_ATTACHMENTS_PER_NOTE) {
+    return { ok: false, error: `Up to ${MAX_ATTACHMENTS_PER_NOTE} files per note — ${list.length} were attached.` };
+  }
+  const folder = noteFolder(subjectType, subjectId, noteId);
+  const seen = new Set<string>();
+  const files: UploadedAttachment[] = [];
+  for (const item of list) {
+    const { id, path, name } = (item ?? {}) as Record<string, unknown>;
+    if (!isUuid(id) || typeof name !== "string" || seen.has(id)) return { ok: false, error: MALFORMED };
+    if (!isObjectInFolder(path, folder) || !path.startsWith(`${folder}${id}-`)) {
+      return { ok: false, error: MALFORMED };
+    }
+    seen.add(id);
+    files.push({ id, path, name: name.slice(0, 255) || "file" });
+  }
+  return { ok: true, files };
+}

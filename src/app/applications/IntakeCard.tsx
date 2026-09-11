@@ -13,6 +13,7 @@ import {
 } from "@/lib/integrations/calendly-events";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
 import { IntakeResumeLink } from "./IntakeResumeLink";
+import { CandidateNotes, type DisplayNote } from "@/components/CandidateNotes";
 import {
   promoteIntakeToCandidate,
   setIntakeStatus,
@@ -33,6 +34,8 @@ export function IntakeCard({
   calendly,
   recruiters = [],
   detailHref,
+  notes = [],
+  notesUnavailable = false,
 }: {
   intake: ApplicationIntake;
   createdLabel: string;
@@ -42,6 +45,10 @@ export function IntakeCard({
    *  slot in them — that is what the detail view's Prev/Next pages through.
    *  Falls back to the bare detail URL (no pager) when absent. */
   detailHref?: string;
+  /** This applicant's notes, oldest first (batched by the list page). */
+  notes?: DisplayNote[];
+  /** The list page's notes read failed — say so instead of showing "none". */
+  notesUnavailable?: boolean;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -319,6 +326,32 @@ export function IntakeCard({
             </button>
           )}
         </div>
+      </div>
+
+      {/* Notes thread — the same log as the applicant page (author + time are
+          stamped server-side from the signed-in user), shown here so the team
+          sees the conversation without opening each applicant. */}
+      <div
+        data-testid={`intake-notes-${intake.id}`}
+        style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--dt-warm-100)" }}
+      >
+        <div className="dt-filter-label" style={{ marginBottom: 4 }}>
+          Notes{notes.length > 0 ? ` · ${notes.length}` : ""}
+        </div>
+        {notesUnavailable ? (
+          <div className="tiny muted" style={{ fontSize: 12 }}>
+            Notes couldn&apos;t load right now — open the applicant to see them.
+          </div>
+        ) : (
+          <CandidateNotes
+            subjectType="applicant"
+            subjectId={intake.id}
+            notes={notes}
+            allowPhoneScreen
+            order="oldest-first"
+            compact
+          />
+        )}
       </div>
 
       {feedback && (

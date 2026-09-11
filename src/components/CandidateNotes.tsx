@@ -3,11 +3,15 @@
 import { useRef, useState, useTransition } from "react";
 import {
   ATTACHMENT_ACCEPT,
+  NOTE_ATTACHMENT_BUCKET,
   attachmentHref,
   checkAttachments,
   formatBytes,
+  resolveMime,
   type NoteAttachment,
+  type UploadedAttachment,
 } from "@/lib/note-attachments";
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import type { CallOutcome, CandidateNote, NoteSubjectType } from "@/lib/supabase/types";
 // Shared with the server action so the labels cannot drift apart.
@@ -18,7 +22,12 @@ const OUTCOME_TONE: Record<CallOutcome, { bg: string; fg: string }> = {
   left_message: { bg: "rgba(245,166,35,0.14)", fg: "var(--dt-gold-deep)" },
   declined:     { bg: "rgba(176,58,46,0.10)",  fg: "var(--dt-danger)" },
 };
-import { addNote, setFollowupStatus } from "@/lib/notes.actions";
+import {
+  addNote,
+  discardNoteAttachmentUploads,
+  prepareNoteAttachmentUploads,
+  setFollowupStatus,
+} from "@/lib/notes.actions";
 
 /**
  * Threaded / authored / @mention / follow-up notes log (Estefany 2026-07-06).
@@ -50,12 +59,18 @@ export function CandidateNotes({
   subjectId,
   notes,
   allowPhoneScreen = false,
+  order = "newest-first",
+  compact = false,
 }: {
   subjectType: NoteSubjectType;
   subjectId: string;
   notes: DisplayNote[];
   /** Show the phone-screen outcome composer (applicant + candidate views). */
   allowPhoneScreen?: boolean;
+  /** Record pages read newest-first; a list card reads as a thread, oldest-first. */
+  order?: "newest-first" | "oldest-first";
+  /** List-card mode: the thread first, the composer behind "+ Add note". */
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -73,6 +88,51 @@ export function CandidateNotes({
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const filesTotal = files.reduce((n, f) => n + f.size, 0);
+  const [uploadMsg, setUploadMsg] = useState<string | null>(null);
+  const [composerOpen, setComposerOpen] = useState(!compact);
+  const shown =
+    order === "oldest-first"
+      ? [...notes].sort((a, b) => a.created_at.localeCompare(b.created_at))
+      : notes;
+
+  // Files go browser -> private bucket on signed upload URLs; the Server
+  // Action only gets a manifest. Posting the bytes through it is what broke
+  // on Vercel above ~4.5 MB (see DIRECT-TO-STORAGE in lib/note-attachments).
+  async function uploadAttachments(
+    picked: File[],
+  ): Promise<{ ok: true; noteId: string; manifest: UploadedAttachment[] } | { ok: false; error: string }> {
+    let prep: Awaited<ReturnType<typeof prepareNoteAttachmentUploads>>;
+    try {
+      prep = await prepareNoteAttachmentUploads(
+        subjectType,
+        subjectId,
+        picked.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+      );
+    } catch {
+      return { ok: false, error: "Couldn't prepare the upload. Please try again." };
+    }
+    if (!prep.ok) return prep;
+    if (prep.tickets.length !== picked.length) {
+      return { ok: false, error: "Couldn't prepare the upload. Please try again." };
+    }
+    const sb = createBrowserSupabase();
+    const done: UploadedAttachment[] = [];
+    for (let i = 0; i < picked.length; i++) {
+      const f = picked[i];
+      const t = prep.tickets[i];
+      setUploadMsg(picked.length > 1 ? `Uploading ${i + 1} of ${picked.length}…` : "Uploading…");
+      const { error } = await sb.storage
+        .from(NOTE_ATTACHMENT_BUCKET)
+        .uploadToSignedUrl(t.path, t.token, f, { contentType: resolveMime(f.name, f.type) });
+      if (error) {
+        await discardNoteAttachmentUploads(subjectType, subjectId, prep.noteId, done.map((d) => d.path)).catch(() => {});
+        return { ok: false, error: `Couldn't upload "${f.name}" (${error.message}). Nothing was saved — please try again.` };
+      }
+      done.push({ id: t.id, path: t.path, name: f.name });
+    }
+    setUploadMsg("Saving…");
+    return { ok: true, noteId: prep.noteId, manifest: done };
+  }
 
   function fmt(ts: string) {
     return new Date(ts).toLocaleString("en-US", {
@@ -92,19 +152,37 @@ export function CandidateNotes({
     });
   }
 
-  return (
-    <div>
-      {/* Composer */}
+  const composer = (
       <form
         action={async (fd) => {
           startTransition(async () => {
+            setSubmitErr(null);
+            const picked = files.filter((f) => f.size > 0);
+            let up: { noteId: string; manifest: UploadedAttachment[] } | null = null;
+            if (picked.length > 0) {
+              const r = await uploadAttachments(picked);
+              if (!r.ok) {
+                setUploadMsg(null);
+                setSubmitErr(r.error);
+                return;
+              }
+              up = r;
+              fd.set("note_id", r.noteId);
+              fd.set("attachments_manifest", JSON.stringify(r.manifest));
+            }
             let result: Awaited<ReturnType<typeof addNote>>;
             try {
               result = await addNote(subjectType, subjectId, fd);
             } catch {
+              // The save failed in transit: don't leave its files in the bucket.
+              if (up) {
+                await discardNoteAttachmentUploads(subjectType, subjectId, up.noteId, up.manifest.map((m) => m.path)).catch(() => {});
+              }
+              setUploadMsg(null);
               setSubmitErr("Couldn't save the note. Please try again.");
               return;
             }
+            setUploadMsg(null);
             if (!result.ok) {
               setSubmitErr(result.error);
               return;
@@ -117,6 +195,7 @@ export function CandidateNotes({
             setFiles([]);
             setFileErr(null);
             if (fileInput.current) fileInput.current.value = "";
+            if (compact) setComposerOpen(false);
             router.refresh();
           });
         }}
@@ -154,7 +233,7 @@ export function CandidateNotes({
             <input
               ref={fileInput}
               type="file"
-              name="attachments"
+              data-testid="note-attachments-input"
               multiple
               accept={ATTACHMENT_ACCEPT}
               disabled={pending}
@@ -295,26 +374,35 @@ export function CandidateNotes({
             style={{ marginLeft: "auto", fontSize: 12 }}
           >
             <span>
-              {pending ? "Saving…" : callMode ? "Log call" : "Add note"}
+              {pending ? (uploadMsg ?? "Saving…") : callMode ? "Log call" : "Add note"}
             </span>
           </button>
         </div>
       </form>
+  );
 
-      {/* Chronological log — newest first */}
-      {notes.length === 0 ? (
+  // Chronological log — newest first on record pages, oldest first on cards.
+  const log =
+      shown.length === 0 ? (
+        compact ? (
+          <div style={{ padding: "4px 0", color: "var(--dt-warm-500)", fontStyle: "italic", fontSize: 12.5 }}>
+            No notes yet.
+          </div>
+        ) : (
         <div style={{ padding: "24px 0", color: "var(--dt-warm-500)", fontStyle: "italic", fontSize: 13, textAlign: "center" }}>
           {allowPhoneScreen
             ? "No notes yet. Add a comment, or log a phone screen above."
             : "No notes yet."}
         </div>
+        )
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-          {notes.map((note, i) => (
+          {shown.map((note, i) => (
             <div
               key={note.id}
+              data-testid={`note-${note.id}`}
               style={{
-                padding: "14px 2px",
+                padding: compact ? "10px 2px" : "14px 2px",
                 borderTop: i === 0 ? "none" : "1px solid var(--dt-warm-100)",
               }}
             >
@@ -435,6 +523,30 @@ export function CandidateNotes({
             </div>
           ))}
         </div>
+      );
+
+  if (!compact) {
+    return (
+      <div>
+        {composer}
+        {log}
+      </div>
+    );
+  }
+  return (
+    <div>
+      {log}
+      {composerOpen ? (
+        <div style={{ marginTop: 10 }}>{composer}</div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setComposerOpen(true)}
+          className="dt-btn dt-btn-ghost tiny"
+          style={{ marginTop: 6, fontSize: 11, padding: "4px 10px" }}
+        >
+          + Add note
+        </button>
       )}
     </div>
   );
