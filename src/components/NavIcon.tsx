@@ -18,7 +18,8 @@ export function NavIcon({ name }: { name: IconName }) {
     viewBox: "0 0 24 24",
     fill: "none" as const,
     stroke: "currentColor",
-    strokeWidth: 1.6,
+    // Visibility pass: 1.6 read as hairline at nav size.
+    strokeWidth: 2.25,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };

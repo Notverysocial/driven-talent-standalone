@@ -104,7 +104,7 @@ button { font-family: inherit; }
   font-size: 9px;
   letter-spacing: 0.4em;
   text-transform: uppercase;
-  color: rgba(26,26,26,0.4);
+  color: rgba(26,26,26,0.55);
   font-weight: 300;
   padding-left: 0.4em;
   display: flex;
@@ -182,7 +182,7 @@ button { font-family: inherit; }
   letter-spacing: 0.12em;
 }
 .dt-nav-foot .who { font-size: 12px; font-weight: 400; letter-spacing: 0.04em; }
-.dt-nav-foot .role { font-size: 8.5px; color: rgba(26,26,26,0.45); margin-top: 3px; letter-spacing: 0.32em; font-weight: 300; }
+.dt-nav-foot .role { font-size: 8.5px; color: rgba(26,26,26,0.6); margin-top: 3px; letter-spacing: 0.32em; font-weight: 300; }
 
 /* MAIN */
 .dt-main {
@@ -205,7 +205,7 @@ button { font-family: inherit; }
   font-size: 9px;
   letter-spacing: 0.4em;
   text-transform: uppercase;
-  color: rgba(26,26,26,0.4);
+  color: rgba(26,26,26,0.55);
   font-weight: 300;
   margin-bottom: 14px;
   padding-left: 0.4em;
@@ -298,7 +298,7 @@ button { font-family: inherit; }
 .dt-card {
   background: #FFFFFF;
   border-radius: 2px;
-  border: 1px solid var(--dt-warm-150);
+  border: 1px solid var(--dt-warm-200);
   position: relative;
 }
 .dt-card.gold-edge {
@@ -307,7 +307,7 @@ button { font-family: inherit; }
 }
 .dt-card-head {
   padding: 22px 26px 18px;
-  border-bottom: 1px solid var(--dt-warm-100);
+  border-bottom: 1px solid var(--dt-warm-150);
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -325,7 +325,7 @@ button { font-family: inherit; }
 }
 .dt-card-head .sub {
   font-size: 10px;
-  color: rgba(26,26,26,0.45);
+  color: rgba(26,26,26,0.62);
   margin-top: 6px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -369,7 +369,7 @@ button { font-family: inherit; }
   font-size: 9.5px;
   letter-spacing: 0.28em;
   text-transform: uppercase;
-  color: rgba(26,26,26,0.5);
+  color: rgba(26,26,26,0.62);
   font-weight: 400;
   padding: 16px 16px;
   background: transparent;
@@ -379,7 +379,7 @@ button { font-family: inherit; }
 }
 .dt-table tbody td {
   padding: 16px 16px;
-  border-bottom: 1px solid var(--dt-warm-100);
+  border-bottom: 1px solid var(--dt-warm-150);
   vertical-align: middle;
   font-weight: 300;
 }
@@ -417,7 +417,7 @@ button { font-family: inherit; }
 
 .dt-person { display: flex; align-items: center; gap: 14px; }
 .dt-person .name { font-weight: 400; font-size: 13.5px; color: var(--dt-black); letter-spacing: 0.02em; }
-.dt-person .meta { font-size: 10px; color: rgba(26,26,26,0.5); margin-top: 4px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 300; padding-left: 0.2em; }
+.dt-person .meta { font-size: 10px; color: rgba(26,26,26,0.6); margin-top: 4px; letter-spacing: 0.2em; text-transform: uppercase; font-weight: 300; padding-left: 0.2em; }
 
 .dt-score {
   display: inline-flex;
@@ -464,8 +464,12 @@ button { font-family: inherit; }
 .gap-md { gap: 12px; }
 .gap-lg { gap: 20px; }
 .tab-num { font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
-.muted { color: rgba(26,26,26,0.5); }
-.tiny { font-size: 9.5px; letter-spacing: 0.28em; text-transform: uppercase; font-weight: 300; padding-left: 0.28em; }
+.muted { color: rgba(26,26,26,0.6); }
+/* Visibility pass: card-head action links ("Open attendance →") and trend
+   arrows read as hairlines at their size. Heavier weight thickens the glyph. */
+.dt-card-head .dt-btn-ghost.tiny { font-weight: 500; color: var(--dt-black); }
+.dt-trend-arrow { font-weight: 700; font-size: 1.15em; }
+.tiny { font-size: 9.5px; letter-spacing: 0.28em; text-transform: uppercase; font-weight: 400; padding-left: 0.28em; }
 
 .dt-numeral {
   font-family: 'Jost', sans-serif;
@@ -747,7 +751,7 @@ button { font-family: inherit; }
   border-color: var(--dt-gold);
 }
 select.dt-filter-input {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%231a1a1a' stroke-width='1.2' stroke-linecap='round'/></svg>");
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%231a1a1a' stroke-width='2.25' stroke-linecap='round'/></svg>");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 30px;
