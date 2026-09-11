@@ -43,7 +43,7 @@ function tone(stat: Stat): { color: string; bg: string; border: string } {
   if (stat.tier === "alarm") {
     return { color: "#B23A3A", bg: "rgba(178,58,58,0.06)", border: "rgba(178,58,58,0.30)" };
   }
-  return { color: "var(--dt-warm-700, #444)", bg: "rgba(0,0,0,0.03)", border: "rgba(0,0,0,0.12)" };
+  return { color: "var(--dt-warm-700, #444)", bg: "rgba(0,0,0,0.03)", border: "rgba(0,0,0,0.2)" };
 }
 
 export async function PipelineHealthCard() {

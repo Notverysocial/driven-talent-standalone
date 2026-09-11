@@ -117,8 +117,8 @@ export default async function DashboardPage() {
             applicantsDelta === 0
               ? `${dd.kpiNewApplicantsSameAs} (${d.applicants.lastMonth})`
               : applicantsDelta > 0
-              ? `▲ ${applicantsDelta} ${dd.kpiNewApplicantsVsLast} (${d.applicants.lastMonth})`
-              : `▼ ${Math.abs(applicantsDelta)} ${dd.kpiNewApplicantsVsLast} (${d.applicants.lastMonth})`
+              ? <><span className="dt-trend-arrow" aria-hidden>▲</span> {applicantsDelta} {dd.kpiNewApplicantsVsLast} ({d.applicants.lastMonth})</>
+              : <><span className="dt-trend-arrow" aria-hidden>▼</span> {Math.abs(applicantsDelta)} {dd.kpiNewApplicantsVsLast} ({d.applicants.lastMonth})</>
           }
           href="/applications"
         />
