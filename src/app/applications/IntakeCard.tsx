@@ -12,6 +12,7 @@ import {
   CALENDLY_EVENT_TYPES,
 } from "@/lib/integrations/calendly-events";
 import { INTAKE_STATUSES, type ApplicationIntake } from "@/lib/recruiting";
+import { INTAKE_CALL_STATUSES, DEFAULT_INTAKE_CALL_STATUS } from "@/lib/intake-call-status";
 import { IntakeResumeLink } from "./IntakeResumeLink";
 import { CandidateNotes, type DisplayNote } from "@/components/CandidateNotes";
 import {
@@ -20,6 +21,7 @@ import {
   updateIntake,
   claimIntake,
   reassignIntake,
+  setIntakeCallStatus,
 } from "./actions";
 
 export type IntakeCalendlyContext = {
@@ -192,6 +194,7 @@ export function IntakeCard({
         </Link>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 160 }}>
+          <CallStatusSelect intakeId={intake.id} value={intake.call_status ?? DEFAULT_INTAKE_CALL_STATUS} />
           {/* Change 1 — green Download resume + blue Claim for me + Reassign.
               NOTE(mockup): exact claim-card layout (avatar/timestamp/reassign
               arrangement) is governed by Mockup 1; this ships the behavior. */}
@@ -515,6 +518,52 @@ export function IntakeCard({
         </div>
       )}
     </div>
+  );
+}
+
+// CALL / SCREENING STATUS (migration 0053) — changed inline, saved on change.
+// Optimistic, with the previous value restored and the reason shown if the
+// save fails.
+function CallStatusSelect({ intakeId, value }: { intakeId: string; value: string }) {
+  const router = useRouter();
+  const [current, setCurrent] = useState(value);
+  const [saving, startSaving] = useTransition();
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+      <span className="dt-filter-label" style={{ margin: 0 }}>Call status</span>
+      <select
+        data-testid={`call-status-${intakeId}`}
+        value={current}
+        disabled={saving}
+        onChange={(e) => {
+          const next = e.target.value;
+          const prev = current;
+          setCurrent(next);
+          setErr(null);
+          startSaving(async () => {
+            const r = await setIntakeCallStatus(intakeId, next).catch(() => ({
+              ok: false as const,
+              error: "Couldn't save — please try again.",
+            }));
+            if (!r.ok) {
+              setCurrent(prev);
+              setErr(r.error);
+              return;
+            }
+            router.refresh();
+          });
+        }}
+        className="dt-filter-input"
+        style={{ fontSize: 11.5 }}
+      >
+        {INTAKE_CALL_STATUSES.map((s) => (
+          <option key={s.id} value={s.id}>{s.label}</option>
+        ))}
+      </select>
+      {saving && <span className="tiny muted" style={{ fontSize: 10.5 }}>Saving…</span>}
+      {err && <span role="alert" style={{ color: "var(--dt-danger)", fontSize: 11 }}>{err}</span>}
+    </label>
   );
 }
 

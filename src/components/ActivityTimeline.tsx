@@ -11,6 +11,7 @@ const ACTION_ICON: Record<string, string> = {
   created: "✦",
   status_changed: "→",
   screening_status_changed: "◑",
+  call_status_changed: "☎",
   do_not_return: "⛔",
   reactivated: "↺",
   claimed: "★",

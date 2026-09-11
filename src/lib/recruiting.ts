@@ -1,3 +1,4 @@
+import type { IntakeCallStatus } from "./intake-call-status";
 // Types + label tables for the Recruiting module.
 // Matches supabase/migrations/0003_recruiting.sql.
 
@@ -194,6 +195,9 @@ export type ApplicationIntake = {
   // Migration 0044 — true for demo/QA seed rows (e.g. @example.com). Optional so
   // reads stay graceful before the migration is applied.
   is_seed?: boolean;
+  // Migration 0053 — recruiter call/screening status. Optional so reads stay
+  // graceful in an environment where 0053 isn't applied yet.
+  call_status?: IntakeCallStatus;
   created_at: string;
   updated_at: string;
 };
