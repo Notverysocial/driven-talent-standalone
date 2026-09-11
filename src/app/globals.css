@@ -411,6 +411,9 @@ button { font-family: inherit; }
   background: transparent;
 }
 .dt-av.lg { width: 44px; height: 44px; font-size: 11px; letter-spacing: 0.16em; }
+/* Prospect photo inside the same circle (Avatar photoUrl). */
+.dt-av.has-photo { overflow: hidden; flex-shrink: 0; }
+.dt-av.has-photo img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
 
 .dt-person { display: flex; align-items: center; gap: 14px; }
 .dt-person .name { font-weight: 400; font-size: 13.5px; color: var(--dt-black); letter-spacing: 0.02em; }

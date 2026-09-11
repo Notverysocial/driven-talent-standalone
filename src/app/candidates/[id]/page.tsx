@@ -335,7 +335,7 @@ export default async function CandidateDetailPage({
             }}
           >
             <div className="dt-person">
-              <Avatar name={cand.full_name} size="lg" />
+              <Avatar name={cand.full_name} size="lg" photoUrl={cand.photo_url} />
               <div>
                 <div
                   style={{
