@@ -1,4 +1,6 @@
 import { test, expect } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 import {
   checkAttachments,
   safeFileName,
@@ -6,6 +8,8 @@ import {
   resolveMime,
   formatBytes,
   attachmentHref,
+  parseAttachmentManifest,
+  noteFolder,
   MAX_ATTACHMENT_BYTES,
   MAX_TOTAL_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS_PER_NOTE,
@@ -109,4 +113,71 @@ test("formatBytes", () => {
   expect(formatBytes(812)).toBe("812 B");
   expect(formatBytes(14540)).toBe("14.2 KB");
   expect(formatBytes(3.1 * MB)).toBe("3.1 MB");
+});
+
+// ---- Direct-to-storage uploads (the 4.5 MB fix) ----------------------------
+
+const NOTE = "11111111-1111-4111-8111-111111111111";
+const ATT = "22222222-2222-4222-8222-222222222222";
+const folder = noteFolder("applicant", "subj-1", NOTE);
+
+test("a manifest for THIS note's folder is accepted", () => {
+  const r = parseAttachmentManifest(
+    JSON.stringify([{ id: ATT, path: `${folder}${ATT}-resume.pdf`, name: "résumé.pdf" }]),
+    "applicant", "subj-1", NOTE,
+  );
+  expect(r.ok).toBe(true);
+  expect(r.ok && r.files[0].name).toBe("résumé.pdf");
+});
+
+test("no manifest means no attachments, not an error", () => {
+  expect(parseAttachmentManifest(null, "applicant", "subj-1", "").ok).toBe(true);
+});
+
+test("a manifest cannot claim another note's or subject's objects", () => {
+  const other = "33333333-3333-4333-8333-333333333333";
+  for (const p of [
+    `applicant/subj-1/${other}/${ATT}-x.pdf`,   // another note
+    `applicant/subj-2/${NOTE}/${ATT}-x.pdf`,    // another subject
+    `candidate/subj-1/${NOTE}/${ATT}-x.pdf`,    // another subject type
+    `${folder}${other}-x.pdf`,                  // id prefix is not its own id
+    `${folder}${ATT}-../../x.pdf`,              // traversal
+    `${folder}${ATT}-a/b.pdf`,                  // nested
+  ]) {
+    const r = parseAttachmentManifest(JSON.stringify([{ id: ATT, path: p, name: "x.pdf" }]), "applicant", "subj-1", NOTE);
+    expect(r.ok, p).toBe(false);
+  }
+});
+
+test("a malformed note id or manifest is refused", () => {
+  const good = JSON.stringify([{ id: ATT, path: `${folder}${ATT}-x.pdf`, name: "x.pdf" }]);
+  expect(parseAttachmentManifest(good, "applicant", "subj-1", "not-a-uuid").ok).toBe(false);
+  expect(parseAttachmentManifest("{not json", "applicant", "subj-1", NOTE).ok).toBe(false);
+  expect(parseAttachmentManifest(JSON.stringify({}), "applicant", "subj-1", NOTE).ok).toBe(false);
+  const dup = JSON.stringify([
+    { id: ATT, path: `${folder}${ATT}-x.pdf`, name: "x.pdf" },
+    { id: ATT, path: `${folder}${ATT}-y.pdf`, name: "y.pdf" },
+  ]);
+  expect(parseAttachmentManifest(dup, "applicant", "subj-1", NOTE).ok).toBe(false);
+});
+
+// THE 4.5 MB REGRESSION. Vercel refuses a function request body over ~4.5 MB
+// with 413 before app code runs; next.config's bodySizeLimit cannot lift it.
+// So file bytes must never be posted through the notes Server Action again.
+const src = (f: string) => fs.readFileSync(path.join(__dirname, "../../src", f), "utf8");
+
+test("THE 4.5 MB REGRESSION: the composer's file input is not a form field", () => {
+  const ui = src("components/CandidateNotes.tsx");
+  const input = ui.match(/<input[^>]*?type="file"[\s\S]*?\/>/);
+  expect(input, "file input not found").not.toBeNull();
+  expect(input![0]).not.toMatch(/\bname=/);
+  expect(ui).toMatch(/uploadToSignedUrl\(/);
+});
+
+test("THE 4.5 MB REGRESSION: addNote reads a manifest, never File bytes", () => {
+  const action = src("lib/notes.actions.ts");
+  expect(action).not.toMatch(/getAll\(\s*["']attachments["']\s*\)/);
+  expect(action).toMatch(/attachments_manifest/);
+  // The server re-reads the real size from storage rather than trusting the browser.
+  expect(action).toMatch(/\.info\(/);
 });

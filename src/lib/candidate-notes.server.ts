@@ -20,6 +20,49 @@ export async function listNotes(
   return withAttachments((data ?? []) as CandidateNote[]);
 }
 
+// PostgREST `in` filters travel in the URL; 100 uuids is ~3.7 KB, well
+// clear of URL-length limits however many cards a list shows.
+const IN_CHUNK = 100;
+function chunks<T>(xs: T[], size = IN_CHUNK): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < xs.length; i += size) out.push(xs.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Notes for MANY subjects of one type, for list views — the /applications
+ * cards. A handful of batched queries instead of one per card. Each subject's
+ * list is OLDEST FIRST: on a card it reads as a thread, top to bottom.
+ * Throws on a notes read failure; attachments stay tolerant (withAttachments).
+ */
+export async function listNotesForSubjects(
+  subjectType: NoteSubjectType,
+  subjectIds: string[],
+): Promise<Record<string, (CandidateNote & { attachments: NoteAttachment[] })[]>> {
+  const ids = Array.from(new Set(subjectIds));
+  const out: Record<string, (CandidateNote & { attachments: NoteAttachment[] })[]> = {};
+  if (ids.length === 0) return out;
+  const supabase = await createClient();
+  const results = await Promise.all(
+    chunks(ids).map((part) =>
+      supabase
+        .from("candidate_notes")
+        .select("*")
+        .eq("subject_type", subjectType)
+        .in("subject_id", part)
+        .order("created_at", { ascending: true }),
+    ),
+  );
+  const rows: CandidateNote[] = [];
+  for (const { data, error } of results) {
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as CandidateNote[]));
+  }
+  // Each subject's notes come from one chunk, so per-subject order holds.
+  for (const n of await withAttachments(rows)) (out[n.subject_id] ??= []).push(n);
+  return out;
+}
+
 /**
  * Attach each note's files (migration 0052).
  *
@@ -37,14 +80,18 @@ async function withAttachments(
   if (notes.length === 0) return [];
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("note_attachments")
-      .select("*")
-      .in("note_id", notes.map((n) => n.id))
-      .order("created_at", { ascending: true });
-    if (error) throw error;
+    const results = await Promise.all(
+      chunks(notes.map((n) => n.id)).map((ids) =>
+        supabase
+          .from("note_attachments")
+          .select("*")
+          .in("note_id", ids)
+          .order("created_at", { ascending: true }),
+      ),
+    );
     const byNote = new Map<string, NoteAttachment[]>();
-    for (const a of (data ?? []) as NoteAttachment[]) {
+    for (const { data, error } of results) if (error) throw error;
+    for (const a of results.flatMap((r) => (r.data ?? []) as NoteAttachment[])) {
       const list = byNote.get(a.note_id) ?? [];
       list.push(a);
       byNote.set(a.note_id, list);

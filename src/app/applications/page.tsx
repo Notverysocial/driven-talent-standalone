@@ -4,6 +4,8 @@ import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
 import { listApplicationIntakes } from "@/lib/recruiting.server";
 import { createClient } from "@/lib/supabase/server";
+import { listNotesForSubjects } from "@/lib/candidate-notes.server";
+import type { DisplayNote } from "@/components/CandidateNotes";
 import {
   INTAKE_STATUSES,
   type ApplicationIntake,
@@ -102,6 +104,18 @@ export default async function ApplicationsPage({
   // concatenated in render order, i.e. the order Next actually travels.
   const { filtered: intakes, newIntakes, reviewed, promoted, queue } =
     groupApplications(all, filters);
+
+  // Notes for every card on screen: ONE batched read (chunked), not a query
+  // per card. Tolerant — if it fails the list still renders, and each card
+  // says its notes couldn't load rather than claiming there are none.
+  let notesByIntake: Record<string, DisplayNote[]> = {};
+  let notesUnavailable = false;
+  try {
+    notesByIntake = await listNotesForSubjects("applicant", intakes.map((i) => i.id));
+  } catch (e) {
+    console.error("[applications] notes batch failed — cards render without notes", e);
+    notesUnavailable = true;
+  }
 
   const anyFilter = anyApplicationFilter(filters);
 
@@ -324,13 +338,13 @@ export default async function ApplicationsPage({
           empty state). With a status filter active, only render the groups
           that actually have matching rows. */}
       {(!validStatus || newIntakes.length > 0) && (
-        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
+        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
       )}
       {reviewed.length > 0 && (
-        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} />
+        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} />
       )}
       {promoted.length > 0 && (
-        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} />
+        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} />
       )}
 
       {all.length === 0 && (
@@ -374,6 +388,8 @@ function Section({
   calendly,
   recruiters,
   detailHref,
+  notesByIntake,
+  notesUnavailable,
   hideWhenEmpty = false,
   action,
 }: {
@@ -385,6 +401,8 @@ function Section({
   recruiters: string[];
   /** Detail link carrying the current filters + this row's slot in the set. */
   detailHref: (id: string) => string;
+  notesByIntake: Record<string, DisplayNote[]>;
+  notesUnavailable: boolean;
   hideWhenEmpty?: boolean;
   action?: React.ReactNode;
 }) {
@@ -417,7 +435,7 @@ function Section({
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
         {rows.map((intake) => (
-          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} recruiters={recruiters} detailHref={detailHref(intake.id)} />
+          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} recruiters={recruiters} detailHref={detailHref(intake.id)} notes={notesByIntake[intake.id] ?? []} notesUnavailable={notesUnavailable} />
         ))}
       </div>
     </div>
