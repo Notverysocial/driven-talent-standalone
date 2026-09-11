@@ -95,6 +95,8 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     id: string;
     email: string | null;
     status: string | null;
+    // Migration 0053 — recruiter call status; 'dnr' is an intentional exclusion.
+    call_status?: string | null;
     promoted_candidate_id: string | null;
     created_at: string;
     is_seed?: boolean;
@@ -198,13 +200,15 @@ export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityRe
     oldestDays: Math.floor(oldestDays),
   };
 
-  // (b) Drop seam: never promoted AND never rejected (exclude intentional spam)
+  // (b) Drop seam: never promoted AND never rejected (exclude intentional spam / DNR)
   const stuckRows = intakes.filter(
     (i) =>
       i.promoted_candidate_id == null &&
       i.status !== "promoted" &&
       i.status !== "rejected" &&
-      i.status !== "spam",
+      i.status !== "spam" &&
+      // Do Not Return is as intentional as spam: not a dropped applicant.
+      i.call_status !== "dnr",
   );
   const stuckPeople = new Set(
     stuckRows.map((i) => normEmail(i.email) ?? `row:${i.id}`),

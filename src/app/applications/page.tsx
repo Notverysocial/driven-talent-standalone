@@ -366,7 +366,7 @@ export default async function ApplicationsPage({
         <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
       )}
       {reviewed.length > 0 && (
-        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} />
+        <Section title="In Review" subtitle="Reviewed, rejected, DNR, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} />
       )}
       {promoted.length > 0 && (
         <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} />

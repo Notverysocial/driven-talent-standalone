@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, useState, useTransition } from "react";
+import { Fragment, useEffect, useState, useTransition } from "react";
 import { Badge } from "@/components/Badge";
 import { Avatar } from "@/components/Avatar";
 import { WaitingAge } from "@/components/WaitingAge";
@@ -22,6 +22,7 @@ import {
   claimIntake,
   reassignIntake,
   setIntakeCallStatus,
+  markIntakeDoNotReturn,
 } from "./actions";
 
 export type IntakeCalendlyContext = {
@@ -96,7 +97,9 @@ export function IntakeCard({
   );
 
   // Offer a phone-screen booking on still-actionable intakes only.
+  const isDnr = intake.call_status === "dnr";
   const showScheduler =
+    !isDnr &&
     intake.status !== "rejected" &&
     intake.status !== "spam" &&
     intake.status !== "promoted";
@@ -105,6 +108,7 @@ export function IntakeCard({
   // rejected, or marked spam) — that is the pile that should be worked oldest-
   // first (card cf34006d).
   const showWaiting =
+    !isDnr &&
     intake.status !== "rejected" &&
     intake.status !== "spam" &&
     intake.status !== "promoted";
@@ -321,15 +325,35 @@ export function IntakeCard({
               Reject
             </button>
           )}
-          {intake.status === "new" && (
+          {/* Was "Mark Spam". Now the ONE Do Not Return mechanism — the same
+              DNR as the call-status dropdown (and, once promoted, the ATS
+              Do Not Return tab). The legacy "spam" status still exists for
+              rows marked before this change. */}
+          {!isDnr && (
             <button
               type="button"
               disabled={pending}
-              onClick={() => startTransition(async () => { await setIntakeStatus(intake.id, "spam"); })}
+              onClick={() => {
+                const who = intake.full_name ?? "this applicant";
+                const effect = intake.promoted_candidate_id
+                  ? "flags their candidate record Do Not Return (barred from client sends)"
+                  : "blocks promotion to the pipeline";
+                if (!confirm(`Mark ${who} Do Not Return?\n\nThis sets their call status to DNR and ${effect}.`)) return;
+                setFeedback(null);
+                startTransition(async () => {
+                  const r = await markIntakeDoNotReturn(intake.id).catch(() => ({
+                    ok: false as const,
+                    error: "Couldn't mark Do Not Return — please try again.",
+                  }));
+                  if (!r.ok) setFeedback({ kind: "err", message: r.error });
+                  else router.refresh();
+                });
+              }}
               className="dt-btn"
               style={{ fontSize: 11, padding: "4px 10px", justifyContent: "center" }}
+              title="Sets the call status to DNR — the same Do Not Return used across the ATS"
             >
-              Mark Spam
+              Do Not Return
             </button>
           )}
         </div>
@@ -531,6 +555,9 @@ export function IntakeCard({
 function CallStatusSelect({ intakeId, value }: { intakeId: string; value: string }) {
   const router = useRouter();
   const [current, setCurrent] = useState(value);
+  // Follow the server value after a refresh — e.g. the Do Not Return button
+  // sets DNR server-side; without this the dropdown kept showing the old one.
+  useEffect(() => setCurrent(value), [value]);
   const [saving, startSaving] = useTransition();
   const [err, setErr] = useState<string | null>(null);
   return (
