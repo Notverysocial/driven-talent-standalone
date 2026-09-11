@@ -1,5 +1,10 @@
 import "server-only";
-import { createClient } from "@/lib/supabase/server";
+// Cron-reachable: a Vercel Cron request carries NO session cookie, so the
+// cookie client (createClient) would authenticate as the bare anon key. That
+// only worked because RLS was open to anon; migration 0051 closes it. A cron
+// has no user — CRON_SECRET (fail-closed, lib/cron-auth.ts) is the control,
+// and service_role is the correct client.
+import { createServiceClient } from "@/lib/supabase/server";
 import { groupDuplicateCandidates, summarizeDuplicates } from "@/lib/duplicates";
 import { getIntegrationHealth } from "@/lib/integrations/health.server";
 import { summarizeIntegrationTruth } from "@/lib/integrations/integration-truth";
@@ -80,7 +85,7 @@ function normEmail(e: string | null | undefined): string | null {
 }
 
 export async function runApplicantIntegrityAudit(): Promise<ApplicantIntegrityReport> {
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   const generatedAt = new Date().toISOString();
 
   // --- Pull the raw rows we need. Each is guarded independently. -----------
@@ -297,7 +302,7 @@ export async function saveAuditSnapshot(
   report: ApplicantIntegrityReport,
 ): Promise<void> {
   try {
-    const supabase = await createClient();
+    const supabase = createServiceClient();
     const { error } = await supabase.from("integrity_audit_runs").insert({
       kind: "applicant_pipeline",
       flags: report.flags,
@@ -313,7 +318,7 @@ export async function saveAuditSnapshot(
 // delta on the scheduled report. Null when there is no prior run / no table.
 export async function getPreviousFlagCount(): Promise<number | null> {
   try {
-    const supabase = await createClient();
+    const supabase = createServiceClient();
     const { data, error } = await supabase
       .from("integrity_audit_runs")
       .select("flags")
