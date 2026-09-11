@@ -1,5 +1,10 @@
 import "server-only";
-import { createClient } from "./supabase/server";
+// Cron-reachable: a Vercel Cron request carries NO session cookie, so the
+// cookie client (createClient) would authenticate as the bare anon key. That
+// only worked because RLS was open to anon; migration 0051 closes it. A cron
+// has no user — CRON_SECRET (fail-closed, lib/cron-auth.ts) is the control,
+// and service_role is the correct client.
+import { createClient, createServiceClient } from "./supabase/server";
 import { daysAvailable } from "./talent-pool";
 import type { Candidate } from "./supabase/types";
 
@@ -116,7 +121,7 @@ export type RehireDigest = {
 export async function buildRehireDigest(
   thresholdDays = 30,
 ): Promise<RehireDigest> {
-  const sb = await createClient();
+  const sb = createServiceClient();
   const cutoff = new Date(
     Date.now() - thresholdDays * 24 * 60 * 60 * 1000,
   ).toISOString();

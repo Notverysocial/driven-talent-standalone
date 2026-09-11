@@ -1,5 +1,10 @@
 import "server-only";
-import { createClient } from "./supabase/server";
+// Cron-reachable: a Vercel Cron request carries NO session cookie, so the
+// cookie client (createClient) would authenticate as the bare anon key. That
+// only worked because RLS was open to anon; migration 0051 closes it. A cron
+// has no user — CRON_SECRET (fail-closed, lib/cron-auth.ts) is the control,
+// and service_role is the correct client.
+import { createClient, createServiceClient } from "./supabase/server";
 import {
   type Workflow,
   type WorkflowAction,
@@ -223,7 +228,7 @@ async function runActionImmediate(
   action: WorkflowAction,
   opts: FireEventOptions,
 ): Promise<WorkflowRunStep> {
-  const sb = await createClient();
+  const sb = createServiceClient();
   const ranAt = new Date().toISOString();
   try {
     switch (action.type) {
@@ -302,7 +307,7 @@ async function runActionImmediate(
 export async function processScheduledJobs(
   options: { limit?: number; now?: Date } = {},
 ): Promise<{ processed: number; failed: number }> {
-  const sb = await createClient();
+  const sb = createServiceClient();
   const limit = options.limit ?? 25;
   const now = (options.now ?? new Date()).toISOString();
 
@@ -391,7 +396,7 @@ export async function processScheduledJobs(
 }
 
 async function pendingJobsRemaining(runId: string, excludeJobId: string): Promise<boolean> {
-  const sb = await createClient();
+  const sb = createServiceClient();
   const { data } = await sb
     .from("workflow_scheduled_jobs")
     .select("id")
