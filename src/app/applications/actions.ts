@@ -10,6 +10,8 @@ import { logActivity } from "@/lib/activity-log.server";
 import { requireUser } from "@/lib/auth.server";
 import { DEFAULT_CRITERIA, weightedScore } from "@/lib/candidates";
 import type { ApplicationIntakeStatus } from "@/lib/recruiting";
+import { intakeCallStatusLabel, isIntakeCallStatus } from "@/lib/intake-call-status";
+import { markCandidateDoNotReturn } from "@/app/candidates/actions";
 import type { CandidateStatus } from "@/lib/supabase/types";
 
 export type PromoteResult =
@@ -125,6 +127,15 @@ export async function promoteIntakeToCandidate(
   }
   if (!intake.full_name) {
     return { ok: false, error: "Intake has no name — cannot promote." };
+  }
+  // DNR at the applicant stage (0053) bars promotion: the pipeline feeds
+  // client-facing sends, and until promotion there is no candidate flag to
+  // stop them. Refuse rather than create a sendable candidate.
+  if (intake.call_status === "dnr") {
+    return {
+      ok: false,
+      error: "This applicant is marked DNR. Change the call status first if they should be promoted.",
+    };
   }
 
   // Carry the resume onto the candidate so it is downloadable in the
@@ -298,4 +309,65 @@ export async function reassignIntake(
     .eq("id", intakeId);
   if (error) throw new Error(error.message);
   revalidatePath("/applications");
+}
+
+/**
+ * CALL / SCREENING STATUS (migration 0053), changed inline on the card.
+ * Returns a result instead of throwing: thrown messages are redacted in
+ * production, and the card needs to say why a save failed.
+ *
+ * DNR uses the EXISTING Do Not Return mechanism rather than a parallel one:
+ * if the applicant is already a candidate, the candidate is flagged through
+ * markCandidateDoNotReturn — so they appear in the ATS "Do Not Return" tab and
+ * the send-bar refuses client-facing sends. Moving the dropdown off DNR does
+ * NOT clear that flag; that stays a deliberate "Remove from Do Not Return" on
+ * the candidate page. An applicant not yet promoted is barred from promotion
+ * (promoteIntakeToCandidate).
+ */
+export async function setIntakeCallStatus(
+  intakeId: string,
+  next: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireUser();
+  if (!isIntakeCallStatus(next)) return { ok: false, error: "Unknown call status." };
+  const sb = await createClient();
+  const { data: before, error: getErr } = await sb
+    .from("application_intakes")
+    .select("call_status, promoted_candidate_id")
+    .eq("id", intakeId)
+    .maybeSingle();
+  if (getErr) return { ok: false, error: `Couldn't load the applicant: ${getErr.message}` };
+  if (!before) return { ok: false, error: "Applicant not found." };
+  if (before.call_status === next) return { ok: true };
+
+  const { error } = await sb
+    .from("application_intakes")
+    .update({ call_status: next })
+    .eq("id", intakeId);
+  if (error) return { ok: false, error: `Couldn't save the call status: ${error.message}` };
+
+  await logActivity({
+    subjectType: "applicant",
+    subjectId: intakeId,
+    action: "call_status_changed",
+    summary: `Call status: ${intakeCallStatusLabel(before.call_status)} → ${intakeCallStatusLabel(next)}`,
+    field: "call_status",
+    oldValue: before.call_status,
+    newValue: next,
+  });
+
+  revalidatePath("/applications");
+  revalidatePath(`/applications/${intakeId}`);
+
+  if (next === "dnr" && before.promoted_candidate_id) {
+    try {
+      await markCandidateDoNotReturn(before.promoted_candidate_id, "Marked DNR on the applicant card");
+    } catch (e) {
+      return {
+        ok: false,
+        error: `Saved as DNR, but the candidate record couldn't be flagged Do Not Return (${e instanceof Error ? e.message : "unknown error"}). Flag it from the candidate page.`,
+      };
+    }
+  }
+  return { ok: true };
 }
