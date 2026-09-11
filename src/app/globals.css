@@ -122,9 +122,13 @@ button { font-family: inherit; }
   font-size: 9px;
   letter-spacing: 0.4em;
   text-transform: uppercase;
-  color: rgba(26,26,26,0.35);
+  /* Sidebar group headings (Overview, Recruiting, HR & Safety…). Were weight
+     300 at 35% opacity — the lightest text in the app, on the labels you scan
+     to find your place. Bold + a firmer colour so they read as headings; size,
+     spacing and order are unchanged. */
+  color: rgba(26,26,26,0.62);
   padding: 22px 8px 10px;
-  font-weight: 300;
+  font-weight: 700;
 }
 .dt-nav-item {
   display: flex;
