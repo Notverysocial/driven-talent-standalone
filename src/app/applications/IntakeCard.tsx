@@ -38,6 +38,7 @@ export function IntakeCard({
   detailHref,
   notes = [],
   notesUnavailable = false,
+  photoUrl = null,
 }: {
   intake: ApplicationIntake;
   createdLabel: string;
@@ -51,6 +52,8 @@ export function IntakeCard({
   notes?: DisplayNote[];
   /** The list page's notes read failed — say so instead of showing "none". */
   notesUnavailable?: boolean;
+  /** The prospect's photo — their candidate photo once promoted; else initials. */
+  photoUrl?: string | null;
 }) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -144,6 +147,7 @@ export function IntakeCard({
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <Avatar name={intake.full_name ?? "?"} photoUrl={photoUrl} />
             <div style={{ fontWeight: 500, fontSize: 14 }}>
               {intake.full_name ?? "Unknown applicant"}
             </div>

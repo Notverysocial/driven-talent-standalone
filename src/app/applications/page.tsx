@@ -117,6 +117,31 @@ export default async function ApplicationsPage({
     notesUnavailable = true;
   }
 
+  // Prospect photos. Applicants have none of their own — the application form
+  // never collects one — so a promoted applicant shows their candidate's photo
+  // (candidates.photo_url); everyone else keeps initials. One batched read.
+  const photoByIntake: Record<string, string> = {};
+  try {
+    const promotedIds = Array.from(
+      new Set(intakes.map((i) => i.promoted_candidate_id).filter((v): v is string => !!v)),
+    );
+    for (let i = 0; i < promotedIds.length; i += 100) {
+      const { data, error } = await sbApp
+        .from("candidates")
+        .select("id, photo_url")
+        .in("id", promotedIds.slice(i, i + 100))
+        .not("photo_url", "is", null);
+      if (error) throw error;
+      const byCand = new Map((data ?? []).map((c) => [c.id as string, c.photo_url as string]));
+      for (const it of intakes) {
+        const url = it.promoted_candidate_id ? byCand.get(it.promoted_candidate_id) : undefined;
+        if (url) photoByIntake[it.id] = url;
+      }
+    }
+  } catch (e) {
+    console.error("[applications] prospect photo lookup failed — cards show initials", e);
+  }
+
   const anyFilter = anyApplicationFilter(filters);
 
   // Counts from the full data set so the KPI strip is a constant tally.
@@ -338,13 +363,13 @@ export default async function ApplicationsPage({
           empty state). With a status filter active, only render the groups
           that actually have matching rows. */}
       {(!validStatus || newIntakes.length > 0) && (
-        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
+        <Section title="New" subtitle="Awaiting first review · oldest first" rows={newIntakes} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} hideWhenEmpty={Boolean(validStatus)} action={sortToggle} />
       )}
       {reviewed.length > 0 && (
-        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} />
+        <Section title="In Review" subtitle="Reviewed, rejected, or spam" rows={reviewed} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} />
       )}
       {promoted.length > 0 && (
-        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} />
+        <Section title="Promoted to Pipeline" subtitle="Converted to candidates" rows={promoted} fmt={fmtDateTime} calendly={calendly} recruiters={recruiters} detailHref={detailHref} notesByIntake={notesByIntake} notesUnavailable={notesUnavailable} photoByIntake={photoByIntake} />
       )}
 
       {all.length === 0 && (
@@ -390,6 +415,7 @@ function Section({
   detailHref,
   notesByIntake,
   notesUnavailable,
+  photoByIntake,
   hideWhenEmpty = false,
   action,
 }: {
@@ -403,6 +429,7 @@ function Section({
   detailHref: (id: string) => string;
   notesByIntake: Record<string, DisplayNote[]>;
   notesUnavailable: boolean;
+  photoByIntake: Record<string, string>;
   hideWhenEmpty?: boolean;
   action?: React.ReactNode;
 }) {
@@ -435,7 +462,7 @@ function Section({
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
         {rows.map((intake) => (
-          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} recruiters={recruiters} detailHref={detailHref(intake.id)} notes={notesByIntake[intake.id] ?? []} notesUnavailable={notesUnavailable} />
+          <IntakeCard key={intake.id} intake={intake} createdLabel={fmt(intake.created_at)} calendly={calendly} recruiters={recruiters} detailHref={detailHref(intake.id)} notes={notesByIntake[intake.id] ?? []} notesUnavailable={notesUnavailable} photoUrl={photoByIntake[intake.id] ?? null} />
         ))}
       </div>
     </div>

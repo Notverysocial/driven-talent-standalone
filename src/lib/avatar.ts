@@ -23,3 +23,14 @@ export function initials(name: string) {
     .join("")
     .toUpperCase();
 }
+
+/**
+ * A prospect's photo URL, if it is safe to render as an <img src>. Photos live
+ * in the public `candidate_photos` bucket and are stored as https URLs
+ * (candidates.photo_url). Anything else — empty, relative, http, a scheme —
+ * falls back to initials.
+ */
+export function avatarPhotoSrc(url: string | null | undefined): string | null {
+  const u = (url ?? "").trim();
+  return /^https:\/\/[^\s]+$/i.test(u) ? u : null;
+}

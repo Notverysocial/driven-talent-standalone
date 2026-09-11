@@ -393,7 +393,7 @@ export default async function CandidatesListPage({
                             href={detailHref(c.id)}
                             className="dt-person dt-person-link"
                           >
-                            <Avatar name={c.full_name} />
+                            <Avatar name={c.full_name} photoUrl={c.photo_url} />
                             <div>
                               <div
                                 className="name"
