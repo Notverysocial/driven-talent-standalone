@@ -92,6 +92,79 @@ test.describe("every cron in vercel.json is reachable through the proxy", () => 
 // which does NOTHING when the secret is unset. Public + unset = open endpoint.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// EVERY PUBLIC SCHEDULED-JOB ROUTE MUST ACTUALLY CALL THE FAIL-CLOSED HELPER
+//
+// evaluateCronAuth being correct (tested below) protects nothing if a route
+// doesn't call it. That is exactly how /api/workflows/tick survived PR #68: it is
+// allowlisted in proxy.ts but NOT in vercel.json, so it was never in CRON_PATHS,
+// so nothing here looked at it — and it kept its own
+//
+//     const expected = process.env.WORKFLOWS_TICK_SECRET;
+//     if (expected) { ... }
+//
+// with that secret never set in production. A public URL, open to anyone, in
+// front of processScheduledJobs — which as of 2026-09-11 runs as service_role.
+//
+// So this reads the ROUTE SOURCE and asserts the call is really there. The list
+// is CRON_PATHS plus every other scheduled-job path allowlisted in the proxy.
+// ---------------------------------------------------------------------------
+
+/** Scheduled-job paths that are public in proxy.ts but deliberately NOT crons. */
+const PUBLIC_SCHEDULED_NOT_CRON = ["/api/workflows/tick"] as const;
+
+/**
+ * Route source with comments removed, so the guard judges LIVE code only.
+ *
+ * Without this, a route that documents the old bug in its own header — quoting
+ * `if (expected)` to explain why it no longer does it — reads as guilty of it.
+ * Both uattend-weekly and workflows/tick do exactly that, and both tripped this
+ * guard on their comments while their live code was already fail-closed.
+ *
+ * Strips WHOLE-LINE `//` comments and `/* *\/` blocks only. Deliberately not
+ * every `//`: that would mangle strings like "https://…". The cost is that an
+ * inline trailing comment mentioning `if (expected)` still trips the guard — but
+ * that fails LOUD. This can only ever over-report; it can never let a fail-open
+ * route pass.
+ */
+function liveCode(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join("\n");
+}
+
+function routeSource(apiPath: string): string {
+  const raw = readFileSync(
+    join(process.cwd(), "src", "app", ...apiPath.split("/").filter(Boolean), "route.ts"),
+    "utf8",
+  );
+  return liveCode(raw);
+}
+
+test.describe("every public scheduled-job route fails closed", () => {
+  for (const p of [...CRON_PATHS, ...PUBLIC_SCHEDULED_NOT_CRON]) {
+    test(`${p} calls checkCronAuth and has no fail-open secret check`, () => {
+      const src = routeSource(p);
+      expect(src, `${p} must call checkCronAuth(request)`).toMatch(/checkCronAuth\(\s*request\s*\)/);
+      // The exact fail-open shape: read a secret, then only check "if" it exists.
+      expect(src, `${p} must not skip auth when a secret is unset`).not.toMatch(
+        /if\s*\(\s*expected\s*\)/,
+      );
+      expect(src, `${p} must not use a private per-route secret`).not.toMatch(/WORKFLOWS_TICK_SECRET/);
+    });
+  }
+
+  test("/api/workflows/tick is public in the proxy but stays OUT of CRON_PATHS", () => {
+    // It is not scheduled, so listing it in CRON_PATHS would trip the orphan
+    // check above. It is still reachable, which is why it must fail closed.
+    const proxy = readFileSync(join(process.cwd(), "src", "proxy.ts"), "utf8");
+    expect(proxy).toContain('"/api/workflows/tick"');
+    expect(isCronPath("/api/workflows/tick")).toBe(false);
+  });
+});
+
 test.describe("evaluateCronAuth — no secret means refuse, never allow", () => {
   test("undefined secret refuses with 503 (it must NOT run unauthenticated)", () => {
     const v = evaluateCronAuth(undefined, "Bearer anything");
