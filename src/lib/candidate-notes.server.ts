@@ -2,6 +2,7 @@ import "server-only";
 import { createClient } from "./supabase/server";
 import { mergeNoteHistory } from "./notes";
 import type { CandidateNote, NoteSubjectType } from "./supabase/types";
+import type { NoteAttachment } from "./note-attachments";
 
 // Chronological notes log for a subject, NEWEST FIRST (Estefany's spec).
 export async function listNotes(
@@ -16,7 +17,43 @@ export async function listNotes(
     .eq("subject_id", subjectId)
     .order("created_at", { ascending: false });
   if (error) throw new Error(error.message);
-  return (data ?? []) as CandidateNote[];
+  return withAttachments((data ?? []) as CandidateNote[]);
+}
+
+/**
+ * Attach each note's files (migration 0052).
+ *
+ * A SEPARATE query, deliberately, with its own error handling. The applicant
+ * page treats a failure in listNotes as "migration 0050 not applied" and swaps
+ * the whole notes log for a fallback banner. An embedded select would couple
+ * the log to this table, so any trouble here — a missing table in a fresh
+ * environment, a policy change — would take down notes that are perfectly
+ * readable. A note without its attachment list is a degraded view; no notes at
+ * all is an outage.
+ */
+async function withAttachments(
+  notes: CandidateNote[],
+): Promise<(CandidateNote & { attachments: NoteAttachment[] })[]> {
+  if (notes.length === 0) return [];
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("note_attachments")
+      .select("*")
+      .in("note_id", notes.map((n) => n.id))
+      .order("created_at", { ascending: true });
+    if (error) throw error;
+    const byNote = new Map<string, NoteAttachment[]>();
+    for (const a of (data ?? []) as NoteAttachment[]) {
+      const list = byNote.get(a.note_id) ?? [];
+      list.push(a);
+      byNote.set(a.note_id, list);
+    }
+    return notes.map((n) => ({ ...n, attachments: byNote.get(n.id) ?? [] }));
+  } catch (e) {
+    console.error("[notes] attachment lookup failed — rendering notes without them", e);
+    return notes.map((n) => ({ ...n, attachments: [] }));
+  }
 }
 
 /**

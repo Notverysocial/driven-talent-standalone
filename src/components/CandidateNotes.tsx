@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import {
+  ATTACHMENT_ACCEPT,
+  attachmentHref,
+  checkAttachments,
+  formatBytes,
+  type NoteAttachment,
+} from "@/lib/note-attachments";
 import { useRouter } from "next/navigation";
 import type { CallOutcome, CandidateNote, NoteSubjectType } from "@/lib/supabase/types";
 // Shared with the server action so the labels cannot drift apart.
@@ -32,7 +39,11 @@ import { addNote, setFollowupStatus } from "@/lib/notes.actions";
  * exact visual treatment of the log entries is not mockup-governed in the
  * change-set, so this uses the established dt-* design system.
  */
-export type DisplayNote = CandidateNote & { from_applicant_stage?: boolean };
+export type DisplayNote = CandidateNote & {
+  from_applicant_stage?: boolean;
+  /** Files attached to this note (migration 0052). */
+  attachments?: NoteAttachment[];
+};
 
 export function CandidateNotes({
   subjectType,
@@ -54,6 +65,14 @@ export function CandidateNotes({
   // outcome exactly when it is a phone screen, matching the DB constraint.
   const [callMode, setCallMode] = useState(false);
   const [outcome, setOutcome] = useState<CallOutcome | "">("");
+  // Attachments. Checked the moment they are picked, with the same rules the
+  // server applies — so an oversized batch is caught here with a reason, not
+  // refused by the framework as a bare 400 (the #92 failure shape).
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileErr, setFileErr] = useState<string | null>(null);
+  const [submitErr, setSubmitErr] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const filesTotal = files.reduce((n, f) => n + f.size, 0);
 
   function fmt(ts: string) {
     return new Date(ts).toLocaleString("en-US", {
@@ -79,11 +98,25 @@ export function CandidateNotes({
       <form
         action={async (fd) => {
           startTransition(async () => {
-            await addNote(subjectType, subjectId, fd);
+            let result: Awaited<ReturnType<typeof addNote>>;
+            try {
+              result = await addNote(subjectType, subjectId, fd);
+            } catch {
+              setSubmitErr("Couldn't save the note. Please try again.");
+              return;
+            }
+            if (!result.ok) {
+              setSubmitErr(result.error);
+              return;
+            }
+            setSubmitErr(null);
             setBody("");
             setFollowup(false);
             setCallMode(false);
             setOutcome("");
+            setFiles([]);
+            setFileErr(null);
+            if (fileInput.current) fileInput.current.value = "";
             router.refresh();
           });
         }}
@@ -113,6 +146,40 @@ export function CandidateNotes({
             outline: "none",
           }}
         />
+        {/* Attachments — resumes, screenshots, ID documents. Stored privately
+            and served only through short-lived signed links. */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "var(--dt-warm-700)", flexWrap: "wrap" }}>
+            <span className="dt-filter-label" style={{ margin: 0 }}>Attach files</span>
+            <input
+              ref={fileInput}
+              type="file"
+              name="attachments"
+              multiple
+              accept={ATTACHMENT_ACCEPT}
+              disabled={pending}
+              onChange={(e) => {
+                const picked = Array.from(e.target.files ?? []);
+                const check = checkAttachments(picked);
+                setFiles(picked);
+                setFileErr(check.ok ? null : check.error);
+                setSubmitErr(null);
+              }}
+              style={{ fontSize: 12 }}
+            />
+          </label>
+          {fileErr ? (
+            <div style={{ color: "var(--dt-danger)", fontSize: 12 }}>{fileErr}</div>
+          ) : files.length > 0 ? (
+            <div className="tiny muted" style={{ fontSize: 11.5 }}>
+              {files.length} {files.length === 1 ? "file" : "files"} · {formatBytes(filesTotal)} — up to 25 MB each, 24 MB per note
+            </div>
+          ) : (
+            <div className="tiny muted" style={{ fontSize: 11 }}>
+              PDF, Word, Excel, text or images · up to 25 MB each
+            </div>
+          )}
+        </div>
         {/* Phone-screen outcome. The gap Leangel reported: you can schedule a
             phone screen from this record and then have nowhere to say what
             happened on it. */}
@@ -214,9 +281,16 @@ export function CandidateNotes({
               </span>
             </label>
           )}
+          {submitErr && (
+            <span style={{ color: "var(--dt-danger)", fontSize: 12, flex: "1 1 100%" }}>{submitErr}</span>
+          )}
           <button
             type="submit"
-            disabled={pending || (callMode ? outcome === "" : body.trim() === "")}
+            disabled={
+              pending ||
+              !!fileErr ||
+              (callMode ? outcome === "" : body.trim() === "" && files.length === 0)
+            }
             className="dt-btn dt-btn-gold"
             style={{ marginLeft: "auto", fontSize: 12 }}
           >
@@ -278,6 +352,42 @@ export function CandidateNotes({
               <div style={{ fontSize: 13.5, lineHeight: 1.6, color: "var(--dt-warm-700)", marginTop: 4, whiteSpace: "pre-wrap" }}>
                 {renderBody(note.body)}
               </div>
+              {note.attachments && note.attachments.length > 0 && (
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {note.attachments.map((a) => (
+                    <div
+                      key={a.id}
+                      data-testid={`note-attachment-${a.id}`}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                        fontSize: 12.5, padding: "6px 10px",
+                        border: "1px solid var(--dt-warm-150)", background: "var(--dt-warm-50)",
+                      }}
+                    >
+                      <span aria-hidden>📎</span>
+                      <a
+                        href={attachmentHref(a.id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontWeight: 500, color: "var(--dt-warm-700)" }}
+                      >
+                        {a.file_name}
+                      </a>
+                      <span className="tiny muted">{formatBytes(a.size_bytes)}</span>
+                      <span className="tiny muted">
+                        · uploaded by {a.uploaded_by_name} · {fmt(a.created_at)}
+                      </span>
+                      <a
+                        href={`${attachmentHref(a.id)}?download=1`}
+                        className="tiny"
+                        style={{ marginLeft: "auto", color: "var(--dt-gold-deep)" }}
+                      >
+                        Download
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
               {note.note_kind === "phone_screen" && note.next_step && (
                 <div style={{ marginTop: 6, fontSize: 12.5, color: "var(--dt-warm-700)" }}>
                   <span className="tiny muted" style={{ letterSpacing: "0.08em", textTransform: "uppercase" }}>
