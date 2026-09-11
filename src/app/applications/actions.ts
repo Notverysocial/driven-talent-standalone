@@ -324,6 +324,35 @@ export async function reassignIntake(
  * the candidate page. An applicant not yet promoted is barred from promotion
  * (promoteIntakeToCandidate).
  */
+/**
+ * DO NOT RETURN from the applicant card — replaces the old "Mark Spam" button.
+ *
+ * Uses the ONE Do Not Return mechanism rather than a second flag: call status
+ * DNR via setIntakeCallStatus (which flags the candidate record if the
+ * applicant was already promoted, and bars promotion otherwise). Like Mark
+ * Spam did, a still-New applicant is taken out of the review queue
+ * (status -> reviewed) so they stop counting as waiting; any other status is
+ * left as it is.
+ */
+export async function markIntakeDoNotReturn(
+  intakeId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireUser();
+  const r = await setIntakeCallStatus(intakeId, "dnr");
+  if (!r.ok) return r;
+  const sb = await createClient();
+  const { error } = await sb
+    .from("application_intakes")
+    .update({ status: "reviewed", reviewed_at: new Date().toISOString() })
+    .eq("id", intakeId)
+    .eq("status", "new");
+  if (error) {
+    return { ok: false, error: `Marked DNR, but couldn't move them out of New: ${error.message}` };
+  }
+  revalidatePath("/applications");
+  return { ok: true };
+}
+
 export async function setIntakeCallStatus(
   intakeId: string,
   next: string,
